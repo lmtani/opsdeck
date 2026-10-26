@@ -96,6 +96,14 @@ class SettingsModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     theme: str = "midnight"
+    github_polling: bool = True
+
+
+class SettingsUpdate(BaseModel):
+    """A partial update: fields left out keep their saved value."""
+
+    theme: str | None = None
+    github_polling: bool | None = None
 
 
 class ImageOut(BaseModel):

@@ -145,7 +145,10 @@
         <aside class="filters-panel">
           <div class="panel-head">
             <h2 class="panel-title">Feeds</h2>
-            <button class="btn btn-ghost btn-sm" id="gh-feed-new-btn">+ New</button>
+            <span class="panel-head-actions">
+              <button class="btn btn-ghost btn-sm gh-poll is-on" id="gh-poll-btn" aria-pressed="true">● live</button>
+              <button class="btn btn-ghost btn-sm" id="gh-feed-new-btn">+ New</button>
+            </span>
           </div>
           <div class="gh-token-hint" id="gh-token-hint" role="status" hidden></div>
           <div class="filter-list" id="gh-feed-list"></div>

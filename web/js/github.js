@@ -54,6 +54,7 @@ const repoCache = new Map(); // org -> Promise<repos>
 let view = { feed: null, activity: null, mark: "", refinements: [], expanded: new Set() };
 let requestSeq = 0;
 let autoTimer = null;
+let polling = true; // the "live" switch, saved in the backend settings
 
 // ----- small helpers ---------------------------------------------------
 
@@ -154,7 +155,11 @@ function renderFeedList() {
             }</span>`
           : ""
       }${
-        notifying ? ' <span class="gh-bell-on" title="Desktop notifications on">🔔</span>' : ""
+        notifying
+          ? polling
+            ? ' <span class="gh-bell-on" title="Desktop notifications on">🔔</span>'
+            : ' <span class="gh-bell-on is-paused" title="Desktop notifications on, waiting for live updates to resume">🔔</span>'
+          : ""
       }</span>
       <span class="filter-meta">
         <span>${escapeHtml(feed.org)}</span>
@@ -269,6 +274,7 @@ function lookingAt(feed) {
 // For each notifying feed with new events that the user is not looking at,
 // read its activity and announce what has not been announced yet.
 async function notifyNewEvents(counts) {
+  if (!polling) return;
   for (const feed of feeds) {
     if (!isNotifying(feed.id) || !(counts[feed.id] > 0) || lookingAt(feed)) continue;
     try {
@@ -287,7 +293,9 @@ function openFromNotification(feed) {
 async function setNotifications(feed) {
   const outcome = await toggleNotifications(feed.id);
   const messages = {
-    on: [`You will be notified of new events in “${feed.name}” while OpsDeck is open in a tab.`, "success"],
+    on: polling
+      ? [`You will be notified of new events in “${feed.name}” while OpsDeck is open in a tab.`, "success"]
+      : [`Notifications for “${feed.name}” are on. Live updates are paused, so they start when you resume them.`, "info"],
     off: [`Notifications for “${feed.name}” are off.`, "info"],
     unsupported: ["This browser cannot show notifications here: they need HTTPS or localhost.", "error"],
     blocked: [
@@ -303,10 +311,12 @@ async function setNotifications(feed) {
 }
 
 // Badges refresh every 5 min while the page is visible; with any feed
-// notifying, every 2 min even in a background tab.
+// notifying, every 2 min even in a background tab. Nothing runs while the
+// "live" switch is off.
 let lastPoll = Date.now();
 
 function pollTick() {
+  if (!polling) return;
   const notifying = anyNotifying(feeds.map((feed) => feed.id));
   if (document.hidden && !notifying) return;
   const every = notifying ? NOTIFY_REFRESH_MS : UNSEEN_REFRESH_MS;
@@ -867,11 +877,52 @@ const autoOn = () => storageGet(AUTO_KEY) === "1";
 function scheduleAuto() {
   clearInterval(autoTimer);
   autoTimer = null;
-  document.getElementById("gh-auto-btn").classList.toggle("is-on", autoOn());
-  if (!autoOn()) return;
+  const button = document.getElementById("gh-auto-btn");
+  button.classList.toggle("is-on", autoOn() && polling);
+  button.disabled = !polling;
+  button.title = polling ? "Refresh every 60 s" : "Live updates are paused";
+  if (!autoOn() || !polling) return;
   autoTimer = setInterval(() => {
     if (visible && !document.hidden && view.feed) loadActivity();
   }, AUTO_REFRESH_MS);
+}
+
+// ----- live switch -----------------------------------------------------
+
+function renderPolling() {
+  const button = document.getElementById("gh-poll-btn");
+  button.classList.toggle("is-on", polling);
+  button.setAttribute("aria-pressed", String(polling));
+  button.textContent = polling ? "● live" : "⏸ paused";
+  button.title = polling
+    ? "Badges, notifications and auto refresh update in the background. Click to pause."
+    : "Paused: feeds only update when you open or refresh them. Click to resume.";
+}
+
+function applyPolling(on) {
+  polling = on;
+  renderPolling();
+  scheduleAuto();
+  renderFeedList();
+}
+
+async function togglePolling() {
+  applyPolling(!polling);
+  if (polling) {
+    lastPoll = Date.now();
+    refreshUnseen();
+  }
+  toast(
+    polling
+      ? "Live updates on: badges, notifications and auto refresh resume."
+      : "Live updates paused. Feeds update only when you open or refresh them.",
+    polling ? "success" : "info"
+  );
+  try {
+    await api.saveSettings({ github_polling: polling });
+  } catch {
+    toast("Could not save the live updates setting; it applies to this page only.", "error");
+  }
 }
 
 // ----- feed modal ------------------------------------------------------
@@ -1191,6 +1242,7 @@ export async function initGithub() {
     }
     renderActivity();
   });
+  document.getElementById("gh-poll-btn").addEventListener("click", togglePolling);
   document.getElementById("gh-auto-btn").addEventListener("click", () => {
     storageSet(AUTO_KEY, autoOn() ? "0" : "1");
     scheduleAuto();
@@ -1207,6 +1259,12 @@ export async function initGithub() {
     if (visible) markActiveSeen({ keepalive: true });
   });
 
+  try {
+    polling = (await api.getSettings()).github_polling !== false;
+  } catch {
+    /* settings unavailable: stay live */
+  }
+  renderPolling();
   scheduleAuto();
   setInterval(pollTick, POLL_TICK_MS);
 

@@ -15,3 +15,11 @@ def test_update_persists_theme():
     assert service.update_settings(theme="paper").theme == "paper"
     assert repository.load().theme == "paper"
     assert service.get_settings().theme == "paper"
+
+
+def test_update_changes_only_what_is_given():
+    service = SettingsService(InMemorySettingsRepository())
+    service.update_settings(theme="paper")
+    paused = service.update_settings(github_polling=False)
+    assert (paused.theme, paused.github_polling) == ("paper", False)
+    assert service.update_settings(theme="ember").github_polling is False

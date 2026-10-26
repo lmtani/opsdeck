@@ -34,6 +34,8 @@ Restart with `docker compose up -d` after changing `.env`. If the token cannot d
 
 To get desktop notifications of new events, hover a feed and click 🔔. The browser asks for permission once; a feed that notifies shows a bell next to its name. Notifications arrive while OpsDeck is open in some tab, even in the background (it checks every 2 minutes), and clicking one opens the feed. Browsers only allow them on `localhost` or HTTPS, and the choice is kept per browser.
 
+The **● live** switch at the top of the feed list pauses every background update: unread badges, notifications and the 60 s auto refresh. While paused, a feed only updates when you open it or click Refresh. The setting is saved with the theme.
+
 ### Logs tab
 
 Copy your Google Cloud Application Default Credentials to `secrets/gcp-adc.json`. They need `roles/logging.viewer` on the projects you query, and the file must be readable by the container user:

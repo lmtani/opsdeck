@@ -226,9 +226,19 @@ def test_github_events_query_and_repos(world):
 
 def test_settings_roundtrip(world):
     client = world.client
-    assert client.get("/api/settings").json() == {"theme": "midnight"}
-    assert client.put("/api/settings", json={"theme": "paper"}).json() == {"theme": "paper"}
+    assert client.get("/api/settings").json() == {"theme": "midnight", "github_polling": True}
+    saved = client.put("/api/settings", json={"theme": "paper"}).json()
+    assert saved == {"theme": "paper", "github_polling": True}
     assert world.settings.load().theme == "paper"
+
+
+def test_settings_update_is_partial(world):
+    client = world.client
+    client.put("/api/settings", json={"theme": "paper"})
+    paused = client.put("/api/settings", json={"github_polling": False}).json()
+    assert paused == {"theme": "paper", "github_polling": False}
+    # saving the theme alone, as the theme picker does, keeps polling paused
+    assert client.put("/api/settings", json={"theme": "ember"}).json()["github_polling"] is False
 
 
 def test_image_upload(world):

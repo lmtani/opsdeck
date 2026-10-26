@@ -3,6 +3,7 @@
 from app.domain.github import EventKind, GithubFeed
 from app.domain.links import Link, LinkKind
 from app.domain.logs import Freshness, LogFilter
+from app.domain.settings import AppSettings
 from app.infrastructure.rows import (
     feed_to_row,
     filter_to_row,
@@ -10,6 +11,7 @@ from app.infrastructure.rows import (
     row_to_feed,
     row_to_filter,
     row_to_link,
+    values_to_settings,
 )
 
 
@@ -44,3 +46,11 @@ def test_mysql_tinyint_and_missing_lists_are_normalized():
     feed = row_to_feed(row)
     assert feed.repos == [] and feed.event_kinds == []
     assert feed.hide_own is False and feed.hide_bots is True
+
+
+def test_settings_read_booleans_from_mysql_text_or_json_values():
+    assert values_to_settings({}) == AppSettings()
+    assert values_to_settings({"theme": "paper", "github_polling": "False"}) == AppSettings("paper", False)
+    assert values_to_settings({"github_polling": "True"}).github_polling is True
+    assert values_to_settings({"github_polling": False}).github_polling is False
+    assert values_to_settings({"github_polling": True, "gone": "x"}) == AppSettings()

@@ -10,8 +10,12 @@ class SettingsService:
     def get_settings(self) -> AppSettings:
         return self._repository.load()
 
-    def update_settings(self, theme: str) -> AppSettings:
+    def update_settings(self, theme: str | None = None, github_polling: bool | None = None) -> AppSettings:
+        """Change only the preferences given; the others keep their saved value."""
         settings = self._repository.load()
-        settings.theme = theme
+        if theme is not None:
+            settings.theme = theme
+        if github_polling is not None:
+            settings.github_polling = github_polling
         self._repository.save(settings)
         return settings

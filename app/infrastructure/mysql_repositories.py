@@ -1,6 +1,6 @@
 """MySQL implementations of the repository interfaces."""
 
-from dataclasses import asdict, fields
+from dataclasses import asdict
 
 from app.domain.github import GithubFeed, GithubFeedRepository
 from app.domain.links import Link, LinkRepository
@@ -14,6 +14,7 @@ from app.infrastructure.rows import (
     row_to_feed,
     row_to_filter,
     row_to_link,
+    values_to_settings,
 )
 
 GITHUB_FEED_COLUMNS = (
@@ -156,8 +157,7 @@ class MySqlSettingsRepository(SettingsRepository):
             with connection.cursor() as cursor:
                 cursor.execute("SELECT name, value FROM settings")
                 stored = {row["name"]: row["value"] for row in cursor.fetchall()}
-        known = {f.name for f in fields(AppSettings)}
-        return AppSettings(**{k: v for k, v in stored.items() if k in known})
+        return values_to_settings(stored)
 
     def save(self, settings: AppSettings) -> None:
         with self._factory.connect() as connection:
