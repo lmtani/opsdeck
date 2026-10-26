@@ -239,6 +239,14 @@ def test_image_upload(world):
     assert bad.status_code == 422 and "Unsupported format" in bad.json()["detail"]
 
 
+def test_unexpected_errors_return_a_readable_reason(world):
+    world.logs.error = OSError("Project was not passed and could not be determined")
+    saved = world.client.post("/api/filters", json={"name": "a", "project": "p"}).json()
+    response = TestClient(world.client.app, raise_server_exceptions=False).post(f"/api/filters/{saved['id']}/query")
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Unexpected server error (OSError): Project was not passed and could not be determined"
+
+
 def test_github_token_status_route(world):
     status = world.client.get("/api/github/token").json()
     assert status == {"kind": "other", "login": "", "scopes": None, "usable": True, "problems": [], "notes": []}

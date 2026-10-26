@@ -1,5 +1,6 @@
 """FastAPI app: HTTP routes plus static file serving for the frontend."""
 
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, Request, UploadFile
@@ -59,6 +60,14 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
     @app.exception_handler(ValidationError)
     async def invalid(request: Request, error: ValidationError):
         return JSONResponse(status_code=422, content={"detail": str(error)})
+
+    @app.exception_handler(Exception)
+    async def unexpected(request: Request, error: Exception):
+        # last resort: a readable reason instead of a bare "Internal Server Error"
+        logging.getLogger("opsdeck").exception("unhandled error on %s", request.url.path)
+        detail = str(error).strip().splitlines()[0] if str(error).strip() else ""
+        message = f"Unexpected server error ({type(error).__name__})"
+        return JSONResponse(status_code=500, content={"detail": f"{message}: {detail}" if detail else message})
 
     @app.exception_handler(ExternalServiceError)
     async def backend_failed(request: Request, error: ExternalServiceError):

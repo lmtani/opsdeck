@@ -34,3 +34,9 @@ def test_github_token_prefers_the_configured_one(monkeypatch):
     assert resolve_github_token("configured") == "configured"
     monkeypatch.setattr("app.infrastructure.github_api_provider.shutil.which", lambda name: None)
     assert resolve_github_token("") == ""  # no gh CLI either
+
+
+def test_credentials_file_comes_from_the_standard_variable():
+    assert Settings.from_env({}).gcp_credentials_file == ""
+    settings = Settings.from_env({"GOOGLE_APPLICATION_CREDENTIALS": "/secrets/gcp-adc.json"})
+    assert settings.gcp_credentials_file == "/secrets/gcp-adc.json"
