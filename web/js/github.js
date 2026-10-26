@@ -284,7 +284,7 @@ async function loadActivity({ initial = false } = {}) {
       view.activity = null;
       document.getElementById("gh-meta").textContent = `${feed.org} · failed`;
       document.getElementById("gh-timeline").innerHTML =
-        `<div class="error-box"><strong>GitHub query failed</strong>${escapeHtml(error.message)}</div>`;
+        `<div class="error-box"><strong>GitHub query failed</strong>${richText(error.message)}</div>`;
     } else {
       toast(`Could not refresh the feed: ${error.message}`, "error");
     }
@@ -371,7 +371,7 @@ function renderWarnings() {
   const box = document.getElementById("gh-warnings");
   const warnings = view.activity.warnings || [];
   box.hidden = warnings.length === 0;
-  box.innerHTML = warnings.map((warning) => `<div>⚠ ${escapeHtml(warning)}</div>`).join("");
+  box.innerHTML = warnings.map((warning) => `<div>⚠ ${richText(warning)}</div>`).join("");
 }
 
 function toggleRefinement(field, value) {
@@ -1034,7 +1034,33 @@ function onViewChange(name) {
 
 export function setGithubAvailability(isAvailable) {
   available = isAvailable;
-  document.getElementById("gh-token-hint").hidden = isAvailable;
+}
+
+// Server text with `code` spans and bare URLs, made safe and clickable.
+function richText(text) {
+  return escapeHtml(text)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/https:\/\/[^\s<]+[^\s<.,;:)]/g, (url) => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
+}
+
+// Ask the server what the token can do and say it where the user looks: the
+// sidebar box and the "github" dot in the top bar.
+async function checkToken() {
+  const box = document.getElementById("gh-token-hint");
+  let status;
+  try {
+    status = await api.githubToken();
+  } catch {
+    return; // backend down: main.js already shows it
+  }
+  box.hidden = status.problems.length === 0;
+  box.innerHTML = status.problems.map((problem) => `<p>${richText(problem)}</p>`).join("");
+  if (!status.usable) {
+    const dot = document.getElementById("github-status");
+    dot.classList.remove("is-ok");
+    dot.classList.add("is-down");
+    dot.title = status.problems[0] || "GitHub token unusable";
+  }
 }
 
 export async function initGithub() {
@@ -1108,6 +1134,7 @@ export async function initGithub() {
   scheduleAuto();
   setInterval(refreshUnseen, UNSEEN_REFRESH_MS);
 
+  checkToken();
   feeds = await api.listGithubFeeds();
   renderFeedList();
   refreshUnseen();

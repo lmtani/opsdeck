@@ -204,7 +204,7 @@ class FakeGithubProvider(GithubProvider):
             for repo in spec.repos:
                 value = self.repos.get((spec.org, repo), [])
                 if isinstance(value, GithubNotFoundError):
-                    errors.append(f"{spec.org}/{repo} does not exist or the token cannot see it")
+                    errors.append(f"{spec.org}/{repo} does not exist or the token cannot see it.")
                     value = []
                 elif isinstance(value, Exception):
                     errors.append(value)

@@ -237,3 +237,8 @@ def test_image_upload(world):
     assert ok.status_code == 201 and ok.json() == {"url": "/images/1.png"}
     bad = client.post("/api/images", files={"file": ("run.sh", b"#!", "text/plain")})
     assert bad.status_code == 422 and "Unsupported format" in bad.json()["detail"]
+
+
+def test_github_token_status_route(world):
+    status = world.client.get("/api/github/token").json()
+    assert status == {"kind": "other", "login": "", "scopes": None, "usable": True, "problems": [], "notes": []}

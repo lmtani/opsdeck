@@ -48,6 +48,7 @@ export const api = {
   markGithubSeen: (id, seenAt, keepalive = false) =>
     request(`/api/github/feeds/${id}/seen`, { ...json("POST", { seen_at: seenAt }), keepalive }),
   githubUnseen: () => request("/api/github/feeds/unseen"),
+  githubToken: () => request("/api/github/token"),
   previewGithubFeed: (data) => request("/api/github/feeds/preview", json("POST", data)),
   runFeed: (id) => request(`/api/github/feeds/${id}/query`, { method: "POST" }),
   queryGithub: (data) => request("/api/github/events/query", json("POST", data)),

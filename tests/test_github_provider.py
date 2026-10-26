@@ -7,7 +7,7 @@ import pytest
 
 from app.domain.common import parse_timestamp
 from app.domain.errors import GithubError
-from app.domain.github import FeedSpec, Quota
+from app.domain.github import FeedSpec, Quota, TokenKind
 from app.infrastructure.github_api_provider import GithubApiProvider, search_queries
 
 USER = {"login": "alice"}
@@ -244,7 +244,7 @@ def test_activity_reads_repos_in_parallel_and_warns_about_the_missing_one():
     snapshot = _provider(handler).activity(FeedSpec("acme", repos=("core", "api", "gone")), SINCE)
     assert snapshot.viewer == "alice"
     assert [[e.id for e in b.events] for b in snapshot.batches] == [["core-1"], ["api-1"], []]
-    assert snapshot.warnings == ["acme/gone does not exist or the token cannot see it"]
+    assert snapshot.warnings == ["acme/gone does not exist or the token cannot see it."]
     assert snapshot.quota == Quota(remaining=4990, limit=5000)
     assert len(threads) > 1  # repos were fetched concurrently
 
@@ -271,3 +271,73 @@ def test_activity_degrades_a_failed_realtime_search_to_a_warning():
     assert [e.id for b in snapshot.batches for e in b.events] == ["1"]
     assert snapshot.realtime == []
     assert snapshot.warnings == ["Real-time PR search unavailable: GitHub GraphQL failed: search is down"]
+
+
+# ----- token diagnostics -------------------------------------------------------
+
+
+def _user_handler(scopes=None, status=200, message=""):
+    def handler(request):
+        if request.url.path == "/user":
+            if status != 200:
+                return httpx.Response(status, json={"message": message})
+            headers = {} if scopes is None else {"x-oauth-scopes": scopes}
+            return httpx.Response(200, json=USER, headers=headers)
+        raise AssertionError(f"unexpected {request.url.path}")
+    return handler
+
+
+def test_token_status_without_a_token():
+    status = _provider(_user_handler(), token="").token_status()
+    assert status.kind is TokenKind.NONE and not status.usable
+    assert "No GitHub token" in status.problems[0]
+
+
+def test_classic_token_with_the_right_scopes_is_usable():
+    status = _provider(_user_handler("repo, read:org, gist"), token="ghp_x").token_status()
+    assert (status.kind, status.login, status.usable) == (TokenKind.CLASSIC, "alice", True)
+    assert status.scopes == ("repo", "read:org", "gist") and status.problems == []
+
+
+def test_missing_scopes_are_named():
+    status = _provider(_user_handler("gist"), token="ghp_x").token_status()
+    assert not status.usable
+    assert "`repo` and `read:org` scopes" in status.problems[0]
+    oauth = _provider(_user_handler("repo, admin:org"), token="gho_x").token_status()
+    assert oauth.kind is TokenKind.OAUTH and oauth.usable  # admin:org covers read:org
+
+
+def test_fine_grained_token_gets_setup_notes():
+    status = _provider(_user_handler(None), token="github_pat_x").token_status()
+    assert status.kind is TokenKind.FINE_GRAINED and status.usable and status.scopes is None
+    assert "Resource owner to the organization" in status.notes[0]
+
+
+def test_rejected_token_explains_what_to_do():
+    status = _provider(_user_handler(status=401, message="Bad credentials"), token="ghp_x").token_status()
+    assert not status.usable and "invalid, expired or revoked" in status.problems[0]
+
+
+def test_saml_and_fine_grained_refusals_get_specific_hints():
+    saml = "Resource protected by organization SAML enforcement. You must grant your Personal Access token access to this organization."
+    status = _provider(_user_handler(status=403, message=saml), token="ghp_x").token_status()
+    assert "Configure SSO" in status.problems[0]
+    policy = "The 'acme' organization forbids access via a fine-grained personal access tokens if the token's lifetime is greater than 7 days."
+    status = _provider(_user_handler(status=403, message=policy), token="github_pat_x").token_status()
+    assert "restricts fine-grained tokens" in status.problems[0]
+
+
+def test_org_feed_that_falls_back_to_public_events_says_so():
+    def handler(request):
+        if request.url.path == "/user":
+            return httpx.Response(200, json=USER)
+        if request.url.path == "/graphql":
+            return httpx.Response(200, json={"data": {"search": {"pageInfo": {"hasNextPage": False}, "nodes": []}}})
+        if request.url.path.startswith("/users/alice/events/orgs/"):
+            return httpx.Response(404, json={"message": "Not Found"})
+        return httpx.Response(200, json=[_event(1)])
+
+    snapshot = _provider(handler, token="github_pat_x").activity(FeedSpec("acme"), SINCE)
+    assert [e.id for b in snapshot.batches for e in b.events] == ["1"]
+    assert snapshot.warnings[0].startswith("Only public events of acme are shown")
+    assert "Resource owner to the organization" in snapshot.warnings[0]
