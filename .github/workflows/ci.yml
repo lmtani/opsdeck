@@ -27,3 +27,41 @@ jobs:
       # pyproject: the image build uses --frozen.
       - name: Lock is up to date
         run: uv lock --check
+
+  # The image must build and start on both architectures. arm64 runs under
+  # QEMU emulation; once the repository is public it can move to the native
+  # `ubuntu-24.04-arm` runners, which are free for public repositories.
+  image:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+        if: matrix.platform == 'linux/arm64'
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: opsdeck:ci
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+
+      # Imports every native extension the app loads (TLS, sqlite, gRPC,
+      # cryptography, pydantic) plus the whole app, inside the built image.
+      - name: Smoke test
+        run: |
+          docker run --rm --platform ${{ matrix.platform }} \
+            --entrypoint /app/.venv/bin/python opsdeck:ci -c \
+            "import platform, ssl, sqlite3, ctypes, grpc, cryptography.hazmat.bindings._rust, pydantic_core, app.bootstrap; print('ok', platform.machine())"
