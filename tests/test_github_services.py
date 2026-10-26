@@ -72,7 +72,7 @@ def test_repo_feed_merges_repos_and_reports_partial_failures(feeds):
     spec = FeedSpec("acme", repos=["core", "api", "gone"])
     activity = GithubActivityService(provider, feeds).run_query(spec)
     assert [e.id for e in activity.events] == ["2", "1"]
-    assert activity.warnings == ["acme/gone does not exist or the token cannot see it"]
+    assert activity.warnings == ["acme/gone does not exist or the token cannot see it."]
 
 def test_repo_feed_fails_when_every_repo_fails(feeds):
     provider = FakeGithubProvider()

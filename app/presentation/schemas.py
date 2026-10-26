@@ -146,6 +146,19 @@ class GithubQueryIn(BaseModel):
     hide_bots: bool = True
 
 
+class GithubTokenOut(BaseModel):
+    """What the configured GitHub token can do; problems are user-facing advice."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    kind: str
+    login: str = ""
+    scopes: list[str] | None = None
+    usable: bool
+    problems: list[str] = []
+    notes: list[str] = []
+
+
 class FeedSpecOut(BaseModel):
     """A feed specification as the server normalizes it."""
 

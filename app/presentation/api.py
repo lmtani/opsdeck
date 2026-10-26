@@ -178,6 +178,11 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
     def github_unseen_counts():
         return services.github.unseen_counts()
 
+    @app.get("/api/github/token", response_model=schemas.GithubTokenOut)
+    def github_token_status():
+        """Checks the token against GitHub and says what is missing, if anything."""
+        return schemas.GithubTokenOut.model_validate(services.github.token_status())
+
     @app.post("/api/github/feeds/preview", response_model=schemas.FeedSpecOut)
     def preview_github_feed(body: schemas.GithubQueryIn):
         """How the server reads a feed: canonical repo names and kinds, or 422."""

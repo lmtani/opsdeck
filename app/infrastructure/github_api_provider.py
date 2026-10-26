@@ -33,6 +33,8 @@ from app.domain.github import (
     ItemState,
     PullRequestInfo,
     Quota,
+    TokenKind,
+    TokenStatus,
 )
 from app.domain.errors import GithubError, GithubNotFoundError
 from app.domain.github_rules import pull_url
@@ -47,6 +49,39 @@ GRAPHQL_CHUNK = 40
 EVENTS_API_CAP = 300
 EVENTS_CAP_SLACK = 15
 REPO_FETCH_WORKERS = 8
+
+README_HINT = "See the GitHub tab section of the README."
+CLASSIC_HINT = "A classic token with the `repo` and `read:org` scopes is the simplest setup."
+FINE_GRAINED_HINT = (
+    "A fine-grained token only works for one owner: set Resource owner to the organization,"
+    " give it access to the repositories you follow and grant Organization permissions →"
+    " Events (read) and Repository permissions → Metadata (read) and Pull requests (read)."
+    " The organization may have to approve it, or may not allow fine-grained tokens at all."
+)
+_ORG_SCOPES = {"read:org", "write:org", "admin:org"}
+_TOKEN_PREFIXES = {
+    "ghp_": TokenKind.CLASSIC,
+    "github_pat_": TokenKind.FINE_GRAINED,
+    "gho_": TokenKind.OAUTH,
+}
+
+
+def token_kind(token: str) -> TokenKind:
+    if not token:
+        return TokenKind.NONE
+    for prefix, kind in _TOKEN_PREFIXES.items():
+        if token.startswith(prefix):
+            return kind
+    return TokenKind.OTHER
+
+
+def _missing_scopes(scopes: tuple[str, ...]) -> list[str]:
+    missing = []
+    if "repo" not in scopes:
+        missing.append("repo")
+    if not _ORG_SCOPES & set(scopes):
+        missing.append("read:org")
+    return missing
 # GitHub rejects search queries longer than 256 characters; repo qualifiers
 # are split across several searches below that.
 SEARCH_QUERY_MAX = 240
@@ -131,6 +166,35 @@ class GithubApiProvider(GithubProvider):
     def is_available(self) -> bool:
         return bool(self._ensure_token(raise_if_missing=False))
 
+    def token_status(self) -> TokenStatus:
+        token = self._ensure_token(raise_if_missing=False)
+        kind = token_kind(token)
+        if kind is TokenKind.NONE:
+            return TokenStatus(kind, problems=[
+                f"No GitHub token: set GITHUB_TOKEN or run `gh auth login`. {README_HINT}"
+            ])
+        try:
+            response = self._send("GET", "/user")
+        except GithubError as error:
+            return TokenStatus(kind, problems=[str(error)])
+        login = (response.json() or {}).get("login", "")
+        self._viewer = self._viewer or login
+        # classic and OAuth tokens list their scopes; fine-grained ones do not
+        header = response.headers.get("x-oauth-scopes")
+        scopes = None if header is None else tuple(
+            scope.strip() for scope in header.split(",") if scope.strip()
+        )
+        status = TokenStatus(kind, login=login, scopes=scopes)
+        if scopes is not None and (missing := _missing_scopes(scopes)):
+            status.problems.append(
+                f"The token is missing the {' and '.join(f'`{s}`' for s in missing)}"
+                f" scope{'s' if len(missing) > 1 else ''}, so private repositories and"
+                f" organization activity stay hidden. {CLASSIC_HINT}"
+            )
+        if kind is TokenKind.FINE_GRAINED:
+            status.notes.append(FINE_GRAINED_HINT)
+        return status
+
     def activity(self, spec: FeedSpec, realtime_since: datetime) -> ActivitySnapshot:
         viewer = self.viewer()
         batches, warnings = self._batches(spec)
@@ -151,13 +215,18 @@ class GithubApiProvider(GithubProvider):
         """The org's own feed, or one batch per repo read in parallel. A repo
         that fails becomes a warning; the read fails only when all of them do."""
         if not spec.repos:
-            return [self.org_events(spec.org)], []
+            batch, public_only = self._org_batch(spec.org)
+            return [batch], [self._public_only_warning(spec.org)] if public_only else []
 
         def fetch(repo: str):
             try:
                 return self.repo_events(spec.org, repo), None
             except GithubNotFoundError:
-                missing = GithubError(f"{spec.org}/{repo} does not exist or the token cannot see it")
+                hint = (" Fine-grained tokens only see the repositories they were granted."
+                        if token_kind(self._token) is TokenKind.FINE_GRAINED else "")
+                missing = GithubError(
+                    f"{spec.org}/{repo} does not exist or the token cannot see it.{hint}"
+                )
                 return GithubEventBatch([]), missing
             except GithubError as error:
                 return GithubEventBatch([]), error
@@ -180,14 +249,24 @@ class GithubApiProvider(GithubProvider):
         return self._viewer
 
     def org_events(self, org: str) -> GithubEventBatch:
-        # the org "dashboard" of the viewer includes private repos; orgs the
-        # viewer does not belong to only expose their public events
+        return self._org_batch(org)[0]
+
+    def _org_batch(self, org: str) -> tuple[GithubEventBatch, bool]:
+        """The org "dashboard" of the viewer, which includes private repos, or,
+        when the token cannot read it, the org's public events (flagged True)."""
         try:
-            return self._event_batch(
-                f"/users/{self.viewer()}/events/orgs/{org}", self._org_pages
-            )
+            return self._event_batch(f"/users/{self.viewer()}/events/orgs/{org}", self._org_pages), False
         except GithubNotFoundError:
-            return self._event_batch(f"/orgs/{org}/events", self._org_pages)
+            return self._event_batch(f"/orgs/{org}/events", self._org_pages), True
+
+    def _public_only_warning(self, org: str) -> str:
+        if token_kind(self._token) is TokenKind.FINE_GRAINED:
+            hint = FINE_GRAINED_HINT
+        else:
+            hint = (f"Check that you are a member of {org} and that the token has the `repo`"
+                    f" and `read:org` scopes; if {org} uses SAML single sign-on, authorize"
+                    " the token for it.")
+        return f"Only public events of {org} are shown: the token cannot read its private activity. {hint}"
 
     def repo_events(self, org: str, repo: str) -> GithubEventBatch:
         return self._event_batch(f"/repos/{org}/{repo}/events", self._repo_pages)
@@ -302,15 +381,18 @@ class GithubApiProvider(GithubProvider):
         self._track_rate(response)
         if response.status_code == 401:
             self._token = ""  # e.g. rotated gh token: resolve again next time
-            raise GithubError("GitHub token is invalid or expired")
+            raise GithubError(
+                "GitHub rejected the token: it is invalid, expired or revoked."
+                f" Create a new one and update GITHUB_TOKEN. {README_HINT}"
+            )
         if response.status_code in (403, 429) and self._rate_exhausted(response):
             raise GithubError(self._rate_message(response))
         if response.status_code == 404:
             raise GithubNotFoundError(f"Not found on GitHub: {path}")
+        if response.status_code == 403:
+            raise GithubError(_forbidden_message(_message(response)))
         if response.status_code >= 400:
-            raise GithubError(
-                f"GitHub respondeu {response.status_code}: {_message(response)}"
-            )
+            raise GithubError(f"GitHub answered {response.status_code}: {_message(response)}")
         return response
 
     def _get(self, path: str, **params) -> object:
@@ -412,6 +494,20 @@ class GithubApiProvider(GithubProvider):
                 url=node.get("url") or pull_url(repo, number),
             )
         return result
+
+
+def _forbidden_message(message: str) -> str:
+    """GitHub's 403 text plus what to do about the usual causes."""
+    lower = message.lower()
+    if "saml" in lower:
+        hint = ("The organization uses SAML single sign-on: open https://github.com/settings/tokens,"
+                " choose Configure SSO next to the token and authorize the organization.")
+    elif "fine-grained" in lower:
+        hint = ("The organization restricts fine-grained tokens: ask an owner to allow or approve"
+                f" it, or use a classic token. {CLASSIC_HINT}")
+    else:
+        hint = README_HINT
+    return f"GitHub refused the request: {message}. {hint}"
 
 
 def _message(response: httpx.Response) -> str:

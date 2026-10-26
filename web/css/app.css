@@ -1262,6 +1262,10 @@ body {
   font-size: 12px;
 }
 .gh-token-hint code { font-family: var(--font-mono); color: var(--warn); }
+.gh-token-hint p { margin: 0; }
+.gh-token-hint p + p { margin-top: 8px; }
+.gh-token-hint a, .gh-warnings a { color: var(--accent); word-break: break-all; }
+.gh-warnings code { font-family: var(--font-mono); }
 
 .gh-unseen {
   display: inline-block;

@@ -31,6 +31,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # owner, so a fresh volume mounted there starts writable.
 RUN mkdir -p /seed/data/images
 
+# CPython's own shared libraries live in the multiarch directory of the
+# platform being built (x86_64-linux-gnu, aarch64-linux-gnu). Copy it into a
+# neutral tree so the runtime stage needs no architecture-specific path.
+RUN mkdir -p /seed/usr/lib && cp -a "/usr/lib/$(uname -m)-linux-gnu" /seed/usr/lib/
+
 ########################################################################
 # 2. Distroless runtime
 ########################################################################
@@ -39,10 +44,11 @@ FROM gcr.io/distroless/base-debian12:nonroot AS runtime
 # Full CPython 3.12 (the official image installs everything under /usr/local).
 COPY --from=dependencies /usr/local /usr/local
 
-# CPython's own shared libraries (libffi, libsqlite3, libbz2, liblzma...). The
-# whole directory on purpose: picking .so files by hand turns into an
-# ImportError hunt, and source and target are the same Debian 12.
-COPY --from=dependencies /usr/lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu
+# CPython's own shared libraries (libffi, libsqlite3, libbz2, liblzma...),
+# from the multiarch directory of the target platform. The whole directory on
+# purpose: picking .so files by hand turns into an ImportError hunt, and
+# source and target are the same Debian 12.
+COPY --from=dependencies /seed/usr/lib /usr/lib
 
 COPY --from=dependencies /app/.venv /app/.venv
 COPY --from=dependencies --chown=65532:65532 /seed/data /app/data

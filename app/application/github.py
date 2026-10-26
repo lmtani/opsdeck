@@ -20,6 +20,7 @@ from app.domain.github import (
     GithubFeedRepository,
     GithubProvider,
     GithubRepo,
+    TokenStatus,
     validate_org,
 )
 from app.domain.github_rules import (
@@ -83,6 +84,9 @@ class GithubActivityService:
 
     def provider_available(self) -> bool:
         return self._provider.is_available()
+
+    def token_status(self) -> TokenStatus:
+        return self._provider.token_status()
 
     def run_feed(self, feed_id: str) -> GithubActivity:
         feed = self._feeds.get(feed_id)
