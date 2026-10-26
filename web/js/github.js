@@ -9,6 +9,14 @@
 
 import { api } from "./api.js";
 import { makeSortable } from "./dnd.js";
+import {
+  announce,
+  anyNotifying,
+  forgetFeed,
+  isNotifying,
+  notificationsBlocked,
+  toggleNotifications,
+} from "./notifications.js";
 import { LOCALE, closeModal, confirmDanger, escapeHtml, openModal, toast } from "./ui.js";
 
 const KIND_LABELS = {
@@ -25,7 +33,9 @@ const KIND_ORDER = Object.keys(KIND_LABELS);
 const STATE_LABELS = { open: "open", draft: "draft", merged: "merged", closed: "closed" };
 const FIELD_LABELS = { repo: "repo", kind: "kind", actor: "author" };
 const AUTO_REFRESH_MS = 60_000;
-const UNSEEN_REFRESH_MS = 5 * 60_000;
+const UNSEEN_REFRESH_MS = 5 * 60_000; // badges only, while the page is visible
+const NOTIFY_REFRESH_MS = 2 * 60_000; // when some feed notifies, also in the background
+const POLL_TICK_MS = 60_000;
 const AUTO_KEY = "opsdeck.github.auto";
 const GITHUB_WEB = "https://github.com/";
 const SUGGESTED_REPOS = 10;
@@ -123,6 +133,7 @@ function renderFeedList() {
 
   feeds.forEach((feed, index) => {
     const count = unseen[feed.id] || 0;
+    const notifying = isNotifying(feed.id);
     const scope = feed.repos.length ? plural(feed.repos.length, "repo") : "whole org";
     const kinds = feed.event_kinds.length
       ? feed.event_kinds.map((kind) => KIND_LABELS[kind] || kind).join(", ")
@@ -142,6 +153,8 @@ function renderFeedList() {
               count > 99 ? "99+" : count
             }</span>`
           : ""
+      }${
+        notifying ? ' <span class="gh-bell-on" title="Desktop notifications on">🔔</span>' : ""
       }</span>
       <span class="filter-meta">
         <span>${escapeHtml(feed.org)}</span>
@@ -149,6 +162,8 @@ function renderFeedList() {
       </span>
       <span class="filter-meta gh-feed-kinds">${escapeHtml(kinds)}</span>
       <span class="filter-edit">
+        <button class="card-action${notifying ? " is-on" : ""}" data-notify
+          title="${notifying ? "Stop desktop notifications" : "Notify me of new events"}">${notifying ? "🔕" : "🔔"}</button>
         <button class="card-action" data-edit title="Edit">✎</button>
         <button class="card-action danger" data-delete title="Remove">✕</button>
       </span>`;
@@ -164,6 +179,10 @@ function renderFeedList() {
     item.querySelector("[data-edit]").addEventListener("click", (event) => {
       event.stopPropagation();
       openFeedModal(feed);
+    });
+    item.querySelector("[data-notify]").addEventListener("click", (event) => {
+      event.stopPropagation();
+      setNotifications(feed);
     });
     item.querySelector("[data-delete]").addEventListener("click", (event) => {
       event.stopPropagation();
@@ -183,6 +202,7 @@ async function deleteFeed(feed) {
   }
   feeds = feeds.filter((item) => item.id !== feed.id);
   delete unseen[feed.id];
+  forgetFeed(feed.id);
   if (view.feed?.id === feed.id) {
     view = { feed: null, activity: null, mark: "", refinements: [], expanded: new Set() };
     document.getElementById("gh-results").hidden = true;
@@ -225,7 +245,7 @@ function markActiveSeen({ keepalive = false } = {}) {
 }
 
 async function refreshUnseen() {
-  if (!available || feeds.length === 0 || document.hidden) return;
+  if (!available || feeds.length === 0) return;
   try {
     const counts = await api.githubUnseen();
     // the feed on screen keeps the count of the activity it is showing
@@ -234,9 +254,65 @@ async function refreshUnseen() {
     }
     unseen = counts;
     renderFeedList();
+    await notifyNewEvents(counts);
   } catch {
-    /* badges are best effort */
+    /* badges and notifications are best effort */
   }
+}
+
+// ----- desktop notifications -------------------------------------------
+
+function lookingAt(feed) {
+  return visible && view.feed?.id === feed.id && !document.hidden && document.hasFocus();
+}
+
+// For each notifying feed with new events that the user is not looking at,
+// read its activity and announce what has not been announced yet.
+async function notifyNewEvents(counts) {
+  for (const feed of feeds) {
+    if (!isNotifying(feed.id) || !(counts[feed.id] > 0) || lookingAt(feed)) continue;
+    try {
+      announce(feed, await api.runFeed(feed.id), openFromNotification);
+    } catch {
+      /* try again on the next round */
+    }
+  }
+}
+
+function openFromNotification(feed) {
+  document.querySelector('.tab[data-view="github"]')?.click();
+  openFeed(feeds.find((item) => item.id === feed.id) || feed);
+}
+
+async function setNotifications(feed) {
+  const outcome = await toggleNotifications(feed.id);
+  const messages = {
+    on: [`You will be notified of new events in “${feed.name}” while OpsDeck is open in a tab.`, "success"],
+    off: [`Notifications for “${feed.name}” are off.`, "info"],
+    unsupported: ["This browser cannot show notifications here: they need HTTPS or localhost.", "error"],
+    blocked: [
+      notificationsBlocked()
+        ? "Notifications are blocked for this site. Allow them in the browser's site settings, then try again."
+        : "Notifications were not allowed.",
+      "error",
+    ],
+  };
+  const [message, kind] = messages[outcome];
+  toast(message, kind);
+  renderFeedList();
+}
+
+// Badges refresh every 5 min while the page is visible; with any feed
+// notifying, every 2 min even in a background tab.
+let lastPoll = Date.now();
+
+function pollTick() {
+  const notifying = anyNotifying(feeds.map((feed) => feed.id));
+  if (document.hidden && !notifying) return;
+  const every = notifying ? NOTIFY_REFRESH_MS : UNSEEN_REFRESH_MS;
+  if (Date.now() - lastPoll < every) return;
+  lastPoll = Date.now();
+  refreshUnseen();
 }
 
 // ----- timeline --------------------------------------------------------
@@ -1132,7 +1208,7 @@ export async function initGithub() {
   });
 
   scheduleAuto();
-  setInterval(refreshUnseen, UNSEEN_REFRESH_MS);
+  setInterval(pollTick, POLL_TICK_MS);
 
   checkToken();
   feeds = await api.listGithubFeeds();
