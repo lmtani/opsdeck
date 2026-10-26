@@ -11,18 +11,27 @@ FastAPI backend, vanilla JavaScript frontend with no build step, MySQL storage.
 ## Run with Docker Compose
 
 ```bash
-cp .env.example .env    # optional
+cp .env.example .env
 docker compose up -d --build
 ```
 
-Open http://127.0.0.1:8765. Compose starts the app and a MySQL database; migrations run on startup.
+Open http://127.0.0.1:8765. Compose starts the app and a MySQL database; migrations run on startup. Links work right away; the other two tabs need credentials.
 
-The GitHub tab needs a token in `GITHUB_TOKEN`: a classic personal access token with the `repo` and `read:org` scopes, or the output of `gh auth token`.
+### GitHub tab
 
-The Logs tab needs Google Cloud credentials with `roles/logging.viewer` on the projects you query. Put an Application Default Credentials file at `secrets/gcp-adc.json`, readable by the container user:
+Set `GITHUB_TOKEN` in `.env`. If you use the GitHub CLI, its token works:
 
 ```bash
-mkdir -p secrets
+echo "GITHUB_TOKEN=$(gh auth token)" >> .env
+```
+
+Otherwise create a [classic personal access token](https://github.com/settings/tokens) with the `repo` and `read:org` scopes, which let the dashboard see private repositories and your organizations. Restart with `docker compose up -d` after changing `.env`.
+
+### Logs tab
+
+Copy your Google Cloud Application Default Credentials to `secrets/gcp-adc.json`. They need `roles/logging.viewer` on the projects you query, and the file must be readable by the container user:
+
+```bash
 cp ~/.config/gcloud/application_default_credentials.json secrets/gcp-adc.json
 chmod 644 secrets/gcp-adc.json
 ```
@@ -47,7 +56,7 @@ Locally the app uses the `gcloud` CLI for logs and falls back to `gh auth token`
 | `DASHBOARD_DB_NAME` | `opsdeck` | Database, created if missing |
 | `DASHBOARD_LOG_PROVIDER` | `gcloud` | `api` uses the Cloud Logging client with `GOOGLE_APPLICATION_CREDENTIALS` |
 | `DASHBOARD_COMMANDS` | `on` | `off` disables cards that run local commands |
-| `GITHUB_TOKEN` | empty | GitHub token; empty means the local `gh` login |
+| `GITHUB_TOKEN` | empty | Token for the GitHub tab; when empty, the local `gh` login is used |
 | `DASHBOARD_HOST`, `DASHBOARD_PORT` | `127.0.0.1`, `8765` | Address the server listens on |
 
 Architecture notes for contributors are in [CLAUDE.md](CLAUDE.md).
