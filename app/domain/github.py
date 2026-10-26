@@ -321,6 +321,34 @@ class PullRequestInfo:
     url: str = ""
 
 
+class TokenKind(StrEnum):
+    NONE = "none"  # no token configured
+    CLASSIC = "classic"  # personal access token (classic), ghp_
+    FINE_GRAINED = "fine-grained"  # fine-grained personal access token, github_pat_
+    OAUTH = "oauth"  # OAuth token, e.g. from `gh auth token`, gho_
+    OTHER = "other"
+
+
+@dataclass
+class TokenStatus:
+    """What the configured GitHub token can do, in words the user can act on.
+
+    `problems` are reasons the GitHub tab will not work fully; `notes` are
+    advice that cannot be checked up front (a fine-grained token's grants
+    only show when a feed is read).
+    """
+
+    kind: TokenKind
+    login: str = ""
+    scopes: tuple[str, ...] | None = None  # classic and OAuth tokens only
+    problems: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+
+    @property
+    def usable(self) -> bool:
+        return self.kind is not TokenKind.NONE and not self.problems
+
+
 @dataclass(frozen=True)
 class Quota:
     """What is left of the provider's request allowance."""
@@ -372,6 +400,10 @@ class GithubProvider(ABC):
     def is_available(self) -> bool:
         """Whether credentials are configured (health check, no network)."""
         return True
+
+    def token_status(self) -> TokenStatus:
+        """Check the credentials against GitHub and explain what is missing."""
+        return TokenStatus(kind=TokenKind.OTHER if self.is_available() else TokenKind.NONE)
 
     @abstractmethod
     def activity(self, spec: FeedSpec, realtime_since: datetime) -> ActivitySnapshot:

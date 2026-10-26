@@ -25,7 +25,12 @@ Set `GITHUB_TOKEN` in `.env`. If you use the GitHub CLI, its token works:
 echo "GITHUB_TOKEN=$(gh auth token)" >> .env
 ```
 
-Otherwise create a [classic personal access token](https://github.com/settings/tokens) with the `repo` and `read:org` scopes, which let the dashboard see private repositories and your organizations. Restart with `docker compose up -d` after changing `.env`.
+Otherwise create a token in GitHub's Developer settings. Either kind works:
+
+- **Classic** (simplest): [Tokens (classic)](https://github.com/settings/tokens) → Generate new token (classic), with the `repo` and `read:org` scopes. They let the dashboard see private repositories and your organizations.
+- **Fine-grained**: [Fine-grained tokens](https://github.com/settings/personal-access-tokens) → Generate new token. Set **Resource owner** to the organization you want to follow, not your user; give it access to all its repositories (or the ones you follow); and grant **Organization permissions → Events: Read-only** and **Repository permissions → Metadata** and **Pull requests: Read-only**. The organization may have to approve the token, and some organizations do not allow fine-grained tokens at all. One token covers one organization.
+
+Restart with `docker compose up -d` after changing `.env`. If the token cannot do what the dashboard needs (rejected, missing scopes, not authorized for SAML single sign-on, or limited to public events), the GitHub tab says so and what to change.
 
 ### Logs tab
 

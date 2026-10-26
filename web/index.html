@@ -147,9 +147,7 @@
             <h2 class="panel-title">Feeds</h2>
             <button class="btn btn-ghost btn-sm" id="gh-feed-new-btn">+ New</button>
           </div>
-          <p class="gh-token-hint" id="gh-token-hint" hidden>
-            No GitHub token. Set <code>GITHUB_TOKEN</code> or run <code>gh auth login</code>.
-          </p>
+          <div class="gh-token-hint" id="gh-token-hint" role="status" hidden></div>
           <div class="filter-list" id="gh-feed-list"></div>
           <div class="empty empty-sm" id="gh-feeds-empty" hidden>
             <p>Follow a GitHub organization, whole or just the repositories that matter.</p>
