@@ -1,17 +1,15 @@
 # syntax=docker/dockerfile:1.7
 
-# Runtime distroless: sem shell, sem
-# gerenciador de pacotes, usuário não-root (uid 65532). O
-# `distroless/python3-debian12` traz Python 3.11 — abaixo do
-# `requires-python = ">=3.12"` do projeto — então a base é o
-# `distroless/base-debian12` e o CPython 3.12 vem da imagem oficial
-# `python:3.12-slim-bookworm`, que é o mesmo Debian 12. Este projeto não
-# depende de bibliotecas nativas de sistema.
+# Distroless runtime: no shell, no package manager, non-root user (uid 65532).
+# `distroless/python3-debian12` ships Python 3.11, below the project's
+# `requires-python = ">=3.12"`, so the base is `distroless/base-debian12` and
+# CPython 3.12 comes from the official `python:3.12-slim-bookworm` image,
+# which is the same Debian 12. The project needs no native system libraries.
 
 ########################################################################
-# 1. Dependências Python
+# 1. Python dependencies
 ########################################################################
-FROM python:3.12-slim-bookworm AS dependencias
+FROM python:3.12-slim-bookworm AS dependencies
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.29 /uv /usr/local/bin/uv
 
@@ -22,27 +20,32 @@ ENV UV_PYTHON_DOWNLOADS=never \
 
 WORKDIR /build
 
-# Camada de dependências separada do código: só invalida quando o lock muda.
-# O projeto não é um pacote (sem build-system), então o sync instala apenas
-# as dependências e o código é copiado direto para /app no estágio final.
+# Dependencies get their own layer, invalidated only when the lock changes.
+# The project is not a package (no build-system), so the sync installs only
+# the dependencies and the code is copied straight into /app below.
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
+# Empty directory for uploaded card images. Copied with the runtime user as
+# owner, so a fresh volume mounted there starts writable.
+RUN mkdir -p /seed/data/images
+
 ########################################################################
-# 2. Runtime distroless
+# 2. Distroless runtime
 ########################################################################
 FROM gcr.io/distroless/base-debian12:nonroot AS runtime
 
-# CPython 3.12 completo (a imagem oficial instala tudo em /usr/local).
-COPY --from=dependencias /usr/local /usr/local
+# Full CPython 3.12 (the official image installs everything under /usr/local).
+COPY --from=dependencies /usr/local /usr/local
 
-# Bibliotecas compartilhadas do próprio CPython (libffi, libsqlite3, libbz2,
-# liblzma...). O diretório inteiro de propósito: escolher .so a dedo vira
-# caça a ImportError, e origem e destino são o mesmo Debian 12.
-COPY --from=dependencias /usr/lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu
+# CPython's own shared libraries (libffi, libsqlite3, libbz2, liblzma...). The
+# whole directory on purpose: picking .so files by hand turns into an
+# ImportError hunt, and source and target are the same Debian 12.
+COPY --from=dependencies /usr/lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu
 
-COPY --from=dependencias /app/.venv /app/.venv
+COPY --from=dependencies /app/.venv /app/.venv
+COPY --from=dependencies --chown=65532:65532 /seed/data /app/data
 
 WORKDIR /app
 
@@ -53,7 +56,7 @@ COPY main.py migrate.py ./
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    # O uid 65532 não tem home gravável; tempfile e caches escrevem aqui.
+    # uid 65532 has no writable home; tempfile and caches write here.
     HOME=/tmp \
     XDG_CACHE_HOME=/tmp \
     DASHBOARD_HOST=0.0.0.0 \
@@ -61,6 +64,6 @@ ENV PYTHONUNBUFFERED=1 \
 
 EXPOSE 8080
 
-# Sem shell: forma exec obrigatória. Uvicorn de processo único: a escala é por
-# réplica, não por worker.
+# No shell: exec form is required. Single-process uvicorn: scale by replica,
+# not by worker.
 ENTRYPOINT ["/app/.venv/bin/python", "main.py"]

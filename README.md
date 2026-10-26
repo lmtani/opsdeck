@@ -1,45 +1,53 @@
 # OpsDeck
 
-Dashboard pessoal de devops: cards de atalhos (projetos GCP, ferramentas,
-programas locais), consultas salvas ao Cloud Logging e feeds de atividade de
-orgs do GitHub. FastAPI + JS vanilla, sem build step.
+A personal devops dashboard with three tabs:
 
-## Rodar localmente
+- **Links**: cards for the consoles, dashboards and tools you open every day.
+- **Logs**: saved Google Cloud Logging queries, with click-to-refine and trace drill-down.
+- **GitHub**: activity feeds for an organization or a set of repositories.
 
-```bash
-uv run main.py            # http://127.0.0.1:8765 (MySQL local + gcloud CLI)
-uv run pytest -q          # testes
-```
+FastAPI backend, vanilla JavaScript frontend with no build step, MySQL storage.
 
-Requisitos locais: MySQL em `127.0.0.1:13306` (root/1234; outra porta via `DASHBOARD_DB_PORT`) e o `gcloud` autenticado.
-Detalhes de arquitetura e comandos em [CLAUDE.md](CLAUDE.md).
-
-## Feeds do GitHub
-
-A aba GitHub lê a API do GitHub com o token do usuário. Localmente basta o `gh` logado (`gh auth login`), porque o app usa o `gh auth token` quando `GITHUB_TOKEN` não está definido. Em container, como no k3s, o token entra como variável de ambiente vinda de um Secret. Use um PAT clássico com os escopos `repo` e `read:org`, porque o feed da org inteira usa o dashboard da org do próprio usuário, que inclui os repositórios privados.
+## Run with Docker Compose
 
 ```bash
-kubectl create secret generic opsdeck-github --from-literal=GITHUB_TOKEN=ghp_...
+cp .env.example .env    # optional
+docker compose up -d --build
 ```
 
-```yaml
-# no container do Deployment
-envFrom:
-  - secretRef:
-      name: opsdeck-github
+Open http://127.0.0.1:8765. Compose starts the app and a MySQL database; migrations run on startup.
+
+The GitHub tab needs a token in `GITHUB_TOKEN`: a classic personal access token with the `repo` and `read:org` scopes, or the output of `gh auth token`.
+
+The Logs tab needs Google Cloud credentials with `roles/logging.viewer` on the projects you query. Put an Application Default Credentials file at `secrets/gcp-adc.json`, readable by the container user:
+
+```bash
+mkdir -p secrets
+cp ~/.config/gcloud/application_default_credentials.json secrets/gcp-adc.json
+chmod 644 secrets/gcp-adc.json
 ```
 
-O indicador `github` na barra do topo fica verde quando há token. As requisições são condicionais por ETag, então atualizar um feed sem novidades não consome cota.
+## Run locally
 
-## Container (k3s)
+Requirements: Python 3.12, [uv](https://docs.astral.sh/uv/), a MySQL 8 server, and optionally the `gcloud` and `gh` CLIs logged in.
 
-A imagem sai do [`Dockerfile`](Dockerfile) (distroless, sem shell, usuário não-root) e escuta na porta 8080. Em container não há `gcloud` nem `gh`, então a configuração vem toda de variáveis de ambiente:
+```bash
+uv run main.py      # http://127.0.0.1:8765
+uv run pytest -q
+```
 
-| Variável | Valor no container |
-|---|---|
-| `DASHBOARD_DB_HOST`, `DASHBOARD_DB_PORT`, `DASHBOARD_DB_USER`, `DASHBOARD_DB_PASSWORD`, `DASHBOARD_DB_NAME` | o serviço MySQL do cluster |
-| `DASHBOARD_LOG_PROVIDER` | `api`, com `GOOGLE_APPLICATION_CREDENTIALS` apontando para um arquivo ADC montado |
-| `DASHBOARD_COMMANDS` | `off`, porque os cards de comando rodariam dentro do container |
-| `GITHUB_TOKEN` | o token da aba GitHub, vindo de um Secret |
+Locally the app uses the `gcloud` CLI for logs and falls back to `gh auth token` for GitHub.
 
-As imagens enviadas para os cards ficam em `/app/data/images`, que deve ser um volume.
+## Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DASHBOARD_DB_HOST`, `DASHBOARD_DB_PORT` | `127.0.0.1`, `13306` | MySQL server |
+| `DASHBOARD_DB_USER`, `DASHBOARD_DB_PASSWORD` | `root`, `1234` | MySQL credentials |
+| `DASHBOARD_DB_NAME` | `opsdeck` | Database, created if missing |
+| `DASHBOARD_LOG_PROVIDER` | `gcloud` | `api` uses the Cloud Logging client with `GOOGLE_APPLICATION_CREDENTIALS` |
+| `DASHBOARD_COMMANDS` | `on` | `off` disables cards that run local commands |
+| `GITHUB_TOKEN` | empty | GitHub token; empty means the local `gh` login |
+| `DASHBOARD_HOST`, `DASHBOARD_PORT` | `127.0.0.1`, `8765` | Address the server listens on |
+
+Architecture notes for contributors are in [CLAUDE.md](CLAUDE.md).

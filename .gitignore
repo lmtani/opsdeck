@@ -9,13 +9,10 @@ wheels/
 # Virtual environments
 .venv
 
-# Runtime data (links, filters, settings, uploaded images)
+# Runtime data (legacy JSON records, uploaded images)
 data/
 
-# Restos locais do antigo deploy no Cloud Run (segredo e Terraform): o código
-# saiu do repositório, mas os arquivos podem continuar no disco
-conn_string.txt
-infra/.terraform/
-infra/terraform.tfvars
-*.tfstate
-*.tfstate.*
+# Local configuration for docker compose
+.env
+secrets/*
+!secrets/README.md

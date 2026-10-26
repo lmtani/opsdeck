@@ -1,8 +1,7 @@
 """LogProvider backed by the Cloud Logging API client.
 
-Used where the gcloud CLI is unavailable (containers, e.g. k3s): authenticates
-with Application Default Credentials (on k3s, the file mounted at
-GOOGLE_APPLICATION_CREDENTIALS), which need roles/logging.viewer on every
+Used where the gcloud CLI is unavailable (containers): authenticates with
+Application Default Credentials (the file at GOOGLE_APPLICATION_CREDENTIALS), which need roles/logging.viewer on every
 project queried. `describe`
 still returns the equivalent gcloud command so the UI copy button keeps
 working on any machine.

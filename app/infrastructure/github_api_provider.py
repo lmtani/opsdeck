@@ -1,7 +1,7 @@
 """GithubProvider backed by the GitHub REST events API, the search API
 (near real time, for recent PR activity) and GraphQL (PR titles/states).
 
-Authentication: a token from GITHUB_TOKEN / GH_TOKEN (a Secret on k3s) or,
+Authentication: a token from GITHUB_TOKEN / GH_TOKEN or,
 locally, the user's `gh auth token`. Classic PAT scopes needed:
 `repo` (private repos) and `read:org`.
 

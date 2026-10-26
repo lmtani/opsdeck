@@ -7,9 +7,9 @@ chosen here:
 
 - storage: MySQL (default), JSON files with DASHBOARD_STORAGE=json.
 - logs: gcloud CLI by default, Cloud Logging API client with
-  DASHBOARD_LOG_PROVIDER=api (containers, e.g. k3s).
+  DASHBOARD_LOG_PROVIDER=api (containers).
 - commands: real subprocess by default, disabled with DASHBOARD_COMMANDS=off.
-- github: REST/GraphQL API with GITHUB_TOKEN (k3s Secret) or, locally, the
+- github: REST/GraphQL API with GITHUB_TOKEN or, locally, the
   token of the `gh` CLI login.
 """
 

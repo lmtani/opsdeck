@@ -20,7 +20,7 @@ class Settings:
     # command cards launch programs on the host: meaningless, and unsafe to
     # expose, inside a container, where this is turned off
     commands_enabled: bool = True
-    # GitHub API token (a Secret on k3s); empty = use the local `gh` login
+    # GitHub API token; empty = use the local `gh` login
     github_token: str = ""
 
     @classmethod
