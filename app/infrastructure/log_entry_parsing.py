@@ -63,7 +63,7 @@ def summarize(payload: dict | str | None, http_request: dict | None = None) -> s
     request line (method, path, status, latency) for request logs, else the
     serialized payload."""
     if payload is None:
-        return request_line(http_request) or "(sem payload)"
+        return request_line(http_request) or "(no payload)"
     if isinstance(payload, str):
         text = payload.strip()
     else:
@@ -87,7 +87,7 @@ def summarize(payload: dict | str | None, http_request: dict | None = None) -> s
             text = request_line(http_request)
         if not text:
             text = json.dumps(payload, ensure_ascii=False)
-    first_line = text.splitlines()[0] if text else "(vazio)"
+    first_line = text.splitlines()[0] if text else "(empty)"
     if len(first_line) > _MAX_SUMMARY_LENGTH:
         first_line = first_line[: _MAX_SUMMARY_LENGTH - 1] + "…"
     return first_line

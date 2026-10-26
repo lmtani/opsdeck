@@ -32,7 +32,7 @@ def test_consecutive_pushes_collapse_per_repo_actor_and_branch():
     assert [e.id for e in result] == ["3", "9", "5", "0", "7"]
     folded = result[0]
     assert folded.count == 3
-    assert folded.summary == "fez 3 pushes em main"
+    assert folded.summary == "pushed 3 times to main"
     assert folded.details.heads == ("h3", "h2", "h1")
     assert folded.url == "https://github.com/acme/core/compare/b0...h3"
 
@@ -48,7 +48,7 @@ def test_code_review_comment_bursts_collapse_per_pr():
     assert [e.id for e in result] == ["3", "0", "9"]
     burst = result[0]
     assert burst.count == 3
-    assert burst.summary == "fez 3 comentários no código do PR #13"
+    assert burst.summary == "left 3 review comments on PR #13"
     assert [c.path for c in burst.details.comments] == ["f3.py", "f2.py", "f1.py"]
     assert burst.url == "https://x/3"
 

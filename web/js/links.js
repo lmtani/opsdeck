@@ -19,9 +19,9 @@ const COVER_PRESETS = [
   { id: "amber", label: "staging", colors: ["#7c4a03", "#f5a623"] },
   { id: "emerald", label: "dev", colors: ["#14532d", "#34d399"] },
   { id: "azure", label: "infra", colors: ["#1e3a8a", "#38bdf8"] },
-  { id: "violet", label: "dados", colors: ["#4c1d95", "#a78bfa"] },
+  { id: "violet", label: "data", colors: ["#4c1d95", "#a78bfa"] },
   { id: "teal", label: "api", colors: ["#134e4a", "#2dd4bf"] },
-  { id: "rose", label: "alertas", colors: ["#831843", "#fb7185"] },
+  { id: "rose", label: "alerts", colors: ["#831843", "#fb7185"] },
   { id: "slate", label: "util", colors: ["#1f2937", "#94a3b8"] },
 ];
 const COVER_BY_ID = Object.fromEntries(COVER_PRESETS.map((p) => [p.id, p]));
@@ -72,7 +72,7 @@ function render() {
   document.getElementById("links-count").textContent =
     links.length === 0
       ? ""
-      : `${items.length} de ${links.length} atalho${links.length === 1 ? "" : "s"}`;
+      : `${items.length} of ${links.length} shortcut${links.length === 1 ? "" : "s"}`;
 
   items.forEach((link, index) => {
     const isCommand = link.kind === "command";
@@ -108,14 +108,14 @@ function render() {
             link.category
               ? `<span class="card-tag">${escapeHtml(link.category)}</span>`
               : isCommand
-                ? `<span class="card-tag">comando</span>`
+                ? `<span class="card-tag">command</span>`
                 : ""
           }
         </div>
       </div>
       <div class="card-actions">
-        <button class="card-action" data-edit title="Editar">✎</button>
-        <button class="card-action danger" data-delete title="Remover">✕</button>
+        <button class="card-action" data-edit title="Edit">✎</button>
+        <button class="card-action danger" data-delete title="Remove">✕</button>
       </div>`;
 
     const image = card.querySelector(".card-media img");
@@ -133,9 +133,9 @@ function render() {
     card.querySelector("[data-delete]").addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      confirmDanger(`Remover o atalho “${link.title}”?`, async () => {
+      confirmDanger(`Remove the shortcut “${link.title}”?`, async () => {
         await api.deleteLink(link.id);
-        toast("Atalho removido", "success");
+        toast("Shortcut removed", "success");
         await load();
       });
     });
@@ -145,16 +145,16 @@ function render() {
         if (event.target.closest(".card-action")) return;
         event.preventDefault();
         confirmDanger(
-          `Rodar o comando de “${link.title}”?`,
+          `Run the command of “${link.title}”?`,
           async () => {
             try {
               const { message } = await api.runLink(link.id);
-              toast(message || "Comando disparado", "success");
+              toast(message || "Command started", "success");
             } catch (error) {
               toast(error.message, "error");
             }
           },
-          { title: "Executar comando?", confirmLabel: "Executar", danger: false },
+          { title: "Run command?", confirmLabel: "Run", danger: false },
         );
       });
     }
@@ -173,7 +173,7 @@ function renderChips() {
 
   const all = document.createElement("button");
   all.className = `chip${activeCategory === "" ? " is-active" : ""}`;
-  all.textContent = "todos";
+  all.textContent = "all";
   all.addEventListener("click", () => {
     activeCategory = "";
     render();
@@ -216,7 +216,7 @@ function renderCoverSwatches() {
     const swatch = document.createElement("button");
     swatch.type = "button";
     swatch.className = `cover-swatch${selectedAccent === preset.id ? " is-selected" : ""}`;
-    swatch.title = `Capa ${preset.label}`;
+    swatch.title = `Cover ${preset.label}`;
     swatch.innerHTML =
       `<span class="cover-swatch-color" style="${coverStyle(preset.id)}"></span>` +
       `<span class="cover-swatch-name">${preset.label}</span>`;
@@ -251,7 +251,7 @@ function openLinkModal(link = null) {
   selectedAccent = link ? link.accent || "" : "";
   const form = document.getElementById("link-form");
   form.reset();
-  document.getElementById("link-modal-title").textContent = link ? "Editar link" : "Novo link";
+  document.getElementById("link-modal-title").textContent = link ? "Edit link" : "New link";
   if (link) {
     form.title.value = link.title;
     form.url.value = link.url;
@@ -284,10 +284,10 @@ async function submitLink(event) {
   try {
     if (editingId) {
       await api.updateLink(editingId, payload);
-      toast("Atalho atualizado", "success");
+      toast("Shortcut updated", "success");
     } else {
       await api.createLink(payload);
-      toast("Atalho criado", "success");
+      toast("Shortcut created", "success");
     }
     closeModal("link-modal");
     await load();
@@ -311,7 +311,7 @@ async function persistOrder(ids) {
   try {
     await api.reorderLinks(ids);
   } catch (error) {
-    toast(`Falha ao salvar a ordem: ${error.message}`, "error");
+    toast(`Could not save the order: ${error.message}`, "error");
     await load();
   }
 }
@@ -361,7 +361,7 @@ export async function initLinks() {
       selectedAccent = "";
       renderCoverSwatches();
       updatePreview();
-      toast("Imagem enviada", "success");
+      toast("Image uploaded", "success");
     } catch (error) {
       toast(error.message, "error");
     } finally {

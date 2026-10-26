@@ -34,7 +34,7 @@ def _copy_missing(pairs) -> None:
             if item.id not in existing:
                 target.save(item)
                 imported += 1
-        print(f"  {label}: {imported} importado(s)")
+        print(f"  {label}: {imported} imported")
 
 
 def import_json_data(factory: MySqlConnectionFactory) -> None:
@@ -42,7 +42,7 @@ def import_json_data(factory: MySqlConnectionFactory) -> None:
         [
             ("links", JsonLinkRepository(DATA_DIR / "links.json"), MySqlLinkRepository(factory)),
             (
-                "filtros",
+                "filters",
                 JsonLogFilterRepository(DATA_DIR / "filters.json"),
                 MySqlLogFilterRepository(factory),
             ),
@@ -51,7 +51,7 @@ def import_json_data(factory: MySqlConnectionFactory) -> None:
     json_settings = JsonSettingsRepository(DATA_DIR / "settings.json").load()
     if asdict(json_settings) != asdict(AppSettings()):
         MySqlSettingsRepository(factory).save(json_settings)
-        print(f"  settings: tema '{json_settings.theme}' importado")
+        print(f"  settings: theme '{json_settings.theme}' imported")
 
 
 def main() -> None:
@@ -59,7 +59,7 @@ def main() -> None:
     parser.add_argument(
         "--import-json",
         action="store_true",
-        help="também importa dados legados de data/*.json",
+        help="also import legacy records from data/*.json",
     )
     arguments = parser.parse_args()
 
@@ -67,14 +67,14 @@ def main() -> None:
     applied = run_migrations(factory)
 
     if applied:
-        print("Migrations aplicadas:")
+        print("Applied migrations:")
         for name in applied:
             print(f"  {name}")
     else:
-        print("Nenhuma migration pendente.")
+        print("No pending migrations.")
 
     if arguments.import_json:
-        print("Importando dados de data/*.json:")
+        print("Importing data/*.json:")
         import_json_data(factory)
 
 

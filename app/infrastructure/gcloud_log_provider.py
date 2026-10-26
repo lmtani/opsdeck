@@ -31,7 +31,7 @@ class GcloudLogProvider(LogProvider):
     def query(self, query: LogQuery) -> list[LogEntry]:
         if not self.is_available():
             raise LogProviderError(
-                "gcloud não encontrado no PATH. Instale o Google Cloud SDK."
+                "gcloud not found in PATH. Install the Google Cloud SDK."
             )
         args = build_gcloud_args(query, self._binary) + ["--format=json"]
         try:
@@ -40,14 +40,14 @@ class GcloudLogProvider(LogProvider):
             )
         except subprocess.TimeoutExpired:
             raise LogProviderError(
-                f"gcloud excedeu o tempo limite de {self._timeout}s"
+                f"gcloud timed out after {self._timeout}s"
             ) from None
         if result.returncode != 0:
-            raise LogProviderError(_tail(result.stderr) or "gcloud falhou sem mensagem")
+            raise LogProviderError(_tail(result.stderr) or "gcloud failed without a message")
         try:
             raw_entries = json.loads(result.stdout or "[]")
         except json.JSONDecodeError as error:
-            raise LogProviderError(f"Resposta inválida do gcloud: {error}") from None
+            raise LogProviderError(f"Invalid gcloud output: {error}") from None
         return [self._parse_entry(item) for item in raw_entries]
 
     # kept as a method for backwards compatibility (tests exercise it here)

@@ -1,4 +1,7 @@
-// Shared UI helpers: modals, toasts, confirm dialog, escaping.
+// Shared UI helpers: modals, toasts, confirm dialog, escaping, locale.
+
+// Locale for dates and times; 24-hour clock everywhere (hourCycle h23).
+export const LOCALE = "en-US";
 
 export function escapeHtml(value) {
   return String(value ?? "")
@@ -51,10 +54,10 @@ export function toast(message, type = "info") {
 
 let confirmHandler = null;
 
-// Shared confirm dialog. Defaults to a destructive "Remover" action; pass
+// Shared confirm dialog. Defaults to a destructive "Remove" action; pass
 // options to relabel it (e.g. running a command instead of deleting).
 export function confirmDanger(text, onConfirm, options = {}) {
-  const { title = "Remover?", confirmLabel = "Remover", danger = true } = options;
+  const { title = "Remove?", confirmLabel = "Remove", danger = true } = options;
   document.querySelector("#confirm-modal .modal-title").textContent = title;
   document.getElementById("confirm-text").textContent = text;
   const yes = document.getElementById("confirm-yes");

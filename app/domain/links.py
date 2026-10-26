@@ -19,7 +19,7 @@ def _kind(value) -> LinkKind:
     try:
         return LinkKind(value)
     except ValueError:
-        raise ValidationError("Tipo de atalho inválido") from None
+        raise ValidationError("Invalid card type") from None
 
 
 def _clean(text: str | None) -> str:
@@ -64,11 +64,11 @@ class Link:
     def __post_init__(self):
         self.kind = _kind(self.kind)
         if not self.title.strip():
-            raise ValidationError("Título é obrigatório")
+            raise ValidationError("Title is required")
         if self.kind is LinkKind.URL and not self.url.strip():
-            raise ValidationError("URL é obrigatória")
+            raise ValidationError("URL is required")
         if self.kind is LinkKind.COMMAND and not self.command.strip():
-            raise ValidationError("Comando é obrigatório")
+            raise ValidationError("Command is required")
 
     @classmethod
     def new(

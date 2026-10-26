@@ -9,21 +9,21 @@
 
 import { api } from "./api.js";
 import { makeSortable } from "./dnd.js";
-import { closeModal, confirmDanger, escapeHtml, openModal, toast } from "./ui.js";
+import { LOCALE, closeModal, confirmDanger, escapeHtml, openModal, toast } from "./ui.js";
 
 const KIND_LABELS = {
   push: "push",
   pr: "PR",
   review: "review",
-  comment: "comentário",
+  comment: "comment",
   issue: "issue",
   branch: "branch/tag",
   release: "release",
-  other: "outros",
+  other: "other",
 };
 const KIND_ORDER = Object.keys(KIND_LABELS);
-const STATE_LABELS = { open: "aberto", draft: "rascunho", merged: "merged", closed: "fechado" };
-const FIELD_LABELS = { repo: "repo", kind: "tipo", actor: "autor" };
+const STATE_LABELS = { open: "open", draft: "draft", merged: "merged", closed: "closed" };
+const FIELD_LABELS = { repo: "repo", kind: "kind", actor: "author" };
 const AUTO_REFRESH_MS = 60_000;
 const UNSEEN_REFRESH_MS = 5 * 60_000;
 const AUTO_KEY = "opsdeck.github.auto";
@@ -113,7 +113,7 @@ function updateTabBadge() {
   const total = feeds.reduce((sum, feed) => sum + (unseen[feed.id] || 0), 0);
   badge.hidden = total === 0;
   badge.textContent = total > 99 ? "99+" : String(total);
-  badge.title = plural(total, "evento novo", "eventos novos");
+  badge.title = plural(total, "new event", "new events");
 }
 
 function renderFeedList() {
@@ -123,10 +123,10 @@ function renderFeedList() {
 
   feeds.forEach((feed, index) => {
     const count = unseen[feed.id] || 0;
-    const scope = feed.repos.length ? plural(feed.repos.length, "repo") : "org inteira";
+    const scope = feed.repos.length ? plural(feed.repos.length, "repo") : "whole org";
     const kinds = feed.event_kinds.length
       ? feed.event_kinds.map((kind) => KIND_LABELS[kind] || kind).join(", ")
-      : "todos os eventos";
+      : "all events";
 
     const item = document.createElement("div");
     item.className = `filter-item${view.feed?.id === feed.id ? " is-active" : ""}`;
@@ -138,7 +138,7 @@ function renderFeedList() {
     item.innerHTML = `
       <span class="filter-name">${escapeHtml(feed.name)}${
         count
-          ? ` <span class="gh-unseen" title="${plural(count, "evento novo", "eventos novos")}">${
+          ? ` <span class="gh-unseen" title="${plural(count, "new event", "new events")}">${
               count > 99 ? "99+" : count
             }</span>`
           : ""
@@ -149,8 +149,8 @@ function renderFeedList() {
       </span>
       <span class="filter-meta gh-feed-kinds">${escapeHtml(kinds)}</span>
       <span class="filter-edit">
-        <button class="card-action" data-edit title="Editar">✎</button>
-        <button class="card-action danger" data-delete title="Remover">✕</button>
+        <button class="card-action" data-edit title="Edit">✎</button>
+        <button class="card-action danger" data-delete title="Remove">✕</button>
       </span>`;
 
     const open = () => openFeed(feed);
@@ -167,7 +167,7 @@ function renderFeedList() {
     });
     item.querySelector("[data-delete]").addEventListener("click", (event) => {
       event.stopPropagation();
-      confirmDanger(`Remover o feed “${feed.name}”?`, () => deleteFeed(feed));
+      confirmDanger(`Remove the feed “${feed.name}”?`, () => deleteFeed(feed));
     });
     container.appendChild(item);
   });
@@ -178,7 +178,7 @@ async function deleteFeed(feed) {
   try {
     await api.deleteGithubFeed(feed.id);
   } catch (error) {
-    toast(`Falha ao remover: ${error.message}`, "error");
+    toast(`Could not remove: ${error.message}`, "error");
     return;
   }
   feeds = feeds.filter((item) => item.id !== feed.id);
@@ -189,7 +189,7 @@ async function deleteFeed(feed) {
     document.getElementById("gh-idle").hidden = false;
   }
   renderFeedList();
-  toast("Feed removido", "success");
+  toast("Feed removed", "success");
 }
 
 async function persistOrder(ids) {
@@ -198,7 +198,7 @@ async function persistOrder(ids) {
   try {
     await api.reorderGithubFeeds(ids);
   } catch (error) {
-    toast(`Falha ao salvar a ordem: ${error.message}`, "error");
+    toast(`Could not save the order: ${error.message}`, "error");
   }
 }
 
@@ -257,7 +257,7 @@ function openFeed(feed) {
   document.getElementById("gh-results").hidden = false;
   document.getElementById("gh-title").textContent = feed.name;
   document.getElementById("gh-open-btn").href = feedWebUrl(feed);
-  document.getElementById("gh-meta").textContent = `${feed.org} · consultando…`;
+  document.getElementById("gh-meta").textContent = `${feed.org} · querying…`;
   document.getElementById("gh-kinds").innerHTML = "";
   document.getElementById("gh-refine").hidden = true;
   document.getElementById("gh-warnings").hidden = true;
@@ -282,11 +282,11 @@ async function loadActivity({ initial = false } = {}) {
     if (seq !== requestSeq || view.feed?.id !== feed.id) return;
     if (initial || !view.activity) {
       view.activity = null;
-      document.getElementById("gh-meta").textContent = `${feed.org} · falhou`;
+      document.getElementById("gh-meta").textContent = `${feed.org} · failed`;
       document.getElementById("gh-timeline").innerHTML =
-        `<div class="error-box"><strong>Consulta ao GitHub falhou</strong>${escapeHtml(error.message)}</div>`;
+        `<div class="error-box"><strong>GitHub query failed</strong>${escapeHtml(error.message)}</div>`;
     } else {
-      toast(`Falha ao atualizar o feed: ${error.message}`, "error");
+      toast(`Could not refresh the feed: ${error.message}`, "error");
     }
   } finally {
     if (seq === requestSeq) refreshBtn.classList.remove("is-busy");
@@ -309,15 +309,15 @@ function renderMeta() {
   const fresh = activity.unseen;
   const parts = [
     feed.org,
-    feed.repos.length ? plural(feed.repos.length, "repo") : "org inteira",
-    view.refinements.length ? `${shown} de ${plural(total, "evento")}` : plural(total, "evento"),
+    feed.repos.length ? plural(feed.repos.length, "repo") : "whole org",
+    view.refinements.length ? `${shown} of ${plural(total, "event")}` : plural(total, "event"),
   ];
-  if (fresh) parts.push(plural(fresh, "novo"));
+  if (fresh) parts.push(`${fresh} new`);
   if (activity.fetched_at) {
-    parts.push(`atualizado ${new Date(activity.fetched_at).toLocaleTimeString("pt-BR")}`);
+    parts.push(`updated ${new Date(activity.fetched_at).toLocaleTimeString(LOCALE, { hourCycle: "h23" })}`);
   }
   if (activity.rate_remaining != null) {
-    parts.push(`cota ${activity.rate_remaining}/${activity.rate_limit}`);
+    parts.push(`quota ${activity.rate_remaining}/${activity.rate_limit}`);
   }
   document.getElementById("gh-meta").textContent = parts.join(" · ");
 }
@@ -333,7 +333,7 @@ function renderKinds() {
     .map(
       (kind) => `
         <button class="gh-kind-chip kind-${kind}${active.has(kind) ? " is-active" : ""}"
-          data-kind="${kind}" title="Mostrar só ${escapeHtml(KIND_LABELS[kind])}">
+          data-kind="${kind}" title="Show only ${escapeHtml(KIND_LABELS[kind])}">
           <span>${escapeHtml(KIND_LABELS[kind])}</span><b>${counts[kind] || 0}</b>
         </button>`
     )
@@ -350,7 +350,7 @@ function renderRefineBar() {
   chips.innerHTML = view.refinements
     .map(
       (refinement, index) => `
-        <button class="field-chip" data-index="${index}" title="Remover este refinamento">
+        <button class="field-chip" data-index="${index}" title="Remove this refinement">
           ${escapeHtml(FIELD_LABELS[refinement.field])}: ${escapeHtml(refinementLabel(refinement))} ✕
         </button>`
     )
@@ -386,13 +386,13 @@ function dayLabel(date) {
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
   const sameDay = (a, b) => a.toDateString() === b.toDateString();
-  const formatted = date.toLocaleDateString("pt-BR", {
+  const formatted = date.toLocaleDateString(LOCALE, {
     weekday: "short",
     day: "2-digit",
     month: "short",
   });
-  if (sameDay(date, today)) return ["Hoje", formatted];
-  if (sameDay(date, yesterday)) return ["Ontem", formatted];
+  if (sameDay(date, today)) return ["Today", formatted];
+  if (sameDay(date, yesterday)) return ["Yesterday", formatted];
   return [formatted, ""];
 }
 
@@ -464,10 +464,10 @@ function binTooltip(index, bin, note) {
     )
     .join("");
   return (
-    `<div class="gh-tooltip-main">${binLabel(index)} · ${plural(bin.count, "evento")}</div>` +
+    `<div class="gh-tooltip-main">${binLabel(index)} · ${plural(bin.count, "event")}</div>` +
     (note ? `<div class="gh-tooltip-sub">${escapeHtml(note)}</div>` : "") +
     (people ? `<div class="gh-tip-actors">${people}</div>` : "") +
-    (rest > 0 ? `<div class="gh-tooltip-sub">+ ${plural(rest, "outro contribuidor", "outros contribuidores")}</div>` : "") +
+    (rest > 0 ? `<div class="gh-tooltip-sub">+ ${plural(rest, "other contributor", "other contributors")}</div>` : "") +
     (kinds ? `<div class="gh-tip-kinds">${kinds}</div>` : "")
   );
 }
@@ -491,11 +491,11 @@ function histogramNode(date, bins, peak, coverageStart) {
       if (coverageStart !== null && end <= coverageStart) {
         state = " is-nodata";
         note = bin.count
-          ? "sem dados completos: só chegaram eventos fora de ordem"
-          : "sem dados: o GitHub só devolve os eventos mais recentes";
+          ? "incomplete data: only out-of-order events arrived"
+          : "no data: GitHub only returns the most recent events";
       } else if (start > now) {
         state = " is-future";
-        note = "ainda não chegou";
+        note = "not yet";
       }
       notes[index] = note;
       const height = bin.count && peak ? Math.max(6, Math.round((bin.count / peak) * 100)) : 0;
@@ -513,7 +513,7 @@ function histogramNode(date, bins, peak, coverageStart) {
     <div class="gh-hist-axis">
       <span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>24h</span>
     </div>
-    <div class="gh-hist-total">${plural(total, "evento")}</div>`;
+    <div class="gh-hist-total">${plural(total, "event")}</div>`;
   node.querySelectorAll("[data-bin]").forEach((column) => {
     const index = Number(column.dataset.bin);
     tooltipContent.set(column, () => binTooltip(index, bins[index], notes[index]));
@@ -530,8 +530,8 @@ function renderTimeline(animate) {
   if (events.length === 0) {
     container.innerHTML = `<div class="empty empty-sm"><p>${
       view.refinements.length
-        ? "Nenhum evento com esses refinamentos."
-        : "Nenhuma atividade recente neste feed."
+        ? "No events match these refinements."
+        : "No recent activity in this feed."
     }</p></div>`;
     return;
   }
@@ -548,7 +548,7 @@ function renderTimeline(animate) {
     if (anyNew && !markPlaced && !event.is_new) {
       const mark = document.createElement("div");
       mark.className = "gh-new-mark";
-      mark.textContent = "▲ novos desde a última visita";
+      mark.textContent = "▲ new since your last visit";
       container.appendChild(mark);
       markPlaced = true;
     }
@@ -572,9 +572,9 @@ const isLive = (event) => event.source === "search";
 
 function liveTooltip() {
   return (
-    '<div class="gh-tooltip-main">⚡ tempo real</div>' +
-    '<div class="gh-tooltip-sub">Veio da busca de PRs. A API de eventos do GitHub ainda não publicou ' +
-    "esta ação; quando publicar, o evento dela substitui este.</div>"
+    '<div class="gh-tooltip-main">⚡ real time</div>' +
+    '<div class="gh-tooltip-sub">From the PR search. GitHub\'s events API has not published ' +
+    "this action yet; once it does, its event replaces this one.</div>"
   );
 }
 
@@ -600,18 +600,18 @@ function eventNode(event, index, animate) {
 
   node.innerHTML = `
     <div class="gh-row">
-      <span class="entry-time" title="${escapeHtml(date.toLocaleString("pt-BR"))}">${date.toLocaleTimeString(
-        "pt-BR",
-        { hour: "2-digit", minute: "2-digit" }
+      <span class="entry-time" title="${escapeHtml(date.toLocaleString(LOCALE, { hourCycle: "h23" }))}">${date.toLocaleTimeString(
+        LOCALE,
+        { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }
       )}</span>
       ${avatar}
-      <button class="gh-kind kind-${escapeHtml(event.kind)}" data-refine="kind" title="Refinar por tipo">${escapeHtml(
+      <button class="gh-kind kind-${escapeHtml(event.kind)}" data-refine="kind" title="Refine by kind">${escapeHtml(
         KIND_LABELS[event.kind] || event.kind
       )}</button>
       <span class="gh-text" data-tip="${escapeHtml(`${event.actor} ${event.summary}`)}" data-tip-sub="${escapeHtml(
         event.title
       )}">
-        <button class="gh-actor${isYou ? " is-you" : ""}" data-refine="actor" title="Refinar por autor">${escapeHtml(
+        <button class="gh-actor${isYou ? " is-you" : ""}" data-refine="actor" title="Refine by author">${escapeHtml(
           event.actor
         )}</button>
         <span class="gh-summary">${escapeHtml(event.summary)}</span>
@@ -619,10 +619,10 @@ function eventNode(event, index, animate) {
       </span>
       ${state}
       ${isLive(event) ? '<span class="gh-live" data-live>⚡</span>' : ""}
-      <button class="gh-repo" data-refine="repo" data-tip="${escapeHtml(event.repo)}" data-tip-sub="clique para refinar por repositório">${escapeHtml(
+      <button class="gh-repo" data-refine="repo" data-tip="${escapeHtml(event.repo)}" data-tip-sub="click to refine by repository">${escapeHtml(
         shortRepo(event.repo)
       )}</button>
-      <a class="gh-link" href="${escapeHtml(safeUrl(event.url))}" target="_blank" rel="noopener" title="Abrir no GitHub">↗</a>
+      <a class="gh-link" href="${escapeHtml(safeUrl(event.url))}" target="_blank" rel="noopener" title="Open on GitHub">↗</a>
     </div>`;
 
   node.querySelectorAll("[data-refine]").forEach((button) => {
@@ -674,15 +674,15 @@ function detailNode(event) {
     row("ref", escapeHtml(event.ref));
   }
   if (details.path && !details.comments) {
-    row("arquivo", escapeHtml(details.line ? `${details.path}:${details.line}` : details.path));
+    row("file", escapeHtml(details.line ? `${details.path}:${details.line}` : details.path));
   }
-  if (event.number) row("número", link(event.url, `#${event.number}`));
+  if (event.number) row("number", link(event.url, `#${event.number}`));
   row("repo", link(repoUrl, event.repo));
-  if (isLive(event)) row("origem", "busca de PRs, em tempo real · a API de eventos ainda não publicou");
+  if (isLive(event)) row("source", "PR search, real time · not yet published by the events API");
   row(
-    "evento",
+    "event",
     `${escapeHtml(event.type)}${event.action ? ` · ${escapeHtml(event.action)}` : ""} · ${escapeHtml(
-      new Date(event.created_at).toLocaleString("pt-BR")
+      new Date(event.created_at).toLocaleString(LOCALE, { hourCycle: "h23" })
     )}`
   );
 
@@ -691,7 +691,7 @@ function detailNode(event) {
     .map(
       (comment) => `
         <div class="gh-comment">
-          ${link(comment.url, comment.path || "comentário")}
+          ${link(comment.url, comment.path || "comment")}
           ${comment.body ? `<div class="gh-body">${escapeHtml(comment.body)}</div>` : ""}
         </div>`
     )
@@ -841,7 +841,7 @@ function renderRepoTags() {
   container.innerHTML = modalRepos
     .map(
       (repo, index) =>
-        `<button type="button" class="field-chip" data-index="${index}" title="Remover">${escapeHtml(repo)} ✕</button>`
+        `<button type="button" class="field-chip" data-index="${index}" title="Remove">${escapeHtml(repo)} ✕</button>`
     )
     .join("");
   container.querySelectorAll("[data-index]").forEach((chip) => {
@@ -871,7 +871,7 @@ async function renderRepoSuggestions() {
     .slice(0, SUGGESTED_REPOS);
   if (suggestions.length === 0) return;
   container.innerHTML =
-    '<span class="format-fields-label">push recente</span>' +
+    '<span class="format-fields-label">recent pushes</span>' +
     suggestions
       .map(
         (repo) =>
@@ -897,7 +897,7 @@ async function loadRepoOptions() {
   }
   const key = org.toLowerCase();
   if (!repoCache.has(key)) repoCache.set(key, api.githubOrgRepos(org));
-  hint.textContent = "carregando repositórios…";
+  hint.textContent = "loading repositories…";
   delete hint.dataset.error;
   try {
     const repos = await repoCache.get(key);
@@ -906,14 +906,14 @@ async function loadRepoOptions() {
       .map(
         (repo) =>
           `<option value="${escapeHtml(repo.name)}">${escapeHtml(
-            (repo.archived ? "[arquivado] " : "") + (repo.description || "")
+            (repo.archived ? "[archived] " : "") + (repo.description || "")
           )}</option>`
       )
       .join("");
-    hint.textContent = `${plural(repos.length, "repositório")} em ${org}, do push mais recente para o mais antigo.`;
+    hint.textContent = `${plural(repos.length, "repository", "repositories")} in ${org}, most recently pushed first.`;
   } catch (error) {
     repoCache.delete(key);
-    hint.textContent = `Não consegui listar os repositórios: ${error.message}`;
+    hint.textContent = `Could not list the repositories: ${error.message}`;
   }
   renderRepoSuggestions();
 }
@@ -942,7 +942,7 @@ function openFeedModal(feed = null, preset = null) {
   const source = feed || preset || {};
   const form = document.getElementById("gh-feed-form");
   form.reset();
-  document.getElementById("gh-feed-modal-title").textContent = feed ? "Editar feed" : "Novo feed";
+  document.getElementById("gh-feed-modal-title").textContent = feed ? "Edit feed" : "New feed";
   form.name.value = source.name || "";
   form.org.value = source.org || (feeds.length ? feeds[feeds.length - 1].org : "");
   form.hide_bots.checked = source.hide_bots ?? true;
@@ -982,14 +982,14 @@ async function submitFeed(event) {
       feeds = feeds.map((item) => (item.id === updated.id ? updated : item));
       closeModal("gh-feed-modal");
       renderFeedList();
-      toast("Feed atualizado", "success");
+      toast("Feed updated", "success");
       if (view.feed?.id === updated.id) openFeed(updated); // same feed: the mark is untouched
     } else {
       const created = await api.createGithubFeed(payload);
       feeds.push(created);
       closeModal("gh-feed-modal");
       renderFeedList();
-      toast("Feed criado", "success");
+      toast("Feed created", "success");
       openFeed(created);
     }
   } catch (error) {
@@ -1016,7 +1016,7 @@ function saveRefinementsAsFeed() {
     event_kinds: kinds.length ? kinds : feed.event_kinds,
     description: "",
   });
-  if (pick("actor").length) toast("O refinamento por autor não vai para o feed", "info");
+  if (pick("actor").length) toast("The author refinement is not saved in the feed", "info");
 }
 
 // ----- lifecycle -------------------------------------------------------
@@ -1092,7 +1092,7 @@ export async function initGithub() {
   document.getElementById("gh-auto-btn").addEventListener("click", () => {
     storageSet(AUTO_KEY, autoOn() ? "0" : "1");
     scheduleAuto();
-    toast(autoOn() ? "Atualização automática a cada 60 s" : "Atualização automática desligada");
+    toast(autoOn() ? "Auto refresh every 60 s" : "Auto refresh off");
   });
   document.getElementById("gh-refine-clear-btn").addEventListener("click", () => {
     view.refinements = [];

@@ -71,7 +71,7 @@ def test_parse_json_payload_prefers_message_key():
 
 def test_parse_entry_without_payload():
     entry = GcloudLogProvider._parse_entry({"severity": "INFO"})
-    assert entry.summary == "(sem payload)"
+    assert entry.summary == "(no payload)"
     assert entry.payload is None
 
 

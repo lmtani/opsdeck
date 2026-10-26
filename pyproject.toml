@@ -1,7 +1,7 @@
 [project]
 name = "opsdeck"
 version = "0.1.0"
-description = "Painel pessoal de devops: atalhos, consultas ao Cloud Logging e feeds de atividade do GitHub"
+description = "Personal devops dashboard: link cards, saved Cloud Logging queries and GitHub activity feeds"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

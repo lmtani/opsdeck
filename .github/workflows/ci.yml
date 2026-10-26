@@ -3,10 +3,10 @@ name: CI
 on:
   pull_request:
   push:
-    branches-ignore: [main]
+    branches: [main]
 
 jobs:
-  testes:
+  tests:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,13 +17,13 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
-      - name: Instalar dependências
+      - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Testes
+      - name: Tests
         run: uv run pytest -q
 
-      # Falha cedo e com mensagem clara se o lock estiver defasado em
-      # relação ao pyproject — o build da imagem usa --frozen.
-      - name: Lock em dia
+      # Fail early, with a clear message, when the lock is out of date with
+      # pyproject: the image build uses --frozen.
+      - name: Lock is up to date
         run: uv lock --check

@@ -81,7 +81,7 @@ def test_run_link_executes_command():
 
     message = service.run_link(link.id)
 
-    assert message == "Programa iniciado"
+    assert message == "Program started"
     assert runner.ran == ["bash igv.sh"]
 
 def test_run_link_rejects_url_links():
@@ -120,10 +120,10 @@ def test_save_image_stores_by_extension_and_returns_url():
 @pytest.mark.parametrize(
     "content, filename, message",
     [
-        (b"x", "script.sh", "Formato inválido"),
-        (b"x", "semextensao", "Formato inválido"),
-        (b"", "vazio.png", "Arquivo vazio"),
-        (b"x" * (5 * 1024 * 1024 + 1), "grande.jpg", "muito grande"),
+        (b"x", "script.sh", "Unsupported format"),
+        (b"x", "noextension", "Unsupported format"),
+        (b"", "empty.png", "Empty file"),
+        (b"x" * (5 * 1024 * 1024 + 1), "large.jpg", "too large"),
     ],
 )
 def test_save_image_rejects_bad_uploads(content, filename, message):

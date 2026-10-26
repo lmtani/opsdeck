@@ -84,7 +84,7 @@ def test_links_crud_and_error_mapping(world):
     assert client.post("/api/links", json={"title": "", "url": "https://x"}).status_code == 422
     missing_url = client.post("/api/links", json={"title": "ok"})
     assert missing_url.status_code == 422
-    assert missing_url.json()["detail"] == "URL é obrigatória"
+    assert missing_url.json()["detail"] == "URL is required"
 
     assert [item["id"] for item in client.get("/api/links").json()] == [link["id"]]
     assert client.put("/api/links/ghost", json={"title": "a", "url": "b"}).status_code == 404
@@ -105,14 +105,14 @@ def test_run_command_link(world):
     command = client.post("/api/links", json={"title": "IGV", "kind": "command", "command": "igv.sh"}).json()
     url = client.post("/api/links", json={"title": "Console", "url": "https://x"}).json()
 
-    assert client.post(f"/api/links/{command['id']}/run").json() == {"message": "Programa iniciado"}
+    assert client.post(f"/api/links/{command['id']}/run").json() == {"message": "Program started"}
     assert world.runner.ran == ["igv.sh"]
     assert client.post(f"/api/links/{url['id']}/run").status_code == 422
     assert client.post("/api/links/ghost/run").status_code == 404
 
-    world.runner.error = CommandError("não abriu")
+    world.runner.error = CommandError("did not open")
     failed = client.post(f"/api/links/{command['id']}/run")
-    assert failed.status_code == 502 and failed.json()["detail"] == "não abriu"
+    assert failed.status_code == 502 and failed.json()["detail"] == "did not open"
 
 
 # ----- logs ------------------------------------------------------------------
@@ -203,9 +203,9 @@ def test_github_events_query_and_repos(world):
     assert ad_hoc.json()["unseen"] == 0  # ad hoc: no mark to compare with
     assert client.post("/api/github/events/query", json={"org": "bad org"}).status_code == 422
 
-    world.github.repos[("acme", "core")] = GithubError("Token do GitHub inválido")
+    world.github.repos[("acme", "core")] = GithubError("GitHub token is invalid")
     failed = client.post("/api/github/events/query", json={"org": "acme", "repos": ["core"]})
-    assert failed.status_code == 502 and "Token" in failed.json()["detail"]
+    assert failed.status_code == 502 and "token" in failed.json()["detail"]
 
     preview = client.post("/api/github/feeds/preview", json={
         "org": "acme", "repos": ["core", "acme/api", "https://github.com/acme/web.git", "CORE"],
@@ -215,7 +215,7 @@ def test_github_events_query_and_repos(world):
     assert preview.json() == {"org": "acme", "repos": ["core", "api", "web"],
                               "event_kinds": ["pr", "review"], "hide_own": False, "hide_bots": True}
     bad = client.post("/api/github/feeds/preview", json={"org": "acme", "repos": ["other/x"]})
-    assert bad.status_code == 422 and "não pertence" in bad.json()["detail"]
+    assert bad.status_code == 422 and "does not belong" in bad.json()["detail"]
 
     assert client.get("/api/github/orgs/acme/repos").json() == []
     assert client.get("/api/github/orgs/bad%20org/repos").status_code == 422
@@ -236,4 +236,4 @@ def test_image_upload(world):
     ok = client.post("/api/images", files={"file": ("foto.PNG", b"\x89PNG", "image/png")})
     assert ok.status_code == 201 and ok.json() == {"url": "/images/1.png"}
     bad = client.post("/api/images", files={"file": ("run.sh", b"#!", "text/plain")})
-    assert bad.status_code == 422 and "Formato inválido" in bad.json()["detail"]
+    assert bad.status_code == 422 and "Unsupported format" in bad.json()["detail"]

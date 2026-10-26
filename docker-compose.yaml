@@ -1,0 +1,48 @@
+# OpsDeck with its own MySQL. Configuration comes from a `.env` file next to
+# this one (see `.env.example`); every variable has a working default.
+#
+#   docker compose up -d --build    # http://127.0.0.1:8765
+#
+# Command cards are off: they would launch programs inside the container.
+
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-opsdeck}
+      MYSQL_DATABASE: opsdeck
+    volumes:
+      - db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-opsdeck}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${OPSDECK_PORT:-8765}:8080"
+    environment:
+      DASHBOARD_DB_HOST: db
+      DASHBOARD_DB_PORT: "3306"
+      DASHBOARD_DB_USER: root
+      DASHBOARD_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-opsdeck}
+      DASHBOARD_DB_NAME: opsdeck
+      DASHBOARD_COMMANDS: "off"
+      DASHBOARD_LOG_PROVIDER: api
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp-adc.json
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    volumes:
+      - images:/app/data/images
+      # Optional: Google Cloud credentials for the Logs tab (see README)
+      - ./secrets:/secrets:ro
+    restart: unless-stopped
+
+volumes:
+  db:
+  images:
