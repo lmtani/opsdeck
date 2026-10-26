@@ -20,6 +20,7 @@ from app.infrastructure.rows import (
     row_to_feed,
     row_to_filter,
     row_to_link,
+    values_to_settings,
 )
 
 
@@ -125,7 +126,7 @@ class JsonSettingsRepository(SettingsRepository):
         self._store = JsonStore(path)
 
     def load(self) -> AppSettings:
-        return AppSettings(**_known_fields(AppSettings, self._store.read({})))
+        return values_to_settings(self._store.read({}))
 
     def save(self, settings: AppSettings) -> None:
         self._store.write(asdict(settings))

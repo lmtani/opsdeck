@@ -3,15 +3,17 @@
 Rows hold only plain values (str, int, bool, list of str): enums become
 their values and datetimes ISO-8601 UTC text on the way out, and both are
 rebuilt on the way in. The feed's lists stay lists here; the MySQL
-repository joins them with commas itself.
+repository joins them with commas itself. Settings are name/value pairs,
+text in MySQL, so their booleans are read back from either form.
 """
 
-from dataclasses import asdict
+from dataclasses import asdict, fields
 
 from app.domain.common import EPOCH, format_timestamp, parse_timestamp
 from app.domain.github import EventKind, GithubFeed
 from app.domain.links import Link, LinkKind
 from app.domain.logs import Freshness, LogFilter
+from app.domain.settings import AppSettings
 
 
 def _text(value) -> str:
@@ -71,3 +73,17 @@ def row_to_feed(row: dict) -> GithubFeed:
     values["last_seen_at"] = parse_timestamp(values.get("last_seen_at"))
     values["created_at"] = _created_at(row)
     return GithubFeed(**values)
+
+
+def values_to_settings(values: dict) -> AppSettings:
+    """Unknown names are ignored (a preference that no longer exists) and
+    missing ones keep their default."""
+    known = {}
+    for field in fields(AppSettings):
+        if field.name not in values:
+            continue
+        value = values[field.name]
+        if isinstance(field.default, bool):
+            value = str(value).strip().lower() in ("1", "true")
+        known[field.name] = value
+    return AppSettings(**known)

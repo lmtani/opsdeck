@@ -222,8 +222,8 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
         return schemas.SettingsModel.model_validate(services.settings.get_settings())
 
     @app.put("/api/settings", response_model=schemas.SettingsModel)
-    def update_settings(body: schemas.SettingsModel):
-        settings = services.settings.update_settings(theme=body.theme)
+    def update_settings(body: schemas.SettingsUpdate):
+        settings = services.settings.update_settings(theme=body.theme, github_polling=body.github_polling)
         return schemas.SettingsModel.model_validate(settings)
 
     @app.post("/api/images", response_model=schemas.ImageOut, status_code=201)
