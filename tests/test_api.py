@@ -237,3 +237,11 @@ def test_image_upload(world):
     assert ok.status_code == 201 and ok.json() == {"url": "/images/1.png"}
     bad = client.post("/api/images", files={"file": ("run.sh", b"#!", "text/plain")})
     assert bad.status_code == 422 and "Unsupported format" in bad.json()["detail"]
+
+
+def test_unexpected_errors_return_a_readable_reason(world):
+    world.logs.error = OSError("Project was not passed and could not be determined")
+    saved = world.client.post("/api/filters", json={"name": "a", "project": "p"}).json()
+    response = TestClient(world.client.app, raise_server_exceptions=False).post(f"/api/filters/{saved['id']}/query")
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Unexpected server error (OSError): Project was not passed and could not be determined"

@@ -17,6 +17,9 @@ class Settings:
     # "gcloud" runs the CLI; "api" uses the Cloud Logging client with the ADC
     # file at GOOGLE_APPLICATION_CREDENTIALS (containers have no CLI)
     log_provider: str = "gcloud"
+    # Application Default Credentials file for the "api" log provider; empty
+    # = the well-known gcloud location
+    gcp_credentials_file: str = ""
     # command cards launch programs on the host: meaningless, and unsafe to
     # expose, inside a container, where this is turned off
     commands_enabled: bool = True
@@ -37,6 +40,7 @@ class Settings:
             ),
             storage=env.get("DASHBOARD_STORAGE", "").lower() or "mysql",
             log_provider=env.get("DASHBOARD_LOG_PROVIDER", "").lower() or "gcloud",
+            gcp_credentials_file=env.get("GOOGLE_APPLICATION_CREDENTIALS", ""),
             commands_enabled=env.get("DASHBOARD_COMMANDS", "").lower() not in _OFF,
             github_token=env.get("GITHUB_TOKEN") or env.get("GH_TOKEN") or "",
         )

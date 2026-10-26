@@ -3,6 +3,11 @@
 // Locale for dates and times; 24-hour clock everywhere (hourCycle h23).
 export const LOCALE = "en-US";
 
+// Server messages: escaped, with `code` spans rendered as <code>.
+export function messageHtml(text) {
+  return escapeHtml(text).replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
 export function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")

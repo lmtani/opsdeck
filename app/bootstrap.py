@@ -78,7 +78,7 @@ def _build_log_provider(settings: Settings) -> LogProvider:
         # imported lazily: pulls in grpc, which local gcloud runs don't need
         from app.infrastructure.cloud_logging_provider import CloudLoggingApiProvider
 
-        return CloudLoggingApiProvider()
+        return CloudLoggingApiProvider(credentials_file=settings.gcp_credentials_file)
     return GcloudLogProvider()
 
 

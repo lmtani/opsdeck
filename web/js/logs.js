@@ -4,7 +4,7 @@
 
 import { api } from "./api.js";
 import { makeSortable } from "./dnd.js";
-import { LOCALE, closeModal, confirmDanger, escapeHtml, openModal, toast } from "./ui.js";
+import { LOCALE, closeModal, confirmDanger, escapeHtml, messageHtml, openModal, toast } from "./ui.js";
 
 let filters = [];
 let activeFilterId = null;
@@ -483,7 +483,7 @@ function showSkeleton() {
 
 function showError(error) {
   document.getElementById("entries").innerHTML =
-    `<div class="error-box"><strong>Query failed</strong>${escapeHtml(error.message)}</div>`;
+    `<div class="error-box"><strong>Query failed</strong>${messageHtml(error.message)}</div>`;
 }
 
 // ----- query execution ---------------------------------------------------

@@ -43,7 +43,8 @@ class GcloudLogProvider(LogProvider):
                 f"gcloud timed out after {self._timeout}s"
             ) from None
         if result.returncode != 0:
-            raise LogProviderError(_tail(result.stderr) or "gcloud failed without a message")
+            detail = _tail(result.stderr)
+            raise LogProviderError(f"gcloud failed: {detail}" if detail else "gcloud failed without a message")
         try:
             raw_entries = json.loads(result.stdout or "[]")
         except json.JSONDecodeError as error:

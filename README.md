@@ -36,6 +36,8 @@ cp ~/.config/gcloud/application_default_credentials.json secrets/gcp-adc.json
 chmod 644 secrets/gcp-adc.json
 ```
 
+No project needs to be configured: each saved filter names its own. If the credentials are missing, unreadable, expired or lack access to a project, the top-bar `logs` dot turns red and the Logs tab says what to fix.
+
 ## Run locally
 
 Requirements: Python 3.12, [uv](https://docs.astral.sh/uv/), a MySQL 8 server, and optionally the `gcloud` and `gh` CLIs logged in.

@@ -969,6 +969,7 @@ body {
   word-break: break-word;
   animation: detail-open 220ms var(--ease);
 }
+.error-box code { color: var(--warn); }
 .error-box strong { color: var(--danger); display: block; margin-bottom: 6px; font-family: var(--font-display); }
 
 /* line-format editor */
