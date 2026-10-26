@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="midnight">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpsDeck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>▣</text></svg>" />
+</head>
+<body>
+  <div class="bg bg-grid" aria-hidden="true"></div>
+  <div class="bg bg-glow" aria-hidden="true"></div>
+  <div class="bg bg-noise" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">▣</span>
+      <span class="brand-name">OPS<em>DECK</em></span>
+      <span class="brand-sub">console pessoal</span>
+    </div>
+
+    <nav class="tabs" id="tabs">
+      <span class="tab-indicator" id="tab-indicator"></span>
+      <button class="tab is-active" data-view="links">Links</button>
+      <button class="tab" data-view="logs">Logs GCP</button>
+      <button class="tab" data-view="github">GitHub<span class="tab-badge" id="gh-tab-badge" hidden></span></button>
+    </nav>
+
+    <div class="topbar-right">
+      <div class="provider-status" id="logs-status" title="Provedor de logs">
+        <span class="status-dot"></span>
+        <span class="status-label">logs</span>
+      </div>
+      <div class="provider-status" id="github-status" title="Token do GitHub">
+        <span class="status-dot"></span>
+        <span class="status-label">github</span>
+      </div>
+      <div class="clock">
+        <span class="clock-time" id="clock-time">--:--:--</span>
+        <span class="clock-date" id="clock-date"></span>
+      </div>
+      <div class="theme-picker">
+        <button class="icon-btn" id="theme-btn" title="Tema" aria-label="Escolher tema">◐</button>
+        <div class="theme-pop" id="theme-pop" hidden></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="content">
+    <!-- ======================= LINKS ======================= -->
+    <section class="view" id="view-links">
+      <div class="view-head">
+        <div>
+          <h1 class="view-title">Atalhos</h1>
+          <p class="view-sub" id="links-count"></p>
+        </div>
+        <div class="view-actions">
+          <div class="search">
+            <span class="search-icon">⌕</span>
+            <input type="search" id="link-search" placeholder="Buscar atalho…" autocomplete="off" />
+          </div>
+          <button class="btn btn-primary" id="link-new-btn">+ Novo link</button>
+        </div>
+      </div>
+
+      <div class="chips" id="category-chips"></div>
+      <div class="card-grid" id="link-grid"></div>
+
+      <div class="empty" id="links-empty" hidden>
+        <div class="empty-mark">▦</div>
+        <h2>Nenhum atalho ainda</h2>
+        <p>Cadastre links dos projetos GCP, dashboards e ferramentas que você usa todo dia.</p>
+        <button class="btn btn-primary" id="link-empty-btn">Criar o primeiro</button>
+      </div>
+    </section>
+
+    <!-- ======================= LOGS ======================= -->
+    <section class="view" id="view-logs" hidden>
+      <div class="logs-layout">
+        <aside class="filters-panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Filtros salvos</h2>
+            <button class="btn btn-ghost btn-sm" id="filter-new-btn">+ Novo</button>
+          </div>
+          <div class="filter-list" id="filter-list"></div>
+          <div class="empty empty-sm" id="filters-empty" hidden>
+            <p>Salve consultas do Cloud Logging para rodar com um clique.</p>
+            <button class="btn btn-primary btn-sm" id="filter-empty-btn">Criar filtro</button>
+          </div>
+        </aside>
+
+        <div class="results-panel">
+          <div class="results-idle" id="results-idle">
+            <div class="empty-mark">⌁</div>
+            <p>Selecione um filtro ao lado para consultar os logs.</p>
+          </div>
+
+          <div class="results" id="results" hidden>
+            <div class="results-head">
+              <div class="results-heading">
+                <button class="btn btn-ghost btn-sm results-back" id="results-back-btn" hidden>← voltar</button>
+                <h2 class="results-title" id="results-title"></h2>
+                <p class="results-meta" id="results-meta"></p>
+              </div>
+              <div class="results-actions">
+                <button class="btn btn-ghost btn-sm" id="trace-projects-btn" hidden>⊕ outros projetos</button>
+                <button class="btn btn-ghost btn-sm" id="format-toggle" title="Formatar a linha com valores do payload">⌗ formato</button>
+                <button class="btn btn-ghost btn-sm" id="open-gcp-btn" title="Abrir esta consulta no Logs Explorer do console GCP">↗ abrir no GCP</button>
+                <button class="btn btn-primary btn-sm" id="rerun-btn">↻ Atualizar</button>
+              </div>
+            </div>
+
+            <div class="refine-bar" id="refine-bar" hidden>
+              <span class="format-fields-label">refinado por</span>
+              <div class="refine-chips" id="refine-chips"></div>
+              <button class="btn btn-ghost btn-sm" id="refine-clear-btn" title="Voltar à consulta salva">Limpar</button>
+              <button class="btn btn-ghost btn-sm" id="refine-save-btn" title="Criar um filtro com a expressão refinada">Salvar como novo filtro</button>
+            </div>
+
+            <div class="format-bar" id="format-bar" hidden>
+              <div class="format-row">
+                <input id="format-input" class="mono" spellcheck="false"
+                  placeholder="ex: {method} {resource} → {status} · use {campo.subcampo} para extrair do payload" />
+                <button class="btn btn-ghost btn-sm" id="format-clear-btn">Limpar</button>
+                <button class="btn btn-primary btn-sm" id="format-save-btn">Salvar no filtro</button>
+              </div>
+              <div class="format-fields" id="format-fields"></div>
+            </div>
+
+            <div class="entries" id="entries"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================= GITHUB ======================= -->
+    <section class="view" id="view-github" hidden>
+      <div class="logs-layout">
+        <aside class="filters-panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Feeds</h2>
+            <button class="btn btn-ghost btn-sm" id="gh-feed-new-btn">+ Novo</button>
+          </div>
+          <p class="gh-token-hint" id="gh-token-hint" hidden>
+            Sem token do GitHub. Defina <code>GITHUB_TOKEN</code> ou rode <code>gh auth login</code>.
+          </p>
+          <div class="filter-list" id="gh-feed-list"></div>
+          <div class="empty empty-sm" id="gh-feeds-empty" hidden>
+            <p>Acompanhe a atividade de uma org do GitHub, inteira ou só dos repositórios que importam.</p>
+            <button class="btn btn-primary btn-sm" id="gh-feed-empty-btn">Criar feed</button>
+          </div>
+        </aside>
+
+        <div class="results-panel">
+          <div class="results-idle" id="gh-idle">
+            <div class="empty-mark">⑂</div>
+            <p>Selecione um feed ao lado para ver a atividade.</p>
+          </div>
+
+          <div class="results" id="gh-results" hidden>
+            <div class="results-head">
+              <div>
+                <h2 class="results-title" id="gh-title"></h2>
+                <p class="results-meta" id="gh-meta"></p>
+              </div>
+              <div class="results-actions">
+                <button class="btn btn-ghost btn-sm gh-auto" id="gh-auto-btn" title="Atualizar sozinho a cada 60 s">◷ auto</button>
+                <button class="btn btn-ghost btn-sm" id="gh-seen-btn" title="Marcar tudo como visto">✓ visto</button>
+                <a class="btn btn-ghost btn-sm" id="gh-open-btn" target="_blank" rel="noopener" title="Abrir no GitHub">↗ GitHub</a>
+                <button class="btn btn-primary btn-sm" id="gh-refresh-btn">↻ Atualizar</button>
+              </div>
+            </div>
+
+            <p class="gh-latency-note">
+              <span class="gh-live" aria-hidden="true">⚡</span>
+              A API de eventos do GitHub pode atrasar até algumas horas. Aberturas, reviews e merges de PRs das
+              últimas 12 h chegam em tempo real pela busca e ficam marcados com o raio até a API publicá-los.
+            </p>
+            <div class="gh-kinds" id="gh-kinds"></div>
+
+            <div class="gh-refine" id="gh-refine" hidden>
+              <span class="format-fields-label">refinado por</span>
+              <div class="gh-refine-chips" id="gh-refine-chips"></div>
+              <button class="btn btn-ghost btn-sm" id="gh-refine-clear-btn">Limpar</button>
+              <button class="btn btn-ghost btn-sm" id="gh-refine-save-btn" title="Criar um feed com estes repositórios e tipos">Salvar como novo feed</button>
+            </div>
+
+            <div class="gh-warnings" id="gh-warnings" hidden></div>
+            <div class="gh-timeline" id="gh-timeline"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ======================= MODAIS ======================= -->
+  <div class="modal-backdrop" id="link-modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <h2 class="modal-title" id="link-modal-title">Novo link</h2>
+      <form id="link-form" autocomplete="off">
+        <div class="form-row">
+          <label class="field grow">
+            <span>Título *</span>
+            <input name="title" required maxlength="80" placeholder="Console · projeto-prod" />
+          </label>
+          <label class="field">
+            <span>Categoria</span>
+            <input name="category" maxlength="40" list="category-list" placeholder="GCP" />
+            <datalist id="category-list"></datalist>
+          </label>
+        </div>
+        <div class="field">
+          <span>Tipo</span>
+          <div class="chips" id="link-kind" style="margin-bottom:0">
+            <button type="button" class="chip is-active" data-kind="url">Abrir URL</button>
+            <button type="button" class="chip" data-kind="command">Rodar comando</button>
+          </div>
+        </div>
+        <label class="field" id="link-url-field">
+          <span>URL *</span>
+          <input name="url" required placeholder="https://console.cloud.google.com/home?project=…" />
+        </label>
+        <label class="field" id="link-command-field" hidden>
+          <span>Comando *</span>
+          <input name="command" class="mono" placeholder="bash ~/Downloads/IGV_Linux_2.19.7/igv.sh" />
+          <small class="field-hint">Executado localmente pelo seu shell. Pede confirmação ao clicar no card.</small>
+        </label>
+        <label class="field">
+          <span>Descrição</span>
+          <textarea name="description" rows="2" maxlength="240" placeholder="O que esse atalho abre?"></textarea>
+        </label>
+        <div class="field">
+          <span>Imagem do card</span>
+          <div class="image-row">
+            <div class="image-preview" id="image-preview"><span>∅</span></div>
+            <div class="image-controls">
+              <input name="image_url" id="image-url-input" placeholder="https://… ou envie um arquivo" />
+              <div class="image-buttons">
+                <label class="btn btn-ghost btn-sm upload-btn">
+                  ⬆ Enviar arquivo
+                  <input type="file" id="image-file" accept=".png,.jpg,.jpeg,.gif,.webp,.svg" hidden />
+                </label>
+                <button type="button" class="btn btn-ghost btn-sm" id="image-clear-btn">Limpar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <span>…ou uma capa predefinida</span>
+          <div class="cover-grid" id="cover-presets"></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="link-save-btn">Salvar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="filter-modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <h2 class="modal-title" id="filter-modal-title">Novo filtro</h2>
+      <form id="filter-form" autocomplete="off">
+        <div class="form-row">
+          <label class="field grow">
+            <span>Nome *</span>
+            <input name="name" required maxlength="80" placeholder="Erros do serviço X" />
+          </label>
+          <label class="field">
+            <span>Projeto GCP *</span>
+            <input name="project" required maxlength="80" placeholder="meu-projeto-prod" class="mono" />
+          </label>
+        </div>
+        <label class="field">
+          <span>Expressão (sintaxe do Cloud Logging)</span>
+          <textarea name="expression" rows="4" class="mono" placeholder='resource.type="cloud_run_revision"&#10;severity>=ERROR'></textarea>
+        </label>
+        <label class="field">
+          <span>Formato da linha (opcional)</span>
+          <input name="line_format" class="mono" maxlength="240" spellcheck="false"
+            placeholder="{method} {resource} → {status} · vazio = resumo automático" />
+        </label>
+        <div class="form-row">
+          <label class="field">
+            <span>Janela</span>
+            <select name="freshness">
+              <option value="15m">15 minutos</option>
+              <option value="1h" selected>1 hora</option>
+              <option value="6h">6 horas</option>
+              <option value="1d">24 horas</option>
+              <option value="3d">3 dias</option>
+              <option value="7d">7 dias</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Limite</span>
+            <input name="limit" type="number" min="1" max="500" value="50" />
+          </label>
+          <label class="field grow">
+            <span>Descrição</span>
+            <input name="description" maxlength="160" placeholder="Opcional" />
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="filter-save-btn">Salvar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="gh-feed-modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <h2 class="modal-title" id="gh-feed-modal-title">Novo feed</h2>
+      <form id="gh-feed-form" autocomplete="off">
+        <div class="form-row">
+          <label class="field grow">
+            <span>Nome *</span>
+            <input name="name" required maxlength="80" placeholder="Backend · PRs e reviews" />
+          </label>
+          <label class="field">
+            <span>Organização *</span>
+            <input name="org" required maxlength="39" class="mono" placeholder="minha-org" />
+          </label>
+        </div>
+        <div class="field">
+          <span>Repositórios · vazio = org inteira</span>
+          <div class="gh-repo-tags" id="gh-repo-tags"></div>
+          <input id="gh-repo-entry" class="mono" list="gh-repo-options" spellcheck="false"
+            placeholder="nome do repositório e Enter · aceita org/nome ou URL" />
+          <datalist id="gh-repo-options"></datalist>
+          <div class="gh-repo-suggest" id="gh-repo-suggest"></div>
+          <small class="field-hint" id="gh-repo-hint"></small>
+        </div>
+        <div class="field">
+          <span>Tipos de evento · nenhum = todos</span>
+          <div class="chips gh-kind-picker" id="gh-kind-picker"></div>
+        </div>
+        <div class="gh-toggles">
+          <label class="gh-check"><input type="checkbox" name="hide_bots" checked /> Ocultar bots</label>
+          <label class="gh-check"><input type="checkbox" name="hide_own" /> Ocultar minhas ações</label>
+        </div>
+        <label class="field">
+          <span>Descrição</span>
+          <input name="description" maxlength="160" placeholder="Opcional" />
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="gh-feed-save-btn">Salvar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="confirm-modal" hidden>
+    <div class="modal modal-sm" role="alertdialog" aria-modal="true">
+      <h2 class="modal-title">Remover?</h2>
+      <p class="confirm-text" id="confirm-text"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
+        <button type="button" class="btn btn-danger" id="confirm-yes">Remover</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

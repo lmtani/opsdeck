@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Instalar dependências
+        run: uv sync --frozen
+
+      - name: Testes
+        run: uv run pytest -q
+
+      # Falha cedo e com mensagem clara se o lock estiver defasado em
+      # relação ao pyproject — o build da imagem usa --frozen.
+      - name: Lock em dia
+        run: uv lock --check
