@@ -12,6 +12,7 @@ import { makeSortable } from "./dnd.js";
 import {
   announce,
   anyNotifying,
+  confirmEnabled,
   forgetFeed,
   isNotifying,
   notificationsBlocked,
@@ -292,10 +293,12 @@ function openFromNotification(feed) {
 
 async function setNotifications(feed) {
   const outcome = await toggleNotifications(feed.id);
+  if (outcome === "on") confirmEnabled(feed, { paused: !polling }, openFromNotification);
+  const testHint = "No test notification on screen? Check the system's notification settings for this browser.";
   const messages = {
     on: polling
-      ? [`You will be notified of new events in “${feed.name}” while OpsDeck is open in a tab.`, "success"]
-      : [`Notifications for “${feed.name}” are on. Live updates are paused, so they start when you resume them.`, "info"],
+      ? [`Notifications for “${feed.name}” are on. ${testHint}`, "success"]
+      : [`Notifications for “${feed.name}” are on; they start when live updates resume. ${testHint}`, "info"],
     off: [`Notifications for “${feed.name}” are off.`, "info"],
     unsupported: ["This browser cannot show notifications here: they need HTTPS or localhost.", "error"],
     blocked: [
@@ -306,7 +309,7 @@ async function setNotifications(feed) {
     ],
   };
   const [message, kind] = messages[outcome];
-  toast(message, kind);
+  toast(message, kind, outcome === "on" ? 8000 : undefined);
   renderFeedList();
 }
 
