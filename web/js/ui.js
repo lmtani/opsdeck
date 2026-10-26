@@ -45,7 +45,7 @@ export function setupModalDismissal() {
   });
 }
 
-export function toast(message, type = "info") {
+export function toast(message, type = "info", duration = 3200) {
   const container = document.getElementById("toasts");
   const node = document.createElement("div");
   node.className = `toast toast-${type}`;
@@ -54,7 +54,7 @@ export function toast(message, type = "info") {
   setTimeout(() => {
     node.classList.add("is-leaving");
     node.addEventListener("animationend", () => node.remove(), { once: true });
-  }, 3200);
+  }, duration);
 }
 
 let confirmHandler = null;
