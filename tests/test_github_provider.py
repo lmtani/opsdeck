@@ -84,7 +84,7 @@ def test_rate_limit_exhaustion_is_reported_clearly():
         )
 
     provider = _provider(handler)
-    with pytest.raises(GithubError, match="Limite de requisições"):
+    with pytest.raises(GithubError, match="rate limit exhausted"):
         provider.repo_events("acme", "core")
     assert provider.quota() == Quota(remaining=0, limit=5000)
 
@@ -95,7 +95,7 @@ def test_missing_token_fails_without_calling_github():
 
     provider = _provider(handler, token="")
     assert provider.is_available() is False
-    with pytest.raises(GithubError, match="Token do GitHub ausente"):
+    with pytest.raises(GithubError, match="No GitHub token"):
         provider.viewer()
 
 
@@ -244,7 +244,7 @@ def test_activity_reads_repos_in_parallel_and_warns_about_the_missing_one():
     snapshot = _provider(handler).activity(FeedSpec("acme", repos=("core", "api", "gone")), SINCE)
     assert snapshot.viewer == "alice"
     assert [[e.id for e in b.events] for b in snapshot.batches] == [["core-1"], ["api-1"], []]
-    assert snapshot.warnings == ["acme/gone não existe ou o token não tem acesso"]
+    assert snapshot.warnings == ["acme/gone does not exist or the token cannot see it"]
     assert snapshot.quota == Quota(remaining=4990, limit=5000)
     assert len(threads) > 1  # repos were fetched concurrently
 
@@ -270,4 +270,4 @@ def test_activity_degrades_a_failed_realtime_search_to_a_warning():
     snapshot = _provider(handler).activity(FeedSpec("acme"), SINCE)
     assert [e.id for b in snapshot.batches for e in b.events] == ["1"]
     assert snapshot.realtime == []
-    assert snapshot.warnings == ["Busca de PRs em tempo real indisponível: GraphQL do GitHub falhou: search is down"]
+    assert snapshot.warnings == ["Real-time PR search unavailable: GitHub GraphQL failed: search is down"]

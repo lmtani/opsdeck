@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A personal, single-user devops dashboard ("OpsDeck"). It serves customizable link cards (shortcuts to GCP projects, dashboards, tools), runs saved GCP Cloud Logging queries and follows GitHub org activity through saved feeds. Backend is Python/FastAPI; frontend is static vanilla JS (no build step). UI text is in Brazilian Portuguese.
+A personal, single-user devops dashboard ("OpsDeck"). It serves customizable link cards (shortcuts to GCP projects, dashboards, tools), runs saved GCP Cloud Logging queries and follows GitHub org activity through saved feeds. Backend is Python/FastAPI; frontend is static vanilla JS (no build step). UI text, API messages and event wording are in English; dates and times use `LOCALE` from `web/js/ui.js` (en-US, 24-hour clock).
 
 Runs locally (MySQL, logs via the `gcloud` CLI, command cards enabled) or in a container built from the distroless `Dockerfile`; `docker-compose.yaml` runs it with its own MySQL. The container mode is plain env configuration: `DASHBOARD_LOG_PROVIDER=api` (Cloud Logging API client with an ADC file at `GOOGLE_APPLICATION_CREDENTIALS`, mounted from `secrets/` by compose), `DASHBOARD_COMMANDS=off`, the MySQL service via `DASHBOARD_DB_*`, `GITHUB_TOKEN` from the environment and a volume at `data/images/` (the image ships that directory owned by the runtime user so a fresh volume is writable). `.github/workflows/ci.yml` runs the tests on pushes to `main` and on PRs. Repository language is English: code, comments, docs and commit messages.
 

@@ -4,7 +4,7 @@
 
 import { api } from "./api.js";
 import { makeSortable } from "./dnd.js";
-import { closeModal, confirmDanger, escapeHtml, openModal, toast } from "./ui.js";
+import { LOCALE, closeModal, confirmDanger, escapeHtml, openModal, toast } from "./ui.js";
 
 let filters = [];
 let activeFilterId = null;
@@ -33,8 +33,8 @@ const FRESHNESS_LABELS = {
   "1h": "1 h",
   "6h": "6 h",
   "1d": "24 h",
-  "3d": "3 dias",
-  "7d": "7 dias",
+  "3d": "3 days",
+  "7d": "7 days",
 };
 
 // freshness → ISO-8601 duration accepted by the Logs Explorer timeRange param
@@ -65,8 +65,8 @@ function gcpLogsRangeUrl(project, expression, start, end) {
   );
 }
 
-function plural(count, noun) {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+function plural(count, noun, pluralForm = `${noun}s`) {
+  return `${count} ${count === 1 ? noun : pluralForm}`;
 }
 
 function truncate(text, max) {
@@ -96,8 +96,8 @@ function renderFilterList() {
         <span>· ${filter.limit}</span>
       </span>
       <span class="filter-edit">
-        <button class="card-action" data-edit title="Editar">✎</button>
-        <button class="card-action danger" data-delete title="Remover">✕</button>
+        <button class="card-action" data-edit title="Edit">✎</button>
+        <button class="card-action danger" data-delete title="Remove">✕</button>
       </span>`;
 
     const run = () => runFilter(filter);
@@ -114,7 +114,7 @@ function renderFilterList() {
     });
     item.querySelector("[data-delete]").addEventListener("click", (event) => {
       event.stopPropagation();
-      confirmDanger(`Remover o filtro “${filter.name}”?`, async () => {
+      confirmDanger(`Remove the filter “${filter.name}”?`, async () => {
         await api.deleteFilter(filter.id);
         if (activeFilterId === filter.id) {
           activeFilterId = null;
@@ -123,7 +123,7 @@ function renderFilterList() {
           document.getElementById("results").hidden = true;
           document.getElementById("results-idle").hidden = false;
         }
-        toast("Filtro removido", "success");
+        toast("Filter removed", "success");
         await loadFilters();
       });
     });
@@ -223,13 +223,13 @@ function renderFieldChips() {
   const container = document.getElementById("format-fields");
   const fields = detectFields(lastEntries);
   container.innerHTML = fields.length
-    ? '<span class="format-fields-label">campos detectados</span>'
-    : '<span class="format-fields-label">sem payload estruturado nesta consulta</span>';
+    ? '<span class="format-fields-label">detected fields</span>'
+    : '<span class="format-fields-label">no structured payload in this query</span>';
   for (const field of fields) {
     const chip = document.createElement("button");
     chip.className = "field-chip";
     chip.textContent = `{${field}}`;
-    chip.title = "Inserir no formato";
+    chip.title = "Insert into the format";
     chip.addEventListener("click", () => {
       const input = document.getElementById("format-input");
       const needsSpace = input.value && !input.value.endsWith(" ");
@@ -278,7 +278,7 @@ function correlationKey(entry) {
       project: match ? match[1] : "",
       value: entry.trace,
       label: `⌁ ${shortId(id)}`,
-      title: `Ver todas as entradas deste trace\n${entry.trace}`,
+      title: `Show every entry of this trace\n${entry.trace}`,
     };
   }
   if (entry.operation_id) {
@@ -288,7 +288,7 @@ function correlationKey(entry) {
       project: "",
       value: entry.operation_id,
       label: `⟳ ${shortId(entry.operation_id)}`,
-      title: `Ver todas as entradas desta operação\n${entry.operation_id}`,
+      title: `Show every entry of this operation\n${entry.operation_id}`,
     };
   }
   return null;
@@ -340,7 +340,7 @@ function formatDelta(ms) {
   const abs = Math.abs(ms);
   if (abs < 1000) return `${sign}${Math.round(abs)} ms`;
   if (abs < 60_000) {
-    return `${sign}${(abs / 1000).toFixed(abs < 10_000 ? 2 : 1).replace(".", ",")} s`;
+    return `${sign}${(abs / 1000).toFixed(abs < 10_000 ? 2 : 1)} s`;
   }
   const minutes = Math.floor(abs / 60_000);
   const seconds = Math.round((abs % 60_000) / 1000);
@@ -372,7 +372,7 @@ function addRefinement(field, value, negate) {
   if (view.mode !== "filter") return;
   const clause = refinementClause(field, value, negate);
   if (view.refinements.some((item) => item.clause === clause)) {
-    toast("Esse refinamento já está aplicado");
+    toast("That refinement is already applied");
     return;
   }
   view.refinements = [...view.refinements, { field, value, negate, clause }];
@@ -395,7 +395,7 @@ function renderRefineBar() {
     const chip = document.createElement("button");
     chip.type = "button";
     chip.className = `refine-chip${item.negate ? " is-negated" : ""}`;
-    chip.title = `${item.clause}\nClique para remover`;
+    chip.title = `${item.clause}\nClick to remove`;
     chip.innerHTML =
       `<span class="refine-field">${escapeHtml(item.field)}</span>` +
       `<span class="refine-op">${item.negate ? "≠" : "="}</span>` +
@@ -458,16 +458,16 @@ function syncChrome() {
   const back = document.getElementById("results-back-btn");
   back.hidden = !view.parent;
   if (view.parent) {
-    back.textContent = `← ${view.parent.view.title || "voltar"}`;
-    back.title = "Voltar (Esc)";
+    back.textContent = `← ${view.parent.view.title || "back"}`;
+    back.title = "Back (Esc)";
   }
   const others = otherProjects();
   const projectsButton = document.getElementById("trace-projects-btn");
   projectsButton.hidden = others.length === 0;
   projectsButton.disabled = false;
-  projectsButton.textContent = `⊕ outros projetos (${others.length})`;
+  projectsButton.textContent = `⊕ other projects (${others.length})`;
   projectsButton.title =
-    "Procurar o mesmo trace nos outros projetos dos filtros salvos:\n" + others.join(", ");
+    "Search the same trace in the other projects of the saved filters:\n" + others.join(", ");
   renderRefineBar();
 }
 
@@ -483,7 +483,7 @@ function showSkeleton() {
 
 function showError(error) {
   document.getElementById("entries").innerHTML =
-    `<div class="error-box"><strong>Consulta falhou</strong>${escapeHtml(error.message)}</div>`;
+    `<div class="error-box"><strong>Query failed</strong>${escapeHtml(error.message)}</div>`;
 }
 
 // ----- query execution ---------------------------------------------------
@@ -503,7 +503,7 @@ async function loadFilter() {
   const current = view;
   const { filter, project, refinements } = view;
   const windowLabel = FRESHNESS_LABELS[filter.freshness] || filter.freshness;
-  setHeader(filter.name, `${project} · janela ${windowLabel} · consultando…`);
+  setHeader(filter.name, `${project} · window ${windowLabel} · querying…`);
   showSkeleton();
 
   // a refined view is an ad-hoc query; the plain saved filter runs by id
@@ -522,16 +522,16 @@ async function loadFilter() {
     lastEntries = result.entries;
     paintEntries();
     renderFieldChips();
-    const refined = refinements.length ? ` · ${plural(refinements.length, "refinamento")}` : "";
+    const refined = refinements.length ? ` · ${plural(refinements.length, "refinement")}` : "";
     setHeader(
       filter.name,
-      `${project} · janela ${windowLabel} · ${plural(lastEntries.length, "entrada")}${refined} · ` +
-        new Date().toLocaleTimeString("pt-BR"),
+      `${project} · window ${windowLabel} · ${plural(lastEntries.length, "entry", "entries")}${refined} · ` +
+        new Date().toLocaleTimeString(LOCALE, { hourCycle: "h23" }),
     );
   } catch (error) {
     if (view !== current) return;
     lastEntries = [];
-    setHeader(filter.name, `${project} · falhou`);
+    setHeader(filter.name, `${project} · failed`);
     showError(error);
   }
 }
@@ -552,7 +552,7 @@ async function openTrace(entry) {
     origin: entry,
     window,
     parent: { view, entries: lastEntries },
-    title: key.kind === "trace" ? `Trace ${shortId(key.id)}` : `Operação ${key.id}`,
+    title: key.kind === "trace" ? `Trace ${shortId(key.id)}` : `Operation ${key.id}`,
   };
   await loadTrace();
 }
@@ -562,7 +562,7 @@ async function openTrace(entry) {
 async function loadTrace() {
   const current = view;
   const { projects, key, window, title } = view;
-  setHeader(title, `${projects.join(" + ")} · consultando…`);
+  setHeader(title, `${projects.join(" + ")} · querying…`);
   showSkeleton();
 
   const results = await Promise.allSettled(
@@ -594,7 +594,7 @@ async function loadTrace() {
 
   if (failed.length === projects.length) {
     lastEntries = [];
-    setHeader(title, `${projects.join(" + ")} · falhou`);
+    setHeader(title, `${projects.join(" + ")} · failed`);
     showError(new Error(failed.join("\n")));
     return;
   }
@@ -608,15 +608,15 @@ async function loadTrace() {
     empty.length === 0
       ? ""
       : empty.length > 2
-        ? ` · sem entradas em outros ${empty.length} projetos`
-        : ` · sem entradas em ${empty.join(", ")}`;
+        ? ` · no entries in ${empty.length} other projects`
+        : ` · no entries in ${empty.join(", ")}`;
   setHeader(
     title,
-    `${hits.join(" + ") || projects[0]} · ${plural(lastEntries.length, "entrada")} · ` +
-      `${plural(resources, "recurso")} · ${window ? "janela ±1 h" : "janela 24 h"}${missing}`,
+    `${hits.join(" + ") || projects[0]} · ${plural(lastEntries.length, "entry", "entries")} · ` +
+      `${plural(resources, "resource")} · ${window ? "window ±1 h" : "window 24 h"}${missing}`,
   );
   document.getElementById("results-meta").title = empty.length
-    ? `Sem entradas em: ${empty.join(", ")}`
+    ? `No entries in: ${empty.join(", ")}`
     : "";
   failed.forEach((message) => toast(message, "error"));
 }
@@ -626,7 +626,7 @@ async function expandTraceProjects() {
   if (!targets.length) return;
   const button = document.getElementById("trace-projects-btn");
   button.disabled = true;
-  button.textContent = "⊕ buscando…";
+  button.textContent = "⊕ searching…";
   view.projects = [...view.projects, ...targets];
   await loadTrace();
 }
@@ -682,7 +682,8 @@ function paintEntries() {
 
 function absoluteTime(timestamp) {
   if (!timestamp) return "—";
-  return new Date(timestamp).toLocaleString("pt-BR", {
+  return new Date(timestamp).toLocaleString(LOCALE, {
+    hourCycle: "h23",
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",
@@ -695,7 +696,7 @@ function refineAttrs(field, value, enabled) {
   if (!enabled) return "";
   return (
     ` data-refine-field="${escapeHtml(field)}" data-refine-value="${escapeHtml(value)}"` +
-    ` title="${escapeHtml(`Filtrar por ${field}=${value}\nshift+clique exclui`)}"`
+    ` title="${escapeHtml(`Filter by ${field}=${value}\nshift+click excludes`)}"`
   );
 }
 
@@ -712,7 +713,7 @@ function renderEntries(entries, options = {}) {
 
   if (entries.length === 0) {
     container.innerHTML =
-      '<div class="empty empty-sm"><p>Nenhuma entrada na janela selecionada.</p></div>';
+      '<div class="empty empty-sm"><p>No entries in the selected window.</p></div>';
     return;
   }
 
@@ -785,12 +786,12 @@ function buildDetail(entry, refinable) {
   if (candidates.length) {
     const strip = document.createElement("div");
     strip.className = "detail-fields";
-    strip.innerHTML = '<span class="format-fields-label">filtrar por</span>';
+    strip.innerHTML = '<span class="format-fields-label">filter by</span>';
     for (const { field, value } of candidates) {
       const chip = document.createElement("button");
       chip.type = "button";
       chip.className = "detail-chip";
-      chip.title = `${refinementClause(field, value, false)}\nClique filtra · shift+clique exclui`;
+      chip.title = `${refinementClause(field, value, false)}\nClick filters · shift+click excludes`;
       chip.innerHTML =
         `<span class="detail-chip-field">${escapeHtml(field)}</span>` +
         `<span class="detail-chip-value">${escapeHtml(truncate(String(value), 48))}</span>`;
@@ -822,7 +823,7 @@ function buildDetail(entry, refinable) {
     `${entry.insert_id ? ` · ${escapeHtml(entry.insert_id)}` : ""}` +
     `${labels ? `\n${escapeHtml(labels)}` : ""}` +
     `${correlation ? `\n${escapeHtml(correlation)}` : ""}</span>` +
-    escapeHtml(payload ?? "(sem payload)");
+    escapeHtml(payload ?? "(no payload)");
   detail.appendChild(body);
   return detail;
 }
@@ -836,8 +837,8 @@ function openFilterModal(filter = null, { asNew = false } = {}) {
   const form = document.getElementById("filter-form");
   form.reset();
   document.getElementById("filter-modal-title").textContent = editingId
-    ? "Editar filtro"
-    : "Novo filtro";
+    ? "Edit filter"
+    : "New filter";
   if (filter) {
     form.name.value = filter.name;
     form.project.value = filter.project;
@@ -856,7 +857,7 @@ function saveRefinedAsFilter() {
   openFilterModal(
     {
       ...filter,
-      name: `${filter.name} · refinado`,
+      name: `${filter.name} · refined`,
       expression: effectiveExpression(filter, refinements),
     },
     { asNew: true },
@@ -880,10 +881,10 @@ async function submitFilter(event) {
   try {
     if (editingId) {
       await api.updateFilter(editingId, payload);
-      toast("Filtro atualizado", "success");
+      toast("Filter updated", "success");
     } else {
       await api.createFilter(payload);
-      toast("Filtro criado", "success");
+      toast("Filter created", "success");
     }
     closeModal("filter-modal");
     await loadFilters();
@@ -908,7 +909,7 @@ async function persistFilterOrder(ids) {
   try {
     await api.reorderFilters(ids);
   } catch (error) {
-    toast(`Falha ao salvar a ordem: ${error.message}`, "error");
+    toast(`Could not save the order: ${error.message}`, "error");
     await loadFilters();
   }
 }
@@ -981,7 +982,7 @@ export async function initLogs() {
         line_format: liveTemplate.trim(),
       });
       Object.assign(filter, updated);
-      toast("Formato salvo no filtro", "success");
+      toast("Format saved to the filter", "success");
     } catch (error) {
       toast(error.message, "error");
     }

@@ -59,7 +59,7 @@ class GithubFeedService:
 
     def delete_feed(self, feed_id: str) -> None:
         if not self._repository.delete(feed_id):
-            raise NotFoundError(f"Feed '{feed_id}' não encontrado")
+            raise NotFoundError(f"Feed '{feed_id}' not found")
 
     def mark_seen(self, feed_id: str, seen_at: datetime | None = None) -> GithubFeed:
         feed = self._get(feed_id)
@@ -70,7 +70,7 @@ class GithubFeedService:
     def _get(self, feed_id: str) -> GithubFeed:
         feed = self._repository.get(feed_id)
         if feed is None:
-            raise NotFoundError(f"Feed '{feed_id}' não encontrado")
+            raise NotFoundError(f"Feed '{feed_id}' not found")
         return feed
 
 
@@ -87,7 +87,7 @@ class GithubActivityService:
     def run_feed(self, feed_id: str) -> GithubActivity:
         feed = self._feeds.get(feed_id)
         if feed is None:
-            raise NotFoundError(f"Feed '{feed_id}' não encontrado")
+            raise NotFoundError(f"Feed '{feed_id}' not found")
         return self._run_saved(feed)
 
     def _run_saved(self, feed: GithubFeed, enrich: bool = True) -> GithubActivity:
@@ -147,7 +147,7 @@ class GithubActivityService:
         try:
             infos = self._provider.pull_requests(refs)
         except GithubError as error:
-            warnings.append(f"Títulos dos PRs indisponíveis: {error}")
+            warnings.append(f"PR titles unavailable: {error}")
             return
         for event in events:
             info = infos.get((event.repo, event.number)) if event.is_pull else None

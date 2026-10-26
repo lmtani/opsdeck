@@ -91,16 +91,16 @@ def _push(event: GithubEvent, payload: dict) -> None:
 
 
 _PR_VERBS = {
-    "opened": "abriu o PR",
-    "closed": "fechou o PR",
-    "merged": "fez merge do PR",
-    "reopened": "reabriu o PR",
-    "ready_for_review": "marcou como pronto o PR",
-    "converted_to_draft": "voltou para rascunho o PR",
-    "review_requested": "pediu review no PR",
-    "assigned": "atribuiu o PR",
-    "edited": "editou o PR",
-    "synchronize": "atualizou o PR",
+    "opened": "opened PR",
+    "closed": "closed PR",
+    "merged": "merged PR",
+    "reopened": "reopened PR",
+    "ready_for_review": "marked ready for review PR",
+    "converted_to_draft": "converted to draft PR",
+    "review_requested": "requested review on PR",
+    "assigned": "assigned PR",
+    "edited": "edited PR",
+    "synchronize": "updated PR",
 }
 
 
@@ -110,7 +110,7 @@ def _pull_request(event: GithubEvent, payload: dict) -> None:
     event.number = int(payload.get("number") or pull.get("number") or 0)
     if event.action == "closed" and pull.get("merged"):
         event.action = "merged"
-    verb = _PR_VERBS.get(event.action, f"{event.action or 'atualizou'} o PR")
+    verb = _PR_VERBS.get(event.action, f"{event.action or 'updated'} PR")
     event.summary = f"{verb} #{event.number}"
     event.url = pull.get("html_url") or pull_url(event.repo, event.number)
     event.title = pull.get("title") or ""
@@ -126,10 +126,10 @@ def _pull_request(event: GithubEvent, payload: dict) -> None:
 
 
 _REVIEW_VERBS = {
-    ReviewState.APPROVED: "aprovou o PR",
-    ReviewState.CHANGES_REQUESTED: "pediu mudanças no PR",
-    ReviewState.COMMENTED: "revisou o PR",
-    ReviewState.DISMISSED: "descartou review no PR",
+    ReviewState.APPROVED: "approved PR",
+    ReviewState.CHANGES_REQUESTED: "requested changes on PR",
+    ReviewState.COMMENTED: "reviewed PR",
+    ReviewState.DISMISSED: "dismissed a review on PR",
 }
 
 
@@ -145,7 +145,7 @@ def _review(event: GithubEvent, payload: dict) -> None:
     event.kind = EventKind.REVIEW
     event.number = int(pull.get("number") or 0)
     state = _review_state(review.get("state"))
-    event.summary = f"{_REVIEW_VERBS.get(state, 'revisou o PR')} #{event.number}"
+    event.summary = f"{_REVIEW_VERBS.get(state, 'reviewed PR')} #{event.number}"
     event.url = _html_url(review) or pull_url(event.repo, event.number)
     event.title = pull.get("title") or ""
     event.ref = (pull.get("head") or {}).get("ref", "")
@@ -175,8 +175,8 @@ def _issue_comment(event: GithubEvent, payload: dict) -> None:
     event.kind = EventKind.COMMENT
     event.number = int(issue.get("number") or 0)
     is_pull = bool(issue.get("pull_request"))
-    target = "no PR" if is_pull else "na issue"
-    event.summary = f"comentou {target} #{event.number}"
+    target = "PR" if is_pull else "issue"
+    event.summary = f"commented on {target} #{event.number}"
     event.url = _html_url(comment) or _html_url(issue)
     event.title = issue.get("title") or ""
     # an issue's "closed" may hide a merge; PR state is resolved via GraphQL
@@ -186,12 +186,12 @@ def _issue_comment(event: GithubEvent, payload: dict) -> None:
 
 
 _ISSUE_VERBS = {
-    "opened": "abriu a issue",
-    "closed": "fechou a issue",
-    "reopened": "reabriu a issue",
-    "assigned": "atribuiu a issue",
-    "labeled": "rotulou a issue",
-    "edited": "editou a issue",
+    "opened": "opened issue",
+    "closed": "closed issue",
+    "reopened": "reopened issue",
+    "assigned": "assigned issue",
+    "labeled": "labeled issue",
+    "edited": "edited issue",
 }
 
 
@@ -199,7 +199,7 @@ def _issues(event: GithubEvent, payload: dict) -> None:
     issue = payload.get("issue") or {}
     event.kind = EventKind.ISSUE
     event.number = int(issue.get("number") or 0)
-    event.summary = f"{_ISSUE_VERBS.get(event.action, 'atualizou a issue')} #{event.number}"
+    event.summary = f"{_ISSUE_VERBS.get(event.action, 'updated issue')} #{event.number}"
     event.url = _html_url(issue) or f"{GITHUB_WEB}/{event.repo}/issues/{event.number}"
     event.title = issue.get("title") or ""
     event.state = _item_state(issue.get("state"))
@@ -207,7 +207,7 @@ def _issues(event: GithubEvent, payload: dict) -> None:
         event.body = _excerpt(issue.get("body"))
 
 
-_REF_NOUNS = {"branch": "a branch", "tag": "a tag"}
+_REF_NOUNS = {"branch": "branch", "tag": "tag"}
 
 
 def _create(event: GithubEvent, payload: dict) -> None:
@@ -215,10 +215,10 @@ def _create(event: GithubEvent, payload: dict) -> None:
     event.kind = EventKind.BRANCH
     event.ref = payload.get("ref") or ""
     if ref_type == "repository":
-        event.summary = "criou o repositório"
+        event.summary = "created the repository"
         event.details = RefDetails(ref_type=ref_type)
         return
-    event.summary = f"criou {_REF_NOUNS.get(ref_type, ref_type)} {event.ref}"
+    event.summary = f"created {_REF_NOUNS.get(ref_type, ref_type)} {event.ref}"
     event.url = (
         f"{GITHUB_WEB}/{event.repo}/releases/tag/{event.ref}"
         if ref_type == "tag"
@@ -231,7 +231,7 @@ def _delete(event: GithubEvent, payload: dict) -> None:
     ref_type = payload.get("ref_type", "")
     event.kind = EventKind.BRANCH
     event.ref = payload.get("ref") or ""
-    event.summary = f"apagou {_REF_NOUNS.get(ref_type, ref_type)} {event.ref}"
+    event.summary = f"deleted {_REF_NOUNS.get(ref_type, ref_type)} {event.ref}"
     event.url = f"{GITHUB_WEB}/{event.repo}/{'tags' if ref_type == 'tag' else 'branches'}"
     event.details = RefDetails(ref_type=ref_type)
 
@@ -240,7 +240,7 @@ def _release(event: GithubEvent, payload: dict) -> None:
     release = payload.get("release") or {}
     event.kind = EventKind.RELEASE
     event.ref = release.get("tag_name", "")
-    verb = "publicou a release" if event.action in ("published", "released", "") else f"{event.action} a release"
+    verb = "published release" if event.action in ("published", "released", "") else f"{event.action} release"
     event.summary = f"{verb} {event.ref}".strip()
     event.title = release.get("name") or ""
     event.url = _html_url(release) or f"{GITHUB_WEB}/{event.repo}/releases"
@@ -248,12 +248,12 @@ def _release(event: GithubEvent, payload: dict) -> None:
 
 
 _SIMPLE = {
-    "ForkEvent": "fez fork do repositório",
-    "WatchEvent": "marcou o repositório com estrela",
-    "PublicEvent": "tornou o repositório público",
-    "GollumEvent": "editou a wiki",
-    "CommitCommentEvent": "comentou num commit",
-    "PullRequestReviewThreadEvent": "resolveu uma conversa de review",
+    "ForkEvent": "forked the repository",
+    "WatchEvent": "starred the repository",
+    "PublicEvent": "made the repository public",
+    "GollumEvent": "edited the wiki",
+    "CommitCommentEvent": "commented on a commit",
+    "PullRequestReviewThreadEvent": "resolved a review thread",
 }
 
 
@@ -261,7 +261,7 @@ def _other(event: GithubEvent, payload: dict) -> None:
     event.kind = EventKind.OTHER
     if event.type == "MemberEvent":
         member = (payload.get("member") or {}).get("login", "")
-        event.summary = f"adicionou {member} como colaborador".strip()
+        event.summary = f"added {member} as a collaborator".strip()
         return
     if event.type == "ForkEvent":
         event.url = _html_url(payload.get("forkee")) or event.url
@@ -375,7 +375,7 @@ def events_from_search_pull(pull: dict, since: datetime) -> list[GithubEvent]:
         submitted = parse_timestamp(review.get("submittedAt"))
         if state is None or submitted is None or submitted < since:
             continue  # pending (not submitted) or unknown reviews are skipped
-        verb = _REVIEW_VERBS.get(state, "revisou o PR")
+        verb = _REVIEW_VERBS.get(state, "reviewed PR")
         event = _search_event(
             pull, "PullRequestReviewEvent", EventKind.REVIEW, "created", review.get("author"),
             submitted, f"{verb} #{number}", review.get("url") or url,

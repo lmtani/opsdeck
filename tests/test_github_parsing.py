@@ -40,7 +40,7 @@ def test_push_links_the_compared_range():
     }))
     assert event.kind == "push"
     assert event.ref == "main"
-    assert event.summary == "fez push em main"
+    assert event.summary == "pushed to main"
     assert event.url == "https://github.com/acme/core/compare/55f8276...3cd190f"
     assert event.actor == "alice" and event.actor_avatar.startswith("https://avatars")
 
@@ -59,7 +59,7 @@ def test_trimmed_pull_request_event_has_number_but_no_title():
         },
     }))
     assert event.kind == "pr"
-    assert event.summary == "fez merge do PR #36"
+    assert event.summary == "merged PR #36"
     assert event.state == "merged"
     assert event.title == ""
     assert event.url == "https://github.com/acme/core/pull/36"
@@ -85,7 +85,7 @@ def test_review_state_drives_the_verb():
         "pull_request": {"number": 12, "head": {"ref": "feat/x"}},
     }))
     assert event.kind == "review"
-    assert event.summary == "aprovou o PR #12"
+    assert event.summary == "approved PR #12"
     assert event.body == "LGTM"
     assert event.url.endswith("#pullrequestreview-1")
     assert event.ref == "feat/x"
@@ -99,7 +99,7 @@ def test_review_comment_keeps_path_and_link():
         "pull_request": {"number": 13},
     }))
     assert event.kind == "comment"
-    assert event.summary == "comentou no código do PR #13"
+    assert event.summary == "left a review comment on PR #13"
     assert event.url.endswith("#discussion_r1")
     assert event.is_pull is True
     assert event.details == CodeCommentDetails(path="backend/x.py", line=21)
@@ -113,7 +113,7 @@ def test_issue_comment_on_a_pull_request():
                   "pull_request": {"url": "x"}},
         "comment": {"body": "ok", "html_url": "https://github.com/acme/core/pull/1102#issuecomment-1"},
     }))
-    assert event.summary == "comentou no PR #1102"
+    assert event.summary == "commented on PR #1102"
     assert event.title == "feat: coverage"
     assert event.state is None  # resolved later via GraphQL (closed may mean merged)
     assert event.is_pull is True and event.details is None
@@ -123,9 +123,9 @@ def test_branch_creation_and_deletion():
     created = parse_event(_raw("CreateEvent", {"ref": "fix/x", "ref_type": "branch"}))
     deleted = parse_event(_raw("DeleteEvent", {"ref": "v1.0", "ref_type": "tag"}))
     assert created.kind == deleted.kind == "branch"
-    assert created.summary == "criou a branch fix/x"
+    assert created.summary == "created branch fix/x"
     assert created.url == "https://github.com/acme/core/tree/fix/x"
-    assert deleted.summary == "apagou a tag v1.0"
+    assert deleted.summary == "deleted tag v1.0"
 
 
 def test_unknown_types_fall_back_to_other():
@@ -178,12 +178,12 @@ def test_search_pull_becomes_merge_and_review_events_inside_the_window():
     events = events_from_search_pull(SEARCH_PULL, since=parse_timestamp("2026-10-23T00:00:00Z"))
     merged, review = events  # opened is older than the window; pending/old reviews skipped
     assert (merged.type, merged.action, merged.actor) == ("PullRequestEvent", "merged", "renan")
-    assert merged.summary == "fez merge do PR #112"
+    assert merged.summary == "merged PR #112"
     assert merged.state == "merged" and merged.title.startswith("feat(bwa-mem3")
     assert merged.source is EventSource.SEARCH and merged.is_pull is True
     assert merged.details == PullDetails(head_ref="feat/bwa-mem3", base_ref="main")
     assert (review.kind, review.details) == (EventKind.REVIEW, ReviewDetails(ReviewState.APPROVED))
-    assert review.summary == "aprovou o PR #112"
+    assert review.summary == "approved PR #112"
     assert review.url.endswith("#pullrequestreview-1")
 
 

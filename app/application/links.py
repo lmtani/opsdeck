@@ -27,14 +27,14 @@ class LinkService:
     def update_link(self, link_id: str, **fields) -> Link:
         existing = self._repository.get(link_id)
         if existing is None:
-            raise NotFoundError(f"Link '{link_id}' não encontrado")
+            raise NotFoundError(f"Link '{link_id}' not found")
         existing.update(**fields)
         self._repository.save(existing)
         return existing
 
     def delete_link(self, link_id: str) -> None:
         if not self._repository.delete(link_id):
-            raise NotFoundError(f"Link '{link_id}' não encontrado")
+            raise NotFoundError(f"Link '{link_id}' not found")
 
 
 class CommandService:
@@ -47,9 +47,9 @@ class CommandService:
     def run_link(self, link_id: str) -> str:
         link = self._links.get(link_id)
         if link is None:
-            raise NotFoundError(f"Link '{link_id}' não encontrado")
+            raise NotFoundError(f"Link '{link_id}' not found")
         if link.kind != LinkKind.COMMAND or not link.command.strip():
-            raise ValidationError("Este atalho não é um comando")
+            raise ValidationError("This card is not a command")
         return self._runner.run(link.command)
 
 
@@ -61,9 +61,9 @@ class ImageService:
         extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
         if extension not in ALLOWED_IMAGE_EXTENSIONS:
             allowed = ", ".join(sorted(ALLOWED_IMAGE_EXTENSIONS))
-            raise ValidationError(f"Formato inválido. Use: {allowed}")
+            raise ValidationError(f"Unsupported format. Use: {allowed}")
         if len(content) > MAX_IMAGE_BYTES:
-            raise ValidationError("Imagem muito grande (máximo 5 MB)")
+            raise ValidationError("Image too large (5 MB max)")
         if not content:
-            raise ValidationError("Arquivo vazio")
+            raise ValidationError("Empty file")
         return self._store.save(content, extension)

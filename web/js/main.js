@@ -5,7 +5,7 @@ import { initGithub, setGithubAvailability } from "./github.js";
 import { initLinks } from "./links.js";
 import { initLogs } from "./logs.js";
 import { initTheme } from "./theme.js";
-import { setupConfirmModal, setupModalDismissal, toast } from "./ui.js";
+import { LOCALE, setupConfirmModal, setupModalDismissal, toast } from "./ui.js";
 
 function setupTabs() {
   const tabs = [...document.querySelectorAll(".tab")];
@@ -38,8 +38,8 @@ function setupClock() {
   const dateNode = document.getElementById("clock-date");
   function tick() {
     const now = new Date();
-    timeNode.textContent = now.toLocaleTimeString("pt-BR");
-    dateNode.textContent = now.toLocaleDateString("pt-BR", {
+    timeNode.textContent = now.toLocaleTimeString(LOCALE, { hourCycle: "h23" });
+    dateNode.textContent = now.toLocaleDateString(LOCALE, {
       weekday: "short",
       day: "2-digit",
       month: "short",
@@ -62,17 +62,17 @@ async function checkHealth() {
     showStatus(
       "logs-status",
       health.logs,
-      health.logs ? "Provedor de logs disponível" : "Provedor de logs indisponível"
+      health.logs ? "Log provider available" : "Log provider unavailable"
     );
     showStatus(
       "github-status",
       health.github,
-      health.github ? "Token do GitHub configurado" : "Sem token do GitHub (GITHUB_TOKEN ou gh auth login)"
+      health.github ? "GitHub token configured" : "No GitHub token (GITHUB_TOKEN or gh auth login)"
     );
     setGithubAvailability(health.github);
   } catch {
-    showStatus("logs-status", false, "Backend indisponível");
-    showStatus("github-status", false, "Backend indisponível");
+    showStatus("logs-status", false, "Backend unavailable");
+    showStatus("github-status", false, "Backend unavailable");
   }
 }
 
@@ -87,7 +87,7 @@ async function start() {
   try {
     await Promise.all([initLinks(), initLogs(), initGithub()]);
   } catch (error) {
-    toast(`Falha ao carregar dados: ${error.message}`, "error");
+    toast(`Could not load data: ${error.message}`, "error");
   }
 }
 

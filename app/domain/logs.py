@@ -27,12 +27,12 @@ def _freshness(value) -> Freshness:
     try:
         return Freshness(value)
     except ValueError:
-        raise ValidationError("Janela inválida") from None
+        raise ValidationError("Invalid time window") from None
 
 
 def _check_limit(limit: int) -> None:
     if not 1 <= limit <= MAX_LIMIT:
-        raise ValidationError(f"Limite deve ficar entre 1 e {MAX_LIMIT}")
+        raise ValidationError(f"Limit must be between 1 and {MAX_LIMIT}")
 
 
 def _clean(text: str | None) -> str:
@@ -53,7 +53,7 @@ class LogQuery:
         self.expression = _clean(self.expression)
         self.freshness = _freshness(self.freshness)
         if not self.project:
-            raise ValidationError("Projeto GCP é obrigatório")
+            raise ValidationError("GCP project is required")
         _check_limit(self.limit)
 
 
@@ -91,9 +91,9 @@ class LogFilter:
     def __post_init__(self):
         self.freshness = _freshness(self.freshness)
         if not self.name.strip():
-            raise ValidationError("Nome é obrigatório")
+            raise ValidationError("Name is required")
         if not self.project.strip():
-            raise ValidationError("Projeto GCP é obrigatório")
+            raise ValidationError("GCP project is required")
         _check_limit(self.limit)
 
     @classmethod

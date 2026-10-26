@@ -24,10 +24,10 @@ def test_link_new_trims_and_parses_kind():
 @pytest.mark.parametrize(
     "fields, message",
     [
-        (dict(title=" ", url="https://x"), "Título"),
+        (dict(title=" ", url="https://x"), "Title"),
         (dict(title="x", kind="url", url=" "), "URL"),
-        (dict(title="x", kind="command", command=""), "Comando"),
-        (dict(title="x", kind="exec", url="https://x"), "Tipo de atalho"),
+        (dict(title="x", kind="command", command=""), "Command"),
+        (dict(title="x", kind="exec", url="https://x"), "Invalid card type"),
     ],
 )
 def test_invalid_links_cannot_be_built(fields, message):
@@ -82,11 +82,11 @@ def test_feed_spec_normalizes_on_construction():
 @pytest.mark.parametrize(
     "kwargs, message",
     [
-        (dict(org="not an org"), "Organização"),
-        (dict(org="acme", repos=("other/core",)), "não pertence"),
-        (dict(org="acme", repos=("bad name",)), "inválido"),
-        (dict(org="acme", event_kinds=("deploy",)), "Tipo de evento"),
-        (dict(org="acme", repos=tuple(f"r{i}" for i in range(41))), "no máximo"),
+        (dict(org="not an org"), "organization"),
+        (dict(org="acme", repos=("other/core",)), "does not belong"),
+        (dict(org="acme", repos=("bad name",)), "Invalid repository"),
+        (dict(org="acme", event_kinds=("deploy",)), "Invalid event kind"),
+        (dict(org="acme", repos=tuple(f"r{i}" for i in range(41))), "at most"),
     ],
 )
 def test_invalid_specs_cannot_be_built(kwargs, message):
@@ -105,7 +105,7 @@ def test_feed_carries_its_spec_and_marks_seen_forward_only():
     assert feed.mark_seen(ts("2000-01-01T00:00:00Z")) is False
     assert feed.last_seen_at == later
 
-    with pytest.raises(ValidationError, match="Nome"):
+    with pytest.raises(ValidationError, match="Name"):
         GithubFeed.new(name=" ", org="acme")
     with pytest.raises(ValidationError):
         feed.update(name="Core", org="acme", repos=["other/x"])

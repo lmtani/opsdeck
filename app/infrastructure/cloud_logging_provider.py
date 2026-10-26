@@ -27,7 +27,7 @@ def _freshness_to_timedelta(freshness: str) -> timedelta:
     if text.isdigit():
         return timedelta(days=int(text))
     if not _DURATION_FULL.match(text):
-        raise LogProviderError(f"Freshness inválido: '{freshness}' (use ex.: 30m, 1h, 2d)")
+        raise LogProviderError(f"Invalid freshness: '{freshness}' (e.g. 30m, 1h, 2d)")
     seconds = sum(
         int(amount) * _UNIT_SECONDS[unit.lower()]
         for amount, unit in _DURATION_TOKEN.findall(text)
@@ -52,7 +52,7 @@ class CloudLoggingApiProvider(LogProvider):
                 self._client = cloud_logging.Client()
             except auth_exceptions.DefaultCredentialsError as error:
                 raise LogProviderError(
-                    f"Sem credenciais do Google Cloud (ADC): {error}"
+                    f"No Google Cloud credentials (ADC): {error}"
                 ) from None
 
         filter_ = self._build_filter(query)
@@ -66,8 +66,8 @@ class CloudLoggingApiProvider(LogProvider):
             return [parse_entry(entry.to_api_repr()) for entry in islice(iterator, query.limit)]
         except api_exceptions.PermissionDenied:
             raise LogProviderError(
-                f"Sem permissão para ler logs do projeto '{query.project}'."
-                " Conceda roles/logging.viewer à service account do serviço."
+                f"No permission to read logs of project '{query.project}'."
+                " Grant roles/logging.viewer to the credentials in use."
             ) from None
         except api_exceptions.GoogleAPICallError as error:
             raise LogProviderError(

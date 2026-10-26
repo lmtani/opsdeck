@@ -137,7 +137,7 @@ class GithubApiProvider(GithubProvider):
         try:
             realtime = self.recent_pull_request_events(spec.org, list(spec.repos), realtime_since)
         except GithubError as error:
-            warnings.append(f"Busca de PRs em tempo real indisponível: {error}")
+            warnings.append(f"Real-time PR search unavailable: {error}")
             realtime = []
         return ActivitySnapshot(
             viewer=viewer,
@@ -157,7 +157,7 @@ class GithubApiProvider(GithubProvider):
             try:
                 return self.repo_events(spec.org, repo), None
             except GithubNotFoundError:
-                missing = GithubError(f"{spec.org}/{repo} não existe ou o token não tem acesso")
+                missing = GithubError(f"{spec.org}/{repo} does not exist or the token cannot see it")
                 return GithubEventBatch([]), missing
             except GithubError as error:
                 return GithubEventBatch([]), error
@@ -238,7 +238,7 @@ class GithubApiProvider(GithubProvider):
         data = body.get("data")
         if data is None:
             errors = "; ".join(e.get("message", "") for e in body.get("errors", []))
-            raise GithubError(f"GraphQL do GitHub falhou: {errors or 'sem dados'}")
+            raise GithubError(f"GitHub GraphQL failed: {errors or 'no data'}")
         return data
 
     def org_repos(self, org: str) -> list[GithubRepo]:
@@ -288,7 +288,7 @@ class GithubApiProvider(GithubProvider):
             self._token = self._token_source() or ""
         if not self._token and raise_if_missing:
             raise GithubError(
-                "Token do GitHub ausente: defina GITHUB_TOKEN ou rode `gh auth login`"
+                "No GitHub token: set GITHUB_TOKEN or run `gh auth login`"
             )
         return self._token
 
@@ -298,15 +298,15 @@ class GithubApiProvider(GithubProvider):
         try:
             response = self._client.request(method, path, headers=headers, **kwargs)
         except httpx.HTTPError as error:
-            raise GithubError(f"Falha ao falar com o GitHub: {error}") from None
+            raise GithubError(f"Could not reach GitHub: {error}") from None
         self._track_rate(response)
         if response.status_code == 401:
             self._token = ""  # e.g. rotated gh token: resolve again next time
-            raise GithubError("Token do GitHub inválido ou expirado")
+            raise GithubError("GitHub token is invalid or expired")
         if response.status_code in (403, 429) and self._rate_exhausted(response):
             raise GithubError(self._rate_message(response))
         if response.status_code == 404:
-            raise GithubNotFoundError(f"Não encontrado no GitHub: {path}")
+            raise GithubNotFoundError(f"Not found on GitHub: {path}")
         if response.status_code >= 400:
             raise GithubError(
                 f"GitHub respondeu {response.status_code}: {_message(response)}"
@@ -371,8 +371,8 @@ class GithubApiProvider(GithubProvider):
         reset = response.headers.get("x-ratelimit-reset")
         if reset and reset.isdigit():
             minutes = max(1, round((int(reset) - time.time()) / 60))
-            return f"Limite de requisições do GitHub esgotado; renova em ~{minutes} min"
-        return "Limite de requisições do GitHub esgotado; tente de novo em alguns minutos"
+            return f"GitHub rate limit exhausted; resets in ~{minutes} min"
+        return "GitHub rate limit exhausted; try again in a few minutes"
 
     # ----- GraphQL -----------------------------------------------------
 

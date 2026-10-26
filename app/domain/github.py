@@ -44,7 +44,7 @@ class ItemState(StrEnum):
 def validate_org(org: str) -> str:
     org = (org or "").strip()
     if not GITHUB_ORG_NAME.match(org):
-        raise ValidationError("Organização do GitHub inválida")
+        raise ValidationError("Invalid GitHub organization")
     return org
 
 
@@ -60,15 +60,15 @@ def normalize_repos(org: str, repos) -> tuple[str, ...]:
         if "/" in text:
             owner, _, rest = text.partition("/")
             if owner.lower() != org.lower():
-                raise ValidationError(f"O repositório '{raw}' não pertence à org {org}")
+                raise ValidationError(f"Repository '{raw}' does not belong to org {org}")
             text = rest.split("/", 1)[0]
         text = text.removesuffix(".git")
         if not GITHUB_REPO_NAME.match(text):
-            raise ValidationError(f"Nome de repositório inválido: '{raw}'")
+            raise ValidationError(f"Invalid repository name: '{raw}'")
         if text.lower() not in {name.lower() for name in result}:
             result.append(text)
     if len(result) > MAX_FEED_REPOS:
-        raise ValidationError(f"Use no máximo {MAX_FEED_REPOS} repositórios por feed")
+        raise ValidationError(f"Use at most {MAX_FEED_REPOS} repositories per feed")
     return tuple(result)
 
 
@@ -77,7 +77,7 @@ def normalize_kinds(kinds) -> tuple[EventKind, ...]:
     known = {kind.value for kind in EventKind}
     unknown = [str(kind) for kind in kinds if kind not in known]
     if unknown:
-        raise ValidationError(f"Tipo de evento inválido: {', '.join(unknown)}")
+        raise ValidationError(f"Invalid event kind: {', '.join(unknown)}")
     selected = tuple(kind for kind in EventKind if kind in kinds)
     return () if len(selected) == len(EventKind) else selected
 
@@ -194,7 +194,7 @@ class GithubFeed:
         spec = self.spec  # validates and normalizes
         self.org, self.repos, self.event_kinds = spec.org, list(spec.repos), list(spec.event_kinds)
         if not self.name.strip():
-            raise ValidationError("Nome é obrigatório")
+            raise ValidationError("Name is required")
 
     @property
     def spec(self) -> FeedSpec:

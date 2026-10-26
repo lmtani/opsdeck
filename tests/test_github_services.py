@@ -31,10 +31,10 @@ def test_create_normalizes_repos_and_starts_caught_up(feeds):
 @pytest.mark.parametrize(
     "kwargs, message",
     [
-        (dict(org="not an org"), "Organização"),
-        (dict(org="acme", repos=["other/core"]), "não pertence"),
-        (dict(org="acme", repos=["bad name"]), "inválido"),
-        (dict(org="acme", event_kinds=["deploy"]), "Tipo de evento"),
+        (dict(org="not an org"), "organization"),
+        (dict(org="acme", repos=["other/core"]), "does not belong"),
+        (dict(org="acme", repos=["bad name"]), "Invalid repository"),
+        (dict(org="acme", event_kinds=["deploy"]), "Invalid event kind"),
     ],
 )
 def test_invalid_feeds_are_rejected(feeds, kwargs, message):
@@ -72,12 +72,12 @@ def test_repo_feed_merges_repos_and_reports_partial_failures(feeds):
     spec = FeedSpec("acme", repos=["core", "api", "gone"])
     activity = GithubActivityService(provider, feeds).run_query(spec)
     assert [e.id for e in activity.events] == ["2", "1"]
-    assert activity.warnings == ["acme/gone não existe ou o token não tem acesso"]
+    assert activity.warnings == ["acme/gone does not exist or the token cannot see it"]
 
 def test_repo_feed_fails_when_every_repo_fails(feeds):
     provider = FakeGithubProvider()
-    provider.repos[("acme", "core")] = GithubError("Token do GitHub inválido ou expirado")
-    with pytest.raises(GithubError, match="Token"):
+    provider.repos[("acme", "core")] = GithubError("GitHub token is invalid or expired")
+    with pytest.raises(GithubError, match="token"):
         GithubActivityService(provider, feeds).run_query(FeedSpec("acme", repos=["core"]))
 
 def test_pull_request_titles_and_states_are_filled_in(feeds):
@@ -98,12 +98,12 @@ def test_graphql_failure_degrades_to_a_warning(feeds):
     provider.org["acme"] = [make_event(1, "pr", number=7, is_pull=True)]
 
     def boom(refs):
-        raise GithubError("GraphQL fora")
+        raise GithubError("GraphQL down")
 
     provider.pull_requests = boom
     activity = GithubActivityService(provider, feeds).run_query(FeedSpec("acme"))
     assert len(activity.events) == 1
-    assert activity.warnings == ["Títulos dos PRs indisponíveis: GraphQL fora"]
+    assert activity.warnings == ["PR titles unavailable: GraphQL down"]
 
 def test_unseen_counts_per_feed(feeds):
     provider = FakeGithubProvider()
@@ -146,9 +146,9 @@ def test_search_follows_the_feed_filters_and_failures_become_warnings(feeds):
     assert activity.events == []  # merge is not a review, the review is a bot's
     assert provider.activity_calls[0][0].repos == ("dockerfiles",)
 
-    provider.searched = GithubError("GraphQL fora")
+    provider.searched = GithubError("GraphQL down")
     activity = GithubActivityService(provider, feeds).run_query(FeedSpec("acme"))
-    assert activity.warnings == ["Busca de PRs em tempo real indisponível: GraphQL fora"]
+    assert activity.warnings == ["Real-time PR search unavailable: GraphQL down"]
 
 @pytest.fixture()
 def feeds():

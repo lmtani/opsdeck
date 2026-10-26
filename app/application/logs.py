@@ -24,14 +24,14 @@ class LogFilterService:
     def update_filter(self, filter_id: str, **fields) -> LogFilter:
         existing = self._repository.get(filter_id)
         if existing is None:
-            raise NotFoundError(f"Filtro '{filter_id}' não encontrado")
+            raise NotFoundError(f"Filter '{filter_id}' not found")
         existing.update(**fields)
         self._repository.save(existing)
         return existing
 
     def delete_filter(self, filter_id: str) -> None:
         if not self._repository.delete(filter_id):
-            raise NotFoundError(f"Filtro '{filter_id}' não encontrado")
+            raise NotFoundError(f"Filter '{filter_id}' not found")
 
 
 class LogQueryService:
@@ -45,7 +45,7 @@ class LogQueryService:
     def run_saved_filter(self, filter_id: str) -> tuple[str, list[LogEntry]]:
         log_filter = self._filters.get(filter_id)
         if log_filter is None:
-            raise NotFoundError(f"Filtro '{filter_id}' não encontrado")
+            raise NotFoundError(f"Filter '{filter_id}' not found")
         return self.run_query(log_filter.query())
 
     def run_query(self, query: LogQuery) -> tuple[str, list[LogEntry]]:

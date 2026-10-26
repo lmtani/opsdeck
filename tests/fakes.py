@@ -77,7 +77,7 @@ class FakeCommandRunner(CommandRunner):
         self.ran.append(command)
         if self.error:
             raise self.error
-        return "Programa iniciado"
+        return "Program started"
 
 
 class FakeLogProvider(LogProvider):
@@ -204,7 +204,7 @@ class FakeGithubProvider(GithubProvider):
             for repo in spec.repos:
                 value = self.repos.get((spec.org, repo), [])
                 if isinstance(value, GithubNotFoundError):
-                    errors.append(f"{spec.org}/{repo} não existe ou o token não tem acesso")
+                    errors.append(f"{spec.org}/{repo} does not exist or the token cannot see it")
                     value = []
                 elif isinstance(value, Exception):
                     errors.append(value)
@@ -216,7 +216,7 @@ class FakeGithubProvider(GithubProvider):
                 raise first if isinstance(first, Exception) else GithubNotFoundError(first)
             warnings += [str(error) for error in errors]
         if isinstance(self.searched, Exception):
-            warnings.append(f"Busca de PRs em tempo real indisponível: {self.searched}")
+            warnings.append(f"Real-time PR search unavailable: {self.searched}")
             realtime = []
         else:
             realtime = [GithubEvent(**vars(e)) for e in self.searched]

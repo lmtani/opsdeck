@@ -9,6 +9,6 @@ from app.domain.links import CommandRunner
 class DisabledCommandRunner(CommandRunner):
     def run(self, command: str) -> str:
         raise CommandError(
-            "Cartões de comando abrem programas locais e não estão"
-            " disponíveis na versão em nuvem."
+            "Command cards launch local programs and are disabled"
+            " in this deployment (DASHBOARD_COMMANDS=off)."
         )

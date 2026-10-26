@@ -54,14 +54,14 @@ def pull_url(repo: str, number: int) -> str:
 
 def push_summary(branch: str, count: int = 1) -> str:
     if count > 1:
-        return f"fez {count} pushes em {branch}"
-    return f"fez push em {branch}"
+        return f"pushed {count} times to {branch}"
+    return f"pushed to {branch}"
 
 
 def review_comments_summary(number: int, count: int = 1) -> str:
     if count > 1:
-        return f"fez {count} comentários no código do PR #{number}"
-    return f"comentou no código do PR #{number}"
+        return f"left {count} review comments on PR #{number}"
+    return f"left a review comment on PR #{number}"
 
 
 def is_bot(login: str) -> bool:

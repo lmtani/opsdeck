@@ -21,7 +21,7 @@ class SubprocessCommandRunner(CommandRunner):
     def run(self, command: str) -> str:
         command = command.strip()
         if not command:
-            raise CommandError("Comando vazio")
+            raise CommandError("Empty command")
         try:
             process = subprocess.Popen(
                 command,
@@ -32,12 +32,12 @@ class SubprocessCommandRunner(CommandRunner):
                 start_new_session=True,  # survive after the request returns
             )
         except OSError as error:
-            raise CommandError(f"Falha ao iniciar o comando: {error}") from None
+            raise CommandError(f"Could not start the command: {error}") from None
 
         try:
             code = process.wait(timeout=_STARTUP_GRACE_SECONDS)
         except subprocess.TimeoutExpired:
-            return "Programa iniciado"  # still running — treated as success
+            return "Program started"  # still running — treated as success
         if code != 0:
-            raise CommandError(f"Comando terminou com código {code}")
-        return "Comando executado"
+            raise CommandError(f"Command exited with code {code}")
+        return "Command finished"
