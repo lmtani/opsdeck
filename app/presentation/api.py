@@ -12,7 +12,7 @@ from app.application.links import CommandService, ImageService, LinkService
 from app.application.logs import LogFilterService, LogQueryService
 from app.application.settings import SettingsService
 from app.domain.errors import ExternalServiceError, NotFoundError, ValidationError
-from app.domain.github import FeedSpec
+from app.domain.github import EventSubject, FeedSpec
 from app.domain.logs import LogQuery
 from app.presentation import schemas
 
@@ -211,6 +211,11 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
     @app.post("/api/github/events/query", response_model=schemas.GithubActivityOut)
     def query_github_events(body: schemas.GithubQueryIn):
         return schemas.GithubActivityOut.from_entity(services.github.run_query(_spec(body)))
+
+    @app.post("/api/github/events/context", response_model=schemas.EventContextOut)
+    def github_event_context(body: schemas.EventSubjectModel):
+        subject = EventSubject(**body.model_dump())  # ValidationError -> 422
+        return schemas.EventContextOut.model_validate(services.github.event_context(subject))
 
     @app.get("/api/github/orgs/{org}/repos", response_model=list[schemas.GithubRepoOut])
     def list_github_org_repos(org: str):

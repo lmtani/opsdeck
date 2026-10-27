@@ -9,6 +9,7 @@
 
 import { api } from "./api.js";
 import { makeSortable } from "./dnd.js";
+import { createContextDrawer, hasContext } from "./github-context.js";
 import {
   announce,
   anyNotifying,
@@ -56,6 +57,7 @@ let view = { feed: null, activity: null, mark: "", refinements: [], expanded: ne
 let requestSeq = 0;
 let autoTimer = null;
 let polling = true; // the "live" switch, saved in the backend settings
+let drawer = null; // side panel with an event's full context (github-context.js)
 
 // ----- small helpers ---------------------------------------------------
 
@@ -349,6 +351,7 @@ function showSkeleton() {
 
 function openFeed(feed) {
   if (view.feed && view.feed.id !== feed.id) markActiveSeen();
+  drawer?.close();
   view = { feed, activity: null, refinements: [], expanded: new Set() };
   renderFeedList();
 
@@ -879,7 +882,10 @@ function eventNode(event, index, animate) {
   const isYou = viewer && event.actor.toLowerCase() === viewer;
 
   const node = document.createElement("div");
-  node.className = `gh-event${event.is_new ? " is-new" : ""}${animate ? "" : " no-anim"}`;
+  node.className = `gh-event${event.is_new ? " is-new" : ""}${animate ? "" : " no-anim"}${
+    drawer?.currentId() === event.id ? " is-current" : ""
+  }`;
+  node.dataset.id = event.id;
   node.style.setProperty("--i", Math.min(index, 20));
 
   const avatar = event.actor_avatar
@@ -931,6 +937,11 @@ function eventNode(event, index, animate) {
   const live = node.querySelector("[data-live]");
   if (live) tooltipContent.set(live, liveTooltip);
   node.querySelector(".gh-row").addEventListener("click", () => {
+    // with the panel open, a click shows that event there instead
+    if (drawer?.isOpen() && hasContext(event)) {
+      openContext(event);
+      return;
+    }
     const open = node.querySelector(".gh-detail");
     if (open) {
       open.remove();
@@ -1000,8 +1011,42 @@ function detailNode(event) {
   detail.className = "gh-detail";
   detail.innerHTML =
     `<div class="gh-detail-grid">${rows.join("")}</div>` +
-    (comments || (event.body ? `<div class="gh-body">${escapeHtml(event.body)}</div>` : ""));
+    (comments || (event.body ? `<div class="gh-body">${escapeHtml(event.body)}</div>` : "")) +
+    (hasContext(event)
+      ? '<button type="button" class="btn btn-ghost btn-sm gh-context-btn">Full context →</button>'
+      : "");
+  detail.querySelector(".gh-context-btn")?.addEventListener("click", (click) => {
+    click.stopPropagation();
+    openContext(event);
+  });
   return detail;
+}
+
+// ----- full context panel ------------------------------------------------
+
+function markCurrent(id) {
+  for (const node of document.querySelectorAll("#gh-timeline .gh-event")) {
+    node.classList.toggle("is-current", node.dataset.id === id);
+  }
+}
+
+function openContext(event) {
+  drawer.open(event);
+  markCurrent(event.id);
+}
+
+// ↑/↓ in the panel: the neighbouring event, among those on screen that
+// have something to open
+function stepContext(delta) {
+  const candidates =
+    view.activity?.events.filter((event) => matches(event) && hasContext(event)) || [];
+  const index = candidates.findIndex((event) => event.id === drawer.currentId());
+  const next = candidates[index + delta];
+  if (!next) return;
+  openContext(next);
+  document
+    .querySelector(`#gh-timeline .gh-event[data-id="${CSS.escape(next.id)}"]`)
+    ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 // ----- tooltips --------------------------------------------------------
@@ -1367,7 +1412,10 @@ function saveRefinementsAsFeed() {
 function onViewChange(name) {
   const wasVisible = visible;
   visible = name === "github";
-  if (wasVisible && !visible) markActiveSeen();
+  if (wasVisible && !visible) {
+    markActiveSeen();
+    drawer?.close();
+  }
   if (!wasVisible && visible && view.feed) {
     // coming back: what was shown before counts as seen now (the mark moved
     // on leaving), so the server flags only what arrived since
@@ -1411,6 +1459,12 @@ async function checkToken() {
 
 export async function initGithub() {
   setupTooltips(document.getElementById("gh-timeline"));
+  drawer = createContextDrawer({
+    labels: { kind: KIND_LABELS, state: STATE_LABELS },
+    avatarUrl,
+    onStep: stepContext,
+    onClose: () => markCurrent(null),
+  });
 
   makeSortable(document.getElementById("gh-feed-list"), {
     itemSelector: ".filter-item",

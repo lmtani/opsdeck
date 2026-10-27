@@ -7,7 +7,9 @@ async function request(path, options = {}) {
   const body = isJson ? await response.json() : null;
   if (!response.ok) {
     const detail = body?.detail ? body.detail : `HTTP ${response.status}`;
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    const error = new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    error.status = response.status;
+    throw error;
   }
   return body;
 }
@@ -51,6 +53,7 @@ export const api = {
   githubToken: () => request("/api/github/token"),
   previewGithubFeed: (data) => request("/api/github/feeds/preview", json("POST", data)),
   runFeed: (id) => request(`/api/github/feeds/${id}/query`, { method: "POST" }),
+  githubEventContext: (subject) => request("/api/github/events/context", json("POST", subject)),
   queryGithub: (data) => request("/api/github/events/query", json("POST", data)),
   githubOrgRepos: (org) => request(`/api/github/orgs/${encodeURIComponent(org)}/repos`),
 

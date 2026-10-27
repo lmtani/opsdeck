@@ -89,7 +89,7 @@ def keep_event(event: GithubEvent, spec: FeedSpec, viewer: str) -> bool:
 
 def _comment_item(event: GithubEvent) -> CodeComment:
     path = event.details.path if isinstance(event.details, CodeCommentDetails) else ""
-    return CodeComment(url=event.url, path=path, body=event.body)
+    return CodeComment(url=event.url, path=path, body=event.body, subject=event.subject)
 
 
 def _push_details(event: GithubEvent) -> PushDetails:

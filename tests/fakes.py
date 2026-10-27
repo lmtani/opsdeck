@@ -11,6 +11,7 @@ from app.domain.github import (
     CodeCommentDetails,
     EventKind,
     EventSource,
+    EventSubject,
     GithubEvent,
     GithubEventBatch,
     GithubFeed,
@@ -20,6 +21,7 @@ from app.domain.github import (
     PushDetails,
     ReviewDetails,
     ReviewState,
+    SubjectType,
 )
 from app.domain.links import CommandRunner, ImageStore, Link, LinkRepository
 from app.domain.logs import LogEntry, LogFilter, LogFilterRepository, LogProvider, LogQuery
@@ -168,6 +170,7 @@ def make_code_comment(id_, at, number=13, actor="bob"):
         body=f"c{id_}",
         is_pull=True,
         details=CodeCommentDetails(path=f"f{id_}.py"),
+        subject=EventSubject(SubjectType.REVIEW_COMMENT, "acme/core", item_id=int(id_) + 1),
     )
 
 
@@ -238,6 +241,7 @@ class FakeGithubProvider(GithubProvider):
         self.quota = None
         self.prs = {}
         self.pr_calls = []
+        self.contexts = {}  # EventSubject -> EventContext | Exception
 
     def activity(self, spec, realtime_since):
         self.activity_calls.append((spec, realtime_since))
@@ -279,3 +283,9 @@ class FakeGithubProvider(GithubProvider):
     def pull_requests(self, refs):
         self.pr_calls.append(list(refs))
         return {ref: self.prs[ref] for ref in refs if ref in self.prs}
+
+    def event_context(self, subject):
+        value = self.contexts.get(subject, GithubNotFoundError(f"Not found on GitHub: {subject}"))
+        if isinstance(value, Exception):
+            raise value
+        return value

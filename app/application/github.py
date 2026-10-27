@@ -10,8 +10,10 @@ from datetime import datetime, timedelta
 
 from app.application.common import apply_order
 from app.domain.common import utc_now
-from app.domain.errors import GithubError, NotFoundError
+from app.domain.errors import GithubError, GithubNotFoundError, NotFoundError
 from app.domain.github import (
+    EventContext,
+    EventSubject,
     FeedSpec,
     GithubActivity,
     GithubEvent,
@@ -140,6 +142,14 @@ class GithubActivityService:
 
     def list_org_repos(self, org: str) -> list[GithubRepo]:
         return self._provider.org_repos(validate_org(org))
+
+    def event_context(self, subject: EventSubject) -> EventContext:
+        try:
+            return self._provider.event_context(subject)
+        except GithubNotFoundError:
+            raise NotFoundError(
+                "This item no longer exists on GitHub (it may have been deleted), or the token cannot see it."
+            ) from None
 
     # ----- helpers -----------------------------------------------------
 

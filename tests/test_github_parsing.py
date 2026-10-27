@@ -1,16 +1,21 @@
 """Normalization of raw GitHub events (payload shapes as served in 2026)."""
 
+import pytest
+
 from app.domain.common import parse_timestamp
 from app.domain.github import (
     CodeCommentDetails,
     EventKind,
     EventSource,
+    EventSubject,
+    ItemState,
     PullDetails,
     ReviewDetails,
     ReviewState,
+    SubjectType,
 )
 from app.domain.github_rules import compare_url, is_bot
-from app.infrastructure.github_event_parsing import events_from_search_pull, parse_event
+from app.infrastructure.github_event_parsing import context_from_api, events_from_search_pull, parse_event
 
 ACTOR = {
     "id": 1,
@@ -259,3 +264,94 @@ def test_search_pull_opened_and_bot_authors():
     (opened,) = events_from_search_pull(pull, since=parse_timestamp("2026-10-20T00:00:00Z"))
     assert opened.action == "opened" and opened.state == "draft"
     assert opened.actor == "dependabot[bot]" and is_bot(opened.actor)
+
+
+# ----- subjects and full context --------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("type_", "payload", "subject"),
+    [
+        ("PullRequestEvent", {"action": "opened", "number": 12}, EventSubject("pull", "acme/core", 12)),
+        (
+            "PullRequestReviewEvent",
+            {"review": {"id": 77, "state": "approved"}, "pull_request": {"number": 12}},
+            EventSubject("review", "acme/core", 12, 77),
+        ),
+        (
+            "PullRequestReviewCommentEvent",
+            {"comment": {"id": 5, "path": "a.py"}, "pull_request": {"number": 13}},
+            EventSubject("review_comment", "acme/core", item_id=5),
+        ),
+        (
+            "IssueCommentEvent",
+            {"issue": {"number": 4}, "comment": {"id": 6}},
+            EventSubject("issue_comment", "acme/core", item_id=6),
+        ),
+        ("IssuesEvent", {"action": "opened", "issue": {"number": 4}}, EventSubject("issue", "acme/core", 4)),
+        (
+            "ReleaseEvent",
+            {"release": {"id": 8, "tag_name": "v1"}},
+            EventSubject("release", "acme/core", item_id=8),
+        ),
+        (
+            "CommitCommentEvent",
+            {"comment": {"id": 9}},
+            EventSubject("commit_comment", "acme/core", item_id=9),
+        ),
+        ("PushEvent", {"ref": "refs/heads/main", "head": "abc", "before": "def"}, None),
+    ],
+)
+def test_events_carry_the_subject_of_their_full_context(type_, payload, subject):
+    assert parse_event(_raw(type_, payload)).subject == subject
+
+
+def test_a_payload_without_the_id_still_parses_without_a_subject():
+    event = parse_event(_raw("IssueCommentEvent", {"issue": {"number": 4}, "comment": {"body": "hi"}}))
+    assert event.body == "hi" and event.subject is None
+
+
+def test_searched_events_point_at_the_pull_request_or_the_review():
+    pull = dict(
+        SEARCH_PULL,
+        reviews={"nodes": [dict(SEARCH_PULL["reviews"]["nodes"][0], databaseId=501)]},
+    )
+    merged, review = events_from_search_pull(pull, since=parse_timestamp("2026-10-23T00:00:00Z"))
+    assert merged.subject == EventSubject(SubjectType.PULL, "acme/dockerfiles", 112)
+    assert review.subject == EventSubject(SubjectType.REVIEW, "acme/dockerfiles", 112, 501)
+
+
+def test_context_of_a_review_comment_keeps_the_code_it_refers_to():
+    subject = EventSubject(SubjectType.REVIEW_COMMENT, "acme/core", item_id=5)
+    context = context_from_api(
+        subject,
+        {
+            "html_url": "https://github.com/acme/core/pull/13#discussion_r5",
+            "user": {"login": "bob", "avatar_url": "https://a/b"},
+            "created_at": "2026-10-22T10:00:00Z",
+            "path": "app/x.py",
+            "original_line": 21,
+            "diff_hunk": "@@ -1,2 +1,3 @@\n a\n+b",
+            "body_html": "<p>Use <code>b</code></p><script>alert(1)</script>",
+        },
+    )
+    assert (context.author, context.path, context.line) == ("bob", "app/x.py", 21)
+    assert context.diff_hunk.endswith("+b") and context.url.endswith("#discussion_r5")
+    assert context.created_at == parse_timestamp("2026-10-22T10:00:00Z")
+    assert context.body_html == "<p>Use <code>b</code></p>"  # sanitized
+
+
+def test_context_of_a_pull_request_and_of_a_release():
+    pull = context_from_api(
+        EventSubject(SubjectType.PULL, "acme/core", 12),
+        {"title": "feat: x", "state": "closed", "merged_at": "2026-10-22T10:00:00Z", "body_html": ""},
+    )
+    assert (pull.title, pull.state) == ("feat: x", ItemState.MERGED)
+    release = context_from_api(
+        EventSubject(SubjectType.RELEASE, "acme/core", item_id=8),
+        {"name": "v1.2", "published_at": "2026-10-21T09:00:00Z", "author": {"login": "carol"}},
+    )
+    assert (release.title, release.author) == ("v1.2", "carol")
+    assert release.created_at == parse_timestamp("2026-10-21T09:00:00Z")
+    review = context_from_api(EventSubject(SubjectType.REVIEW, "acme/core", 12, 7), {"state": "APPROVED"})
+    assert (review.review_state, review.state) == (ReviewState.APPROVED, None)

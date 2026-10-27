@@ -4,7 +4,15 @@ import pytest
 
 from app.application.github import GithubActivityService, GithubFeedService
 from app.domain.errors import GithubError, GithubNotFoundError, NotFoundError, ValidationError
-from app.domain.github import FeedSpec, GithubFeed, ItemState, PullRequestInfo
+from app.domain.github import (
+    EventContext,
+    EventSubject,
+    FeedSpec,
+    GithubFeed,
+    ItemState,
+    PullRequestInfo,
+    SubjectType,
+)
 from tests.fakes import (
     FakeGithubProvider,
     InMemoryFeedRepository,
@@ -230,3 +238,16 @@ def test_run_feed_flags_events_newer_than_the_mark(feeds):
 
     ad_hoc = GithubActivityService(provider, feeds).run_query(FeedSpec("acme"))
     assert ad_hoc.unseen == 0 and not any(e.is_new for e in ad_hoc.events)
+
+
+def test_event_context_comes_from_the_provider_and_a_missing_item_is_not_found(feeds):
+    provider = FakeGithubProvider()
+    service = GithubActivityService(provider, feeds)
+    subject = EventSubject(SubjectType.ISSUE_COMMENT, "acme/core", item_id=3)
+    provider.contexts[subject] = EventContext(subject=subject, body_html="<p>full text</p>")
+    assert service.event_context(subject).body_html == "<p>full text</p>"
+    with pytest.raises(NotFoundError, match="no longer exists"):
+        service.event_context(EventSubject(SubjectType.ISSUE_COMMENT, "acme/core", item_id=4))
+    provider.contexts[subject] = GithubError("GitHub rate limit exhausted")
+    with pytest.raises(GithubError):
+        service.event_context(subject)
