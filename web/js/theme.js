@@ -11,6 +11,9 @@ const THEMES = [
 
 function apply(themeId) {
   document.documentElement.dataset.theme = themeId;
+  // colors the title bar of the installed app (and the browser UI where supported)
+  const theme = THEMES.find((item) => item.id === themeId);
+  if (theme) document.querySelector('meta[name="theme-color"]').content = theme.base;
   localStorage.setItem("opsdeck-theme", themeId);
   renderOptions();
 }

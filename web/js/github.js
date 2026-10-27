@@ -131,6 +131,13 @@ function updateTabBadge() {
   badge.hidden = total === 0;
   badge.textContent = total > 99 ? "99+" : String(total);
   badge.title = plural(total, "new event", "new events");
+  // the installed app also shows the count on its icon in the dock/taskbar
+  if ("setAppBadge" in navigator) {
+    const update = total ? navigator.setAppBadge(total) : navigator.clearAppBadge();
+    update.catch(() => {
+      /* not installed or not supported */
+    });
+  }
 }
 
 function renderFeedList() {
