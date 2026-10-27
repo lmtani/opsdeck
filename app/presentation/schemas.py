@@ -199,6 +199,47 @@ class EventSubjectModel(BaseModel):
     item_id: int = 0
 
 
+class ThreadCommentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    author: str
+    author_avatar: str = ""
+    created_at: datetime | None = None
+    body_html: str = ""  # sanitized server-side
+    url: str = ""
+    path: str = ""
+    line: int | None = None
+    diff_hunk: str = ""
+
+
+class LabelOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str
+    color: str = ""  # six hex digits or empty: safe to use in a style
+
+
+class ReviewerOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    login: str
+    state: ReviewState | None = None  # None: review requested, not given yet
+
+
+class PullStatsOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    additions: int = 0
+    deletions: int = 0
+    changed_files: int = 0
+    commits: int = 0
+    head_ref: str = ""
+    base_ref: str = ""
+    labels: list[LabelOut] = []
+    reviewers: list[ReviewerOut] = []
+
+
 class EventContextOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -214,6 +255,8 @@ class EventContextOut(BaseModel):
     path: str = ""
     line: int | None = None
     diff_hunk: str = ""
+    thread: list[ThreadCommentOut] = []
+    pull: PullStatsOut | None = None
 
 
 class GithubEventOut(BaseModel):

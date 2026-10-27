@@ -11,7 +11,16 @@ from app.application.links import CommandService, ImageService, LinkService
 from app.application.logs import LogFilterService, LogQueryService
 from app.application.settings import SettingsService
 from app.domain.errors import CommandError, GithubError, LogProviderError
-from app.domain.github import EventContext, EventSubject, SubjectType
+from app.domain.github import (
+    EventContext,
+    EventSubject,
+    Label,
+    PullStats,
+    Reviewer,
+    ReviewState,
+    SubjectType,
+    ThreadComment,
+)
 from app.presentation.api import Services, create_app
 from tests.fakes import (
     FakeCommandRunner,
@@ -314,3 +323,27 @@ def test_github_events_expose_their_subject(world):
     world.github.org["acme"] = [make_code_comment(1, "2026-10-22T10:00:00Z")]
     events = client.post("/api/github/events/query", json={"org": "acme"}).json()["events"]
     assert events[0]["subject"] == {"type": "review_comment", "repo": "acme/core", "number": 0, "item_id": 2}
+
+
+def test_github_event_context_carries_the_thread_and_pull_stats(world):
+    client = world.client
+    comment = EventSubject(SubjectType.REVIEW_COMMENT, "acme/core", item_id=5)
+    world.github.contexts[comment] = EventContext(
+        subject=comment, thread=(ThreadComment(id=4, author="bob"), ThreadComment(id=5, author="carol"))
+    )
+    pull = EventSubject(SubjectType.PULL, "acme/core", number=12)
+    world.github.contexts[pull] = EventContext(
+        subject=pull,
+        pull=PullStats(
+            additions=3, labels=(Label("bug", "d73a4a"),), reviewers=(Reviewer("bob", ReviewState.APPROVED),)
+        ),
+    )
+    thread = client.post(
+        "/api/github/events/context", json={"type": "review_comment", "repo": "acme/core", "item_id": 5}
+    )
+    assert [c["id"] for c in thread.json()["thread"]] == [4, 5] and thread.json()["pull"] is None
+    stats = client.post(
+        "/api/github/events/context", json={"type": "pull", "repo": "acme/core", "number": 12}
+    ).json()
+    assert stats["pull"]["additions"] == 3 and stats["pull"]["labels"] == [{"name": "bug", "color": "d73a4a"}]
+    assert stats["pull"]["reviewers"] == [{"login": "bob", "state": "approved"}]
