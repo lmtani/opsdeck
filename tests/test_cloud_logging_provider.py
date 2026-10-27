@@ -65,16 +65,24 @@ def test_the_client_gets_the_queried_project_so_no_env_project_is_needed():
 
 
 @pytest.mark.parametrize(
-    "error, expected",
+    ("error", "expected"),
     [
-        (auth_exceptions.DefaultCredentialsError("File /secrets/gcp-adc.json was not found."),
-         "No Google Cloud credentials found"),
-        (auth_exceptions.DefaultCredentialsError("File x is not a valid json file."),
-         "credentials file is not usable"),
-        (auth_exceptions.RefreshError("invalid_grant: Token has been expired or revoked."),
-         "expired or were revoked"),
-        (auth_exceptions.RefreshError("invalid_client: The OAuth client was not found."),
-         "does not recognize these credentials"),
+        (
+            auth_exceptions.DefaultCredentialsError("File /secrets/gcp-adc.json was not found."),
+            "No Google Cloud credentials found",
+        ),
+        (
+            auth_exceptions.DefaultCredentialsError("File x is not a valid json file."),
+            "credentials file is not usable",
+        ),
+        (
+            auth_exceptions.RefreshError("invalid_grant: Token has been expired or revoked."),
+            "expired or were revoked",
+        ),
+        (
+            auth_exceptions.RefreshError("invalid_client: The OAuth client was not found."),
+            "does not recognize these credentials",
+        ),
         (auth_exceptions.TransportError("connection refused"), "Could not reach Google"),
         (PermissionError(13, "Permission denied"), "chmod 644 secrets/gcp-adc.json"),
     ],
@@ -89,13 +97,17 @@ def test_credential_problems_fail_fast_with_instructions(error, expected):
 
 
 @pytest.mark.parametrize(
-    "error, expected",
+    ("error", "expected"),
     [
-        (api_exceptions.PermissionDenied("Permission 'logging.logEntries.list' denied"),
-         "roles/logging.viewer"),
+        (
+            api_exceptions.PermissionDenied("Permission 'logging.logEntries.list' denied"),
+            "roles/logging.viewer",
+        ),
         (api_exceptions.NotFound("project"), "was not found"),
-        (api_exceptions.InvalidArgument("Unparseable filter: syntax error at line 1"),
-         "Check the filter expression"),
+        (
+            api_exceptions.InvalidArgument("Unparseable filter: syntax error at line 1"),
+            "Check the filter expression",
+        ),
         (api_exceptions.RetryError("Timeout of 60.0s exceeded", cause=None), "did not answer in time"),
         (api_exceptions.ServiceUnavailable("unavailable"), "did not answer in time"),
         (api_exceptions.Unauthenticated("bad token"), "gcloud auth application-default login"),

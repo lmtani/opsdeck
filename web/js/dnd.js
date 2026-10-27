@@ -2,7 +2,10 @@
 // Items must carry data-id. The DOM is reordered live while dragging;
 // onReorder receives the final id sequence on drop.
 
-export function makeSortable(container, { itemSelector, onReorder, axis = "list", canDrag = () => true }) {
+export function makeSortable(
+  container,
+  { itemSelector, onReorder, axis = "list", canDrag = () => true }
+) {
   let dragged = null;
 
   container.addEventListener("dragstart", (event) => {
@@ -43,9 +46,7 @@ export function makeSortable(container, { itemSelector, onReorder, axis = "list"
     dragged.classList.remove("is-dragging");
     container.classList.remove("dnd-active");
     dragged = null;
-    const ids = [...container.querySelectorAll(itemSelector)].map(
-      (element) => element.dataset.id
-    );
+    const ids = [...container.querySelectorAll(itemSelector)].map((element) => element.dataset.id);
     onReorder(ids);
   });
 }

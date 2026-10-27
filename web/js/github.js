@@ -18,7 +18,7 @@ import {
   notificationsBlocked,
   toggleNotifications,
 } from "./notifications.js";
-import { LOCALE, closeModal, confirmDanger, escapeHtml, openModal, toast } from "./ui.js";
+import { closeModal, confirmDanger, escapeHtml, LOCALE, openModal, toast } from "./ui.js";
 
 const KIND_LABELS = {
   push: "push",
@@ -106,7 +106,10 @@ function refinementLabel({ field, value }) {
 function matches(event, ignoreField = null) {
   const groups = {};
   for (const { field, value } of view.refinements) {
-    if (field !== ignoreField) (groups[field] ||= []).push(value);
+    if (field !== ignoreField) {
+      groups[field] ??= [];
+      groups[field].push(value);
+    }
   }
   return Object.entries(groups).every(([field, values]) =>
     values.includes(fieldValue(event, field))
@@ -294,13 +297,20 @@ function openFromNotification(feed) {
 async function setNotifications(feed) {
   const outcome = await toggleNotifications(feed.id);
   if (outcome === "on") confirmEnabled(feed, { paused: !polling }, openFromNotification);
-  const testHint = "No test notification on screen? Check the system's notification settings for this browser.";
+  const testHint =
+    "No test notification on screen? Check the system's notification settings for this browser.";
   const messages = {
     on: polling
       ? [`Notifications for “${feed.name}” are on. ${testHint}`, "success"]
-      : [`Notifications for “${feed.name}” are on; they start when live updates resume. ${testHint}`, "info"],
+      : [
+          `Notifications for “${feed.name}” are on; they start when live updates resume. ${testHint}`,
+          "info",
+        ],
     off: [`Notifications for “${feed.name}” are off.`, "info"],
-    unsupported: ["This browser cannot show notifications here: they need HTTPS or localhost.", "error"],
+    unsupported: [
+      "This browser cannot show notifications here: they need HTTPS or localhost.",
+      "error",
+    ],
     blocked: [
       notificationsBlocked()
         ? "Notifications are blocked for this site. Allow them in the browser's site settings, then try again."
@@ -403,7 +413,9 @@ function renderMeta() {
   ];
   if (fresh) parts.push(`${fresh} new`);
   if (activity.fetched_at) {
-    parts.push(`updated ${new Date(activity.fetched_at).toLocaleTimeString(LOCALE, { hourCycle: "h23" })}`);
+    parts.push(
+      `updated ${new Date(activity.fetched_at).toLocaleTimeString(LOCALE, { hourCycle: "h23" })}`
+    );
   }
   if (activity.rate_remaining != null) {
     parts.push(`quota ${activity.rate_remaining}/${activity.rate_limit}`);
@@ -556,7 +568,9 @@ function binTooltip(index, bin, note) {
     `<div class="gh-tooltip-main">${binLabel(index)} · ${plural(bin.count, "event")}</div>` +
     (note ? `<div class="gh-tooltip-sub">${escapeHtml(note)}</div>` : "") +
     (people ? `<div class="gh-tip-actors">${people}</div>` : "") +
-    (rest > 0 ? `<div class="gh-tooltip-sub">+ ${plural(rest, "other contributor", "other contributors")}</div>` : "") +
+    (rest > 0
+      ? `<div class="gh-tooltip-sub">+ ${plural(rest, "other contributor", "other contributors")}</div>`
+      : "") +
     (kinds ? `<div class="gh-tip-kinds">${kinds}</div>` : "")
   );
 }
@@ -616,7 +630,8 @@ function focusHistogram(histogram, person, peak) {
   histogram.classList.toggle("is-focus", Boolean(person));
   histogram.querySelectorAll("[data-bin]").forEach((column) => {
     const weight = person?.bins.get(Number(column.dataset.bin)) || 0;
-    const height = weight && peak ? Math.min(100, Math.max(6, Math.round((weight / peak) * 100))) : 0;
+    const height =
+      weight && peak ? Math.min(100, Math.max(6, Math.round((weight / peak) * 100))) : 0;
     column.style.setProperty("--mine", `${height}%`);
   });
 }
@@ -659,19 +674,23 @@ function dayContributors(events) {
   return days;
 }
 
-const hhmm = (date) => date.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const hhmm = (date) =>
+  date.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
 function personTooltip(person, { isYou, active, filtering }) {
-  const span = person.first.getTime() === person.last.getTime()
-    ? `at ${hhmm(person.first)}`
-    : `${hhmm(person.first)}–${hhmm(person.last)}`;
+  const span =
+    person.first.getTime() === person.last.getTime()
+      ? `at ${hhmm(person.first)}`
+      : `${hhmm(person.first)}–${hhmm(person.last)}`;
   const kinds = KIND_ORDER.filter((kind) => person.kinds.has(kind))
     .map(
       (kind) =>
         `<span class="gh-tip-kind kind-${kind}">${escapeHtml(KIND_LABELS[kind])} ${person.kinds.get(kind)}</span>`
     )
     .join("");
-  const repos = [...person.repos.entries()].sort((a, b) => b[1] - a[1]).map(([repo]) => shortRepo(repo));
+  const repos = [...person.repos.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([repo]) => shortRepo(repo));
   const repoLine = repos.slice(0, 3).join(", ") + (repos.length > 3 ? ` +${repos.length - 3}` : "");
   const hint = active
     ? "click to show everyone again"
@@ -692,9 +711,13 @@ function personTooltip(person, { isYou, active, filtering }) {
 function contributorsNode(day, people, { histogram, peak, partial }) {
   const viewer = (view.activity.viewer || "").toLowerCase();
   const chosen = new Set(view.refinements.filter((r) => r.field === "actor").map((r) => r.value));
-  const sorted = [...people.values()].sort((a, b) => b.count - a.count || a.login.localeCompare(b.login));
+  const sorted = [...people.values()].sort(
+    (a, b) => b.count - a.count || a.login.localeCompare(b.login)
+  );
   // the first few, plus anyone picked in the author filter
-  const extra = sorted.filter((person, index) => index >= PEOPLE_SHOWN && !chosen.has(person.login));
+  const extra = sorted.filter(
+    (person, index) => index >= PEOPLE_SHOWN && !chosen.has(person.login)
+  );
   const repos = new Set(sorted.flatMap((person) => [...person.repos.keys()]));
   view.peopleOpen ||= new Set();
 
@@ -709,7 +732,9 @@ function contributorsNode(day, people, { histogram, peak, partial }) {
             isYou ? "is-you" : "",
             chosen.has(person.login) ? "is-active" : chosen.size ? "is-dimmed" : "",
             extra.includes(person) ? "is-extra" : "",
-          ].filter(Boolean).join(" ");
+          ]
+            .filter(Boolean)
+            .join(" ");
           const avatar = person.avatar
             ? `<img class="gh-person-avatar" src="${escapeHtml(avatarUrl(person.avatar))}" alt="" loading="lazy" />`
             : `<span class="gh-person-avatar">${escapeHtml(person.login.slice(0, 1).toUpperCase())}</span>`;
@@ -729,9 +754,7 @@ function contributorsNode(day, people, { histogram, peak, partial }) {
     </div>
     <div class="gh-people-total">
       ${plural(sorted.length, "contributor")} · ${plural(repos.size, "repo")}${
-        partial
-          ? ' <span class="gh-people-partial" data-tip="partial day">· partial</span>'
-          : ""
+        partial ? ' <span class="gh-people-partial" data-tip="partial day">· partial</span>' : ""
       }
     </div>`;
 
@@ -749,7 +772,9 @@ function contributorsNode(day, people, { histogram, peak, partial }) {
   const labelMore = () => {
     const open = node.classList.contains("is-open");
     more.textContent = open ? "less" : `+${extra.length}`;
-    more.title = open ? "Show fewer contributors" : `Show ${plural(extra.length, "more contributor", "more contributors")}`;
+    more.title = open
+      ? "Show fewer contributors"
+      : `Show ${plural(extra.length, "more contributor", "more contributors")}`;
     more.setAttribute("aria-expanded", String(open));
   };
   if (more) {
@@ -798,7 +823,9 @@ function renderTimeline(animate) {
   // one scale for every day, so days can be compared at a glance
   const peak = Math.max(...[...volume.values()].flat().map((bin) => bin.count));
   const coverageStart = view.activity.coverage_start ? time(view.activity.coverage_start) : null;
-  const contributors = dayContributors(view.activity.events.filter((event) => matches(event, "actor")));
+  const contributors = dayContributors(
+    view.activity.events.filter((event) => matches(event, "actor"))
+  );
 
   const anyNew = events.some((event) => event.is_new);
   let lastDay = "";
@@ -852,8 +879,7 @@ function eventNode(event, index, animate) {
   const isYou = viewer && event.actor.toLowerCase() === viewer;
 
   const node = document.createElement("div");
-  node.className =
-    `gh-event${event.is_new ? " is-new" : ""}${animate ? "" : " no-anim"}`;
+  node.className = `gh-event${event.is_new ? " is-new" : ""}${animate ? "" : " no-anim"}`;
   node.style.setProperty("--i", Math.min(index, 20));
 
   const avatar = event.actor_avatar
@@ -899,7 +925,9 @@ function eventNode(event, index, animate) {
       toggleRefinement(button.dataset.refine, fieldValue(event, button.dataset.refine));
     });
   });
-  node.querySelector(".gh-link").addEventListener("click", (clickEvent) => clickEvent.stopPropagation());
+  node
+    .querySelector(".gh-link")
+    .addEventListener("click", (clickEvent) => clickEvent.stopPropagation());
   const live = node.querySelector("[data-live]");
   if (live) tooltipContent.set(live, liveTooltip);
   node.querySelector(".gh-row").addEventListener("click", () => {
@@ -931,7 +959,10 @@ function detailNode(event) {
     row("branch", link(`${repoUrl}/tree/${event.ref}`, event.ref));
     const heads = details.heads || [];
     if (heads.length) {
-      row("commits", heads.map((sha) => link(`${repoUrl}/commit/${sha}`, sha.slice(0, 7))).join(" "));
+      row(
+        "commits",
+        heads.map((sha) => link(`${repoUrl}/commit/${sha}`, sha.slice(0, 7))).join(" ")
+      );
     }
     for (const commit of details.commits || []) {
       row(commit.sha, escapeHtml(commit.message));
@@ -1115,7 +1146,10 @@ async function togglePolling() {
 let previewSeq = 0;
 
 async function addRepos(text) {
-  const pieces = text.split(/[\s,]+/).map((piece) => piece.trim()).filter(Boolean);
+  const pieces = text
+    .split(/[\s,]+/)
+    .map((piece) => piece.trim())
+    .filter(Boolean);
   if (!pieces.length) return;
   const before = [...modalRepos];
   modalRepos = [...modalRepos, ...pieces];
@@ -1349,7 +1383,10 @@ export function setGithubAvailability(isAvailable) {
 function richText(text) {
   return escapeHtml(text)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/https:\/\/[^\s<]+[^\s<.,;:)]/g, (url) => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
+    .replace(
+      /https:\/\/[^\s<]+[^\s<.,;:)]/g,
+      (url) => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`
+    );
 }
 
 // Ask the server what the token can do and say it where the user looks: the
@@ -1419,7 +1456,7 @@ export async function initGithub() {
   document.getElementById("gh-seen-btn").addEventListener("click", () => {
     markActiveSeen();
     if (view.activity) {
-      view.activity.events.forEach((event) => (event.is_new = false));
+      for (const event of view.activity.events) event.is_new = false;
       view.activity.unseen = 0;
     }
     renderActivity();

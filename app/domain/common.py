@@ -1,9 +1,9 @@
 """Ids and time, shared by every context. No I/O."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 def new_id() -> str:
@@ -11,7 +11,7 @@ def new_id() -> str:
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def parse_timestamp(value) -> datetime | None:
@@ -21,15 +21,15 @@ def parse_timestamp(value) -> datetime | None:
     which is what GitHub, the stored rows and the browser send.
     """
     if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
     try:
         parsed = datetime.fromisoformat(value)
     except (TypeError, ValueError):
         return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def format_timestamp(value: datetime) -> str:
     """Aware datetime to ISO-8601 UTC text ending in Z (stored rows, logs)."""
-    aware = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-    return aware.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    aware = value if value.tzinfo else value.replace(tzinfo=UTC)
+    return aware.astimezone(UTC).isoformat().replace("+00:00", "Z")

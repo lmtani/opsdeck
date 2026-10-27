@@ -7,23 +7,29 @@ from app.infrastructure.github_api_provider import resolve_github_token
 def test_defaults_match_the_local_setup():
     settings = Settings.from_env({})
     assert (settings.mysql.host, settings.mysql.port, settings.mysql.database) == (
-        "127.0.0.1", 13306, "opsdeck"
+        "127.0.0.1",
+        13306,
+        "opsdeck",
     )
     assert (settings.storage, settings.log_provider) == ("mysql", "gcloud")
     assert settings.commands_enabled is True and settings.github_token == ""
 
 
 def test_container_overrides():
-    settings = Settings.from_env({
-        "DASHBOARD_DB_HOST": "mysql.infra.svc.cluster.local",
-        "DASHBOARD_DB_PORT": "3306",
-        "DASHBOARD_DB_PASSWORD": "s3cret",
-        "DASHBOARD_LOG_PROVIDER": "API",
-        "DASHBOARD_COMMANDS": "off",
-        "GITHUB_TOKEN": "ghp_x",
-    })
+    settings = Settings.from_env(
+        {
+            "DASHBOARD_DB_HOST": "mysql.infra.svc.cluster.local",
+            "DASHBOARD_DB_PORT": "3306",
+            "DASHBOARD_DB_PASSWORD": "s3cret",
+            "DASHBOARD_LOG_PROVIDER": "API",
+            "DASHBOARD_COMMANDS": "off",
+            "GITHUB_TOKEN": "ghp_x",
+        }
+    )
     assert (settings.mysql.host, settings.mysql.port, settings.mysql.password) == (
-        "mysql.infra.svc.cluster.local", 3306, "s3cret"
+        "mysql.infra.svc.cluster.local",
+        3306,
+        "s3cret",
     )
     assert settings.log_provider == "api" and settings.commands_enabled is False
     assert settings.github_token == "ghp_x"

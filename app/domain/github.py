@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from app.domain.common import new_id, utc_now
 from app.domain.errors import ValidationError
@@ -243,7 +244,7 @@ class GithubFeed:
         description: str = "",
     ) -> None:
         """Replace the editable fields; id, position, mark and created_at stay."""
-        values = dict(
+        values: dict[str, Any] = dict(
             name=_clean(name),
             org=org,
             repos=list(repos or []),
@@ -416,8 +417,6 @@ class GithubProvider(ABC):
         """Every repo of the org visible to the user, most recently pushed first."""
 
     @abstractmethod
-    def pull_requests(
-        self, refs: list[tuple[str, int]]
-    ) -> dict[tuple[str, int], PullRequestInfo]:
+    def pull_requests(self, refs: list[tuple[str, int]]) -> dict[tuple[str, int], PullRequestInfo]:
         """Current title and state of PRs given as ("org/repo", number);
         unknown refs are omitted."""

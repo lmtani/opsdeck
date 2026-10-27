@@ -23,7 +23,9 @@ class SubprocessCommandRunner(CommandRunner):
         if not command:
             raise CommandError("Empty command")
         try:
-            process = subprocess.Popen(
+            # command cards run the user's own shell command on their machine by
+            # design (local mode only: containers use DisabledCommandRunner)
+            process = subprocess.Popen(  # noqa: S602
                 command,
                 shell=True,
                 stdin=subprocess.DEVNULL,

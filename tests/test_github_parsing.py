@@ -1,5 +1,6 @@
 """Normalization of raw GitHub events (payload shapes as served in 2026)."""
 
+from app.domain.common import parse_timestamp
 from app.domain.github import (
     CodeCommentDetails,
     EventKind,
@@ -8,7 +9,6 @@ from app.domain.github import (
     ReviewDetails,
     ReviewState,
 )
-from app.domain.common import parse_timestamp
 from app.domain.github_rules import compare_url, is_bot
 from app.infrastructure.github_event_parsing import events_from_search_pull, parse_event
 
@@ -33,11 +33,18 @@ def _raw(type_, payload, repo="acme/core"):
 
 
 def test_push_links_the_compared_range():
-    event = parse_event(_raw("PushEvent", {
-        "repository_id": 9, "push_id": 1, "ref": "refs/heads/main",
-        "head": "3cd190fd7c526366cd7bb0c41608e10504b11aa6",
-        "before": "55f827639276481bf18857294e58232d54a00d6f",
-    }))
+    event = parse_event(
+        _raw(
+            "PushEvent",
+            {
+                "repository_id": 9,
+                "push_id": 1,
+                "ref": "refs/heads/main",
+                "head": "3cd190fd7c526366cd7bb0c41608e10504b11aa6",
+                "before": "55f827639276481bf18857294e58232d54a00d6f",
+            },
+        )
+    )
     assert event.kind == "push"
     assert event.ref == "main"
     assert event.summary == "pushed to main"
@@ -50,14 +57,20 @@ def test_push_of_a_new_branch_links_the_head_commit():
 
 
 def test_trimmed_pull_request_event_has_number_but_no_title():
-    event = parse_event(_raw("PullRequestEvent", {
-        "action": "merged", "number": 36,
-        "pull_request": {
-            "number": 36,
-            "head": {"ref": "fix/front", "sha": "9928ac8"},
-            "base": {"ref": "main", "sha": "691bf11"},
-        },
-    }))
+    event = parse_event(
+        _raw(
+            "PullRequestEvent",
+            {
+                "action": "merged",
+                "number": 36,
+                "pull_request": {
+                    "number": 36,
+                    "head": {"ref": "fix/front", "sha": "9928ac8"},
+                    "base": {"ref": "main", "sha": "691bf11"},
+                },
+            },
+        )
+    )
     assert event.kind == "pr"
     assert event.summary == "merged PR #36"
     assert event.state == "merged"
@@ -68,22 +81,41 @@ def test_trimmed_pull_request_event_has_number_but_no_title():
 
 
 def test_legacy_closed_and_merged_pull_request_counts_as_merge():
-    event = parse_event(_raw("PullRequestEvent", {
-        "action": "closed", "number": 7,
-        "pull_request": {"number": 7, "merged": True, "state": "closed", "title": "Fix",
-                         "html_url": "https://github.com/acme/core/pull/7"},
-    }))
+    event = parse_event(
+        _raw(
+            "PullRequestEvent",
+            {
+                "action": "closed",
+                "number": 7,
+                "pull_request": {
+                    "number": 7,
+                    "merged": True,
+                    "state": "closed",
+                    "title": "Fix",
+                    "html_url": "https://github.com/acme/core/pull/7",
+                },
+            },
+        )
+    )
     assert event.action == "merged"
     assert event.state == "merged" and event.title == "Fix"
 
 
 def test_review_state_drives_the_verb():
-    event = parse_event(_raw("PullRequestReviewEvent", {
-        "action": "created",
-        "review": {"state": "approved", "body": "LGTM",
-                   "html_url": "https://github.com/acme/core/pull/12#pullrequestreview-1"},
-        "pull_request": {"number": 12, "head": {"ref": "feat/x"}},
-    }))
+    event = parse_event(
+        _raw(
+            "PullRequestReviewEvent",
+            {
+                "action": "created",
+                "review": {
+                    "state": "approved",
+                    "body": "LGTM",
+                    "html_url": "https://github.com/acme/core/pull/12#pullrequestreview-1",
+                },
+                "pull_request": {"number": 12, "head": {"ref": "feat/x"}},
+            },
+        )
+    )
     assert event.kind == "review"
     assert event.summary == "approved PR #12"
     assert event.body == "LGTM"
@@ -92,12 +124,21 @@ def test_review_state_drives_the_verb():
 
 
 def test_review_comment_keeps_path_and_link():
-    event = parse_event(_raw("PullRequestReviewCommentEvent", {
-        "action": "created",
-        "comment": {"path": "backend/x.py", "body": "Poxa…", "line": 21,
-                    "_links": {"html": {"href": "https://github.com/acme/core/pull/13#discussion_r1"}}},
-        "pull_request": {"number": 13},
-    }))
+    event = parse_event(
+        _raw(
+            "PullRequestReviewCommentEvent",
+            {
+                "action": "created",
+                "comment": {
+                    "path": "backend/x.py",
+                    "body": "Poxa…",
+                    "line": 21,
+                    "_links": {"html": {"href": "https://github.com/acme/core/pull/13#discussion_r1"}},
+                },
+                "pull_request": {"number": 13},
+            },
+        )
+    )
     assert event.kind == "comment"
     assert event.summary == "left a review comment on PR #13"
     assert event.url.endswith("#discussion_r1")
@@ -106,13 +147,25 @@ def test_review_comment_keeps_path_and_link():
 
 
 def test_issue_comment_on_a_pull_request():
-    event = parse_event(_raw("IssueCommentEvent", {
-        "action": "created",
-        "issue": {"number": 1102, "title": "feat: coverage", "state": "closed",
-                  "html_url": "https://github.com/acme/core/pull/1102",
-                  "pull_request": {"url": "x"}},
-        "comment": {"body": "ok", "html_url": "https://github.com/acme/core/pull/1102#issuecomment-1"},
-    }))
+    event = parse_event(
+        _raw(
+            "IssueCommentEvent",
+            {
+                "action": "created",
+                "issue": {
+                    "number": 1102,
+                    "title": "feat: coverage",
+                    "state": "closed",
+                    "html_url": "https://github.com/acme/core/pull/1102",
+                    "pull_request": {"url": "x"},
+                },
+                "comment": {
+                    "body": "ok",
+                    "html_url": "https://github.com/acme/core/pull/1102#issuecomment-1",
+                },
+            },
+        )
+    )
     assert event.summary == "commented on PR #1102"
     assert event.title == "feat: coverage"
     assert event.state is None  # resolved later via GraphQL (closed may mean merged)
@@ -164,13 +217,19 @@ SEARCH_PULL = {
     "repository": {"nameWithOwner": "acme/dockerfiles"},
     "author": {"__typename": "User", "login": "alice", "avatarUrl": "https://a/1"},
     "mergedBy": {"__typename": "User", "login": "renan", "avatarUrl": "https://a/2"},
-    "reviews": {"nodes": [
-        {"state": "APPROVED", "submittedAt": "2026-10-23T12:12:06Z", "body": "",
-         "url": "https://github.com/acme/dockerfiles/pull/112#pullrequestreview-1",
-         "author": {"__typename": "User", "login": "renan", "avatarUrl": "https://a/2"}},
-        {"state": "PENDING", "submittedAt": None, "author": {"login": "x"}},
-        {"state": "COMMENTED", "submittedAt": "2026-10-19T10:00:00Z", "author": {"login": "y"}},
-    ]},
+    "reviews": {
+        "nodes": [
+            {
+                "state": "APPROVED",
+                "submittedAt": "2026-10-23T12:12:06Z",
+                "body": "",
+                "url": "https://github.com/acme/dockerfiles/pull/112#pullrequestreview-1",
+                "author": {"__typename": "User", "login": "renan", "avatarUrl": "https://a/2"},
+            },
+            {"state": "PENDING", "submittedAt": None, "author": {"login": "x"}},
+            {"state": "COMMENTED", "submittedAt": "2026-10-19T10:00:00Z", "author": {"login": "y"}},
+        ]
+    },
 }
 
 
@@ -188,9 +247,15 @@ def test_search_pull_becomes_merge_and_review_events_inside_the_window():
 
 
 def test_search_pull_opened_and_bot_authors():
-    pull = dict(SEARCH_PULL, state="OPEN", isDraft=True, mergedAt=None, closedAt=None,
-                reviews={"nodes": []},
-                author={"__typename": "Bot", "login": "dependabot", "avatarUrl": ""})
+    pull = dict(
+        SEARCH_PULL,
+        state="OPEN",
+        isDraft=True,
+        mergedAt=None,
+        closedAt=None,
+        reviews={"nodes": []},
+        author={"__typename": "Bot", "login": "dependabot", "avatarUrl": ""},
+    )
     (opened,) = events_from_search_pull(pull, since=parse_timestamp("2026-10-20T00:00:00Z"))
     assert opened.action == "opened" and opened.state == "draft"
     assert opened.actor == "dependabot[bot]" and is_bot(opened.actor)

@@ -60,6 +60,15 @@ uv run pytest -q
 
 Locally the app uses the `gcloud` CLI for logs and falls back to `gh auth token` for GitHub.
 
+### Contributing
+
+Install the git hooks once per clone; they check every commit with ruff (lint and format), mypy, [Biome](https://biomejs.dev/) for the frontend and gitleaks for secrets:
+
+```bash
+uv run pre-commit install
+uv run pre-commit run --all-files   # what CI runs
+```
+
 ## Configuration
 
 | Variable | Default | Purpose |

@@ -1,9 +1,9 @@
 """Use cases of the logs context: saved filters and log queries."""
 
 from app.application.common import apply_order
-from app.domain.ordering import next_position, ordered
 from app.domain.errors import NotFoundError
 from app.domain.logs import LogEntry, LogFilter, LogFilterRepository, LogProvider, LogQuery
+from app.domain.ordering import next_position, ordered
 
 
 class LogFilterService:

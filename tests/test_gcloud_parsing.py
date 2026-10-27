@@ -61,9 +61,7 @@ def test_parse_entry_defaults_correlation_fields_to_empty():
 
 
 def test_parse_json_payload_prefers_message_key():
-    entry = GcloudLogProvider._parse_entry(
-        {"jsonPayload": {"message": "request failed", "code": 500}}
-    )
+    entry = GcloudLogProvider._parse_entry({"jsonPayload": {"message": "request failed", "code": 500}})
     assert entry.summary == "request failed"
     assert entry.severity == "DEFAULT"
     assert entry.payload == {"message": "request failed", "code": 500}
@@ -130,7 +128,7 @@ def test_format_latency_variants():
 def test_describe_includes_expression_and_flags():
     provider = GcloudLogProvider()
     command = provider.describe(
-        LogQuery(project="proj-x", expression='severity>=ERROR', freshness="6h", limit=25)
+        LogQuery(project="proj-x", expression="severity>=ERROR", freshness="6h", limit=25)
     )
     assert "gcloud logging read" in command
     assert "severity>=ERROR" in command

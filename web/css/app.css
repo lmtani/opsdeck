@@ -106,6 +106,7 @@
 
 /* author display rules (e.g. .modal-backdrop { display:flex }) must not
    override the hidden attribute */
+/* biome-ignore lint/complexity/noImportantStyles: the hidden attribute must win over any display rule */
 [hidden] { display: none !important; }
 
 html, body { height: 100%; }
@@ -1776,9 +1777,13 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* reduced motion must override every animation and transition */
   *, *::before, *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: see above */
     animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: see above */
     animation-iteration-count: 1 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: see above */
     transition-duration: 0.01ms !important;
   }
 }

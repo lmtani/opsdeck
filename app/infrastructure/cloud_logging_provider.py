@@ -14,7 +14,7 @@ keeps working on any machine.
 import re
 import threading
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from itertools import islice
 from pathlib import Path
 
@@ -42,10 +42,7 @@ def _freshness_to_timedelta(freshness: str) -> timedelta:
         return timedelta(days=int(text))
     if not _DURATION_FULL.match(text):
         raise LogProviderError(f"Invalid freshness: '{freshness}' (e.g. 30m, 1h, 2d)")
-    seconds = sum(
-        int(amount) * _UNIT_SECONDS[unit.lower()]
-        for amount, unit in _DURATION_TOKEN.findall(text)
-    )
+    seconds = sum(int(amount) * _UNIT_SECONDS[unit.lower()] for amount, unit in _DURATION_TOKEN.findall(text))
     return timedelta(seconds=seconds)
 
 
@@ -129,10 +126,14 @@ class CloudLoggingApiProvider(LogProvider):
         except api_exceptions.Unauthenticated:
             self._forget_credentials()
             raise LogProviderError(f"Google rejected the credentials. {LOGIN_HINT}") from None
-        except (api_exceptions.RetryError, api_exceptions.DeadlineExceeded,
-                api_exceptions.ServiceUnavailable) as error:
+        except (
+            api_exceptions.RetryError,
+            api_exceptions.DeadlineExceeded,
+            api_exceptions.ServiceUnavailable,
+        ) as error:
             raise LogProviderError(
-                f"Cloud Logging did not answer in time; check the network and try again. ({_first_line(error)})"
+                "Cloud Logging did not answer in time; check the network and try again."
+                f" ({_first_line(error)})"
             ) from None
         except api_exceptions.GoogleAPICallError as error:
             raise LogProviderError(f"Cloud Logging API failed: {_first_line(error)}") from None
@@ -165,7 +166,8 @@ class CloudLoggingApiProvider(LogProvider):
                 raise LogProviderError(_refresh_message(error)) from None
             except auth_exceptions.TransportError as error:
                 raise LogProviderError(
-                    f"Could not reach Google to validate the credentials; check the network. ({_first_line(error)})"
+                    "Could not reach Google to validate the credentials; check the network."
+                    f" ({_first_line(error)})"
                 ) from None
             except PermissionError:
                 raise LogProviderError(
@@ -186,7 +188,7 @@ class CloudLoggingApiProvider(LogProvider):
         # clause of its own; mirror that so saved filters behave the same.
         if "timestamp" in expression:
             return expression
-        cutoff = datetime.now(timezone.utc) - _freshness_to_timedelta(query.freshness)
+        cutoff = datetime.now(UTC) - _freshness_to_timedelta(query.freshness)
         clause = f'timestamp>="{cutoff.strftime("%Y-%m-%dT%H:%M:%S")}Z"'
         if not expression:
             return clause

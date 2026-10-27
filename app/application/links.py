@@ -1,9 +1,9 @@
 """Use cases of the links context: cards, command cards and their images."""
 
 from app.application.common import apply_order
-from app.domain.ordering import next_position, ordered
 from app.domain.errors import NotFoundError, ValidationError
 from app.domain.links import CommandRunner, ImageStore, Link, LinkKind, LinkRepository
+from app.domain.ordering import next_position, ordered
 
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "svg"}
 MAX_IMAGE_BYTES = 5 * 1024 * 1024

@@ -154,7 +154,7 @@ function render() {
               toast(error.message, "error");
             }
           },
-          { title: "Run command?", confirmLabel: "Run", danger: false },
+          { title: "Run command?", confirmLabel: "Run", danger: false }
         );
       });
     }

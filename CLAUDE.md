@@ -15,6 +15,8 @@ uv run main.py                          # Serve at http://127.0.0.1:8765 (DASHBO
 uv run uvicorn main:app --reload --port 8765   # Dev mode with auto-reload
 uv run pytest -q                        # Run all tests
 uv run pytest tests/test_services.py -q # Run one test file
+uv run pre-commit install               # Once per clone: run the hooks below on every commit
+uv run pre-commit run --all-files       # ruff (lint + format), mypy, Biome (web/), gitleaks, file hygiene
 uv run migrate.py                       # Apply pending DB migrations explicitly
 uv run migrate.py --import-json         # ...and import legacy data/*.json records
 uv add <package>                        # Add a dependency
@@ -36,6 +38,8 @@ Clean architecture with strict layer direction — outer layers depend on inner,
 ## Persistence & migrations
 
 Data lives in MySQL 8: tables `links`, `log_filters`, `github_feeds` (repos and event kinds as comma-separated text), `settings` (key/value rows), `schema_migrations`. Migrations are plain numbered `.sql` files in `migrations/mysql/` (e.g. `0007_add_x.sql`), applied in filename order and tracked in `schema_migrations`. Statements are split on `;` so keep semicolons out of string literals. Pending migrations run automatically on app startup and can be run explicitly with `uv run migrate.py`. To change schema: add new files, never edit applied ones. `limit` is a reserved word in MySQL, so it is backtick-quoted. Upserts use `ON DUPLICATE KEY UPDATE`. `created_at`/`last_seen_at` columns hold ISO-8601 UTC text (older rows end in `+00:00`, newer in `Z`; both parse) — entities hold aware datetimes and sort in Python, never rely on the SQL order. Uploaded card images stay on disk in `data/images/` (gitignored; in containers that path is a volume).
+
+Quality gates live in `.pre-commit-config.yaml` and run in CI (`lint` job, plus a gitleaks scan of the whole history). Python: ruff with line length 110 and the rule set in `pyproject.toml` (bandit checks included; justified exceptions are `# noqa: <rule>` with the reason next to them), `ruff format`, and mypy over `app/`. Python tools run through `uv run --frozen`, so their versions come from `uv.lock`. Frontend: Biome (`biome.json`) lints `web/` and formats the JS at 100 columns; CSS formatting is off to keep the file's one-line rules, and CSS/HTML lint exceptions use `biome-ignore` comments with a reason. Never apply Biome's `--unsafe` fixes blindly: one of them drops `!important`.
 
 Tests (`tests/`) use the in-memory fakes of the domain ports in `tests/fakes.py` (plus builders of GitHub events) — no files, subprocess, gcloud or network. One service test file per context, `test_entities.py` for the invariants, `test_github_rules.py` for the pure rules, parser/provider tests over `httpx.MockTransport`, and `test_api.py` drives the FastAPI app with `TestClient` over the same fakes (status codes, error mapping, the `/order` and `/unseen` routes that must beat `/{id}`), and `test_config.py` covers `Settings.from_env`. `FakeGithubProvider` builds snapshots from plain dicts and mirrors the adapter's partial-failure policy. Follow that pattern: new behavior gets a service test, new routes get an API test.
 

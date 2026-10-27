@@ -4,7 +4,15 @@
 
 import { api } from "./api.js";
 import { makeSortable } from "./dnd.js";
-import { LOCALE, closeModal, confirmDanger, escapeHtml, messageHtml, openModal, toast } from "./ui.js";
+import {
+  closeModal,
+  confirmDanger,
+  escapeHtml,
+  LOCALE,
+  messageHtml,
+  openModal,
+  toast,
+} from "./ui.js";
 
 let filters = [];
 let activeFilterId = null;
@@ -24,8 +32,17 @@ const MAX_REFINE_VALUE_LENGTH = 120;
 const MAX_DETAIL_CHIPS = 24;
 // leaf keys that are unique per request or otherwise useless as a filter
 const NOISY_REFINE_KEYS = new Set([
-  "startTime", "endTime", "latency", "requestSize", "responseSize", "megaCycles",
-  "traceId", "spanId", "requestId", "instanceId", "clone_id",
+  "startTime",
+  "endTime",
+  "latency",
+  "requestSize",
+  "responseSize",
+  "megaCycles",
+  "traceId",
+  "spanId",
+  "requestId",
+  "instanceId",
+  "clone_id",
 ]);
 
 const FRESHNESS_LABELS = {
@@ -432,7 +449,7 @@ function refineCandidates(entry) {
     }
   };
   push("logName", raw.logName);
-  walk(raw.resource && raw.resource.labels, "resource.labels", 0);
+  walk(raw.resource?.labels, "resource.labels", 0);
   walk(raw.labels, "labels", 0);
   walk(raw.httpRequest, "httpRequest", 0);
   walk(raw.operation, "operation", 0);
@@ -466,8 +483,7 @@ function syncChrome() {
   projectsButton.hidden = others.length === 0;
   projectsButton.disabled = false;
   projectsButton.textContent = `⊕ other projects (${others.length})`;
-  projectsButton.title =
-    "Search the same trace in the other projects of the saved filters:\n" + others.join(", ");
+  projectsButton.title = `Search the same trace in the other projects of the saved filters:\n${others.join(", ")}`;
   renderRefineBar();
 }
 
@@ -526,7 +542,7 @@ async function loadFilter() {
     setHeader(
       filter.name,
       `${project} · window ${windowLabel} · ${plural(lastEntries.length, "entry", "entries")}${refined} · ` +
-        new Date().toLocaleTimeString(LOCALE, { hourCycle: "h23" }),
+        new Date().toLocaleTimeString(LOCALE, { hourCycle: "h23" })
     );
   } catch (error) {
     if (view !== current) return;
@@ -574,8 +590,8 @@ async function loadTrace() {
           freshness: "1d",
           limit: TRACE_LIMIT,
         })
-        .then((result) => result.entries.map((item) => ({ ...item, project }))),
-    ),
+        .then((result) => result.entries.map((item) => ({ ...item, project })))
+    )
   );
   if (view !== current) return;
 
@@ -613,12 +629,12 @@ async function loadTrace() {
   setHeader(
     title,
     `${hits.join(" + ") || projects[0]} · ${plural(lastEntries.length, "entry", "entries")} · ` +
-      `${plural(resources, "resource")} · ${window ? "window ±1 h" : "window 24 h"}${missing}`,
+      `${plural(resources, "resource")} · ${window ? "window ±1 h" : "window 24 h"}${missing}`
   );
   document.getElementById("results-meta").title = empty.length
     ? `No entries in: ${empty.join(", ")}`
     : "";
-  failed.forEach((message) => toast(message, "error"));
+  for (const message of failed) toast(message, "error");
 }
 
 async function expandTraceProjects() {
@@ -860,7 +876,7 @@ function saveRefinedAsFilter() {
       name: `${filter.name} · refined`,
       expression: effectiveExpression(filter, refinements),
     },
-    { asNew: true },
+    { asNew: true }
   );
 }
 
@@ -947,7 +963,7 @@ export async function initLogs() {
       if (document.querySelector(".modal-backdrop:not([hidden])")) return;
       goBack();
     },
-    true,
+    true
   );
 
   // ----- format bar ----

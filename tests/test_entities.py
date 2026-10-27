@@ -11,7 +11,6 @@ from app.domain.links import Link, LinkKind
 from app.domain.logs import Freshness, LogFilter, LogQuery
 from tests.fakes import ts
 
-
 # ----- links -----------------------------------------------------------------
 
 
@@ -22,7 +21,7 @@ def test_link_new_trims_and_parses_kind():
 
 
 @pytest.mark.parametrize(
-    "fields, message",
+    ("fields", "message"),
     [
         (dict(title=" ", url="https://x"), "Title"),
         (dict(title="x", kind="url", url=" "), "URL"),
@@ -55,8 +54,12 @@ def test_log_filter_invariants_and_query():
     assert (log_filter.name, log_filter.project, log_filter.freshness) == ("Erros", "p", Freshness.H6)
     assert log_filter.query() == LogQuery(project="p", expression="e", freshness=Freshness.H6, limit=25)
 
-    for fields in [dict(name=" ", project="p"), dict(name="n", project=" "),
-                   dict(name="n", project="p", freshness="2h"), dict(name="n", project="p", limit=0)]:
+    for fields in [
+        dict(name=" ", project="p"),
+        dict(name="n", project=" "),
+        dict(name="n", project="p", freshness="2h"),
+        dict(name="n", project="p", limit=0),
+    ]:
         with pytest.raises(ValidationError):
             LogFilter.new(**fields)
 
@@ -72,15 +75,18 @@ def test_log_query_normalizes_and_validates():
 
 
 def test_feed_spec_normalizes_on_construction():
-    spec = FeedSpec(" acme ", repos=("core", "acme/api", "https://github.com/acme/web.git", "CORE"),
-                    event_kinds=("review", "pr"))
+    spec = FeedSpec(
+        " acme ",
+        repos=("core", "acme/api", "https://github.com/acme/web.git", "CORE"),
+        event_kinds=("review", "pr"),
+    )
     assert spec.org == "acme"
     assert spec.repos == ("core", "api", "web")
     assert spec.event_kinds == (EventKind.PR, EventKind.REVIEW)
 
 
 @pytest.mark.parametrize(
-    "kwargs, message",
+    ("kwargs", "message"),
     [
         (dict(org="not an org"), "organization"),
         (dict(org="acme", repos=("other/core",)), "does not belong"),

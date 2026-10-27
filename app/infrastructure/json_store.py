@@ -23,9 +23,7 @@ class JsonStore:
     def write(self, data) -> None:
         with self._lock:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            fd, tmp_path = tempfile.mkstemp(
-                dir=self._path.parent, prefix=self._path.name, suffix=".tmp"
-            )
+            fd, tmp_path = tempfile.mkstemp(dir=self._path.parent, prefix=self._path.name, suffix=".tmp")
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as handle:
                     json.dump(data, handle, ensure_ascii=False, indent=2)
