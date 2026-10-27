@@ -28,8 +28,9 @@ def test_create_normalizes_repos_and_starts_caught_up(feeds):
     assert feed.last_seen_at is not None and feed.created_at is not None
     assert feeds.get(feed.id) == feed
 
+
 @pytest.mark.parametrize(
-    "kwargs, message",
+    ("kwargs", "message"),
     [
         (dict(org="not an org"), "organization"),
         (dict(org="acme", repos=["other/core"]), "does not belong"),
@@ -41,6 +42,7 @@ def test_invalid_feeds_are_rejected(feeds, kwargs, message):
     with pytest.raises(ValidationError, match=message):
         GithubFeedService(feeds).create_feed(name="x", **kwargs)
 
+
 def test_mark_seen_only_moves_forward(feeds):
     service = GithubFeedService(feeds)
     feed = service.create_feed(name="x", org="acme")
@@ -49,6 +51,7 @@ def test_mark_seen_only_moves_forward(feeds):
     assert feeds.get(feed.id).last_seen_at == ts("2099-01-01T00:00:00Z")
     with pytest.raises(NotFoundError):
         service.mark_seen("missing")
+
 
 def test_org_feed_sorts_dedupes_and_filters(feeds):
     provider = FakeGithubProvider()
@@ -64,6 +67,7 @@ def test_org_feed_sorts_dedupes_and_filters(feeds):
     assert [e.id for e in activity.events] == ["1"]  # bot, own and branch dropped
     assert activity.viewer == "alice"
 
+
 def test_repo_feed_merges_repos_and_reports_partial_failures(feeds):
     provider = FakeGithubProvider()
     provider.repos[("acme", "core")] = [make_event(1, "pr", at="2026-10-22T09:00:00Z")]
@@ -74,11 +78,13 @@ def test_repo_feed_merges_repos_and_reports_partial_failures(feeds):
     assert [e.id for e in activity.events] == ["2", "1"]
     assert activity.warnings == ["acme/gone does not exist or the token cannot see it."]
 
+
 def test_repo_feed_fails_when_every_repo_fails(feeds):
     provider = FakeGithubProvider()
     provider.repos[("acme", "core")] = GithubError("GitHub token is invalid or expired")
     with pytest.raises(GithubError, match="token"):
         GithubActivityService(provider, feeds).run_query(FeedSpec("acme", repos=["core"]))
+
 
 def test_pull_request_titles_and_states_are_filled_in(feeds):
     provider = FakeGithubProvider()
@@ -93,6 +99,7 @@ def test_pull_request_titles_and_states_are_filled_in(feeds):
     assert by_id["2"].title == "Issue title"
     assert provider.pr_calls == [[("acme/core", 7)]]  # issues are not looked up
 
+
 def test_graphql_failure_degrades_to_a_warning(feeds):
     provider = FakeGithubProvider()
     provider.org["acme"] = [make_event(1, "pr", number=7, is_pull=True)]
@@ -104,6 +111,7 @@ def test_graphql_failure_degrades_to_a_warning(feeds):
     activity = GithubActivityService(provider, feeds).run_query(FeedSpec("acme"))
     assert len(activity.events) == 1
     assert activity.warnings == ["PR titles unavailable: GraphQL down"]
+
 
 def test_unseen_counts_per_feed(feeds):
     provider = FakeGithubProvider()
@@ -120,12 +128,14 @@ def test_unseen_counts_per_feed(feeds):
     assert counts == {"a": 2, "b": 0}
     assert provider.pr_calls == []  # counting skips the GraphQL enrichment
 
+
 def test_activity_reports_coverage_of_a_truncated_org(feeds):
     provider = FakeGithubProvider()
     provider.org["acme"] = [make_event(i, at=f"2026-10-22T{14 - i:02d}:00:00Z") for i in range(5)]
     provider.truncated.add("acme")
     activity = GithubActivityService(provider, feeds).run_query(FeedSpec("acme"))
     assert activity.coverage_start == ts("2026-10-22T12:00:00Z")  # median of a short tail
+
 
 def test_feed_merges_searched_pull_request_activity(feeds):
     provider = FakeGithubProvider()
@@ -136,11 +146,14 @@ def test_feed_merges_searched_pull_request_activity(feeds):
     spec, since = provider.activity_calls[0]
     assert (spec.org, spec.repos) == ("acme", ()) and since.tzinfo is not None
 
+
 def test_search_follows_the_feed_filters_and_failures_become_warnings(feeds):
     provider = FakeGithubProvider()
     provider.repos[("acme", "dockerfiles")] = []
-    provider.searched = [make_pr_action("s1", "merged", source="search"),
-                         make_review("s2", "approved", actor="renovate[bot]", source="search")]
+    provider.searched = [
+        make_pr_action("s1", "merged", source="search"),
+        make_review("s2", "approved", actor="renovate[bot]", source="search"),
+    ]
     spec = FeedSpec("acme", repos=["dockerfiles"], event_kinds=["review"])
     activity = GithubActivityService(provider, feeds).run_query(spec)
     assert activity.events == []  # merge is not a review, the review is a bot's
@@ -150,7 +163,8 @@ def test_search_follows_the_feed_filters_and_failures_become_warnings(feeds):
     activity = GithubActivityService(provider, feeds).run_query(FeedSpec("acme"))
     assert activity.warnings == ["Real-time PR search unavailable: GraphQL down"]
 
-@pytest.fixture()
+
+@pytest.fixture
 def feeds():
     return InMemoryFeedRepository()
 
@@ -161,8 +175,14 @@ def test_update_feed_revalidates_and_keeps_mark_and_identity(feeds):
     service.mark_seen(created.id, ts("2099-01-01T00:00:00Z"))
 
     updated = service.update_feed(
-        created.id, name=" y ", org="acme", repos=["acme/api", "web"], event_kinds=["push"],
-        hide_own=True, hide_bots=False, description=" d ",
+        created.id,
+        name=" y ",
+        org="acme",
+        repos=["acme/api", "web"],
+        event_kinds=["push"],
+        hide_own=True,
+        hide_bots=False,
+        description=" d ",
     )
     assert updated.id == created.id and updated.created_at == created.created_at
     assert updated.last_seen_at == ts("2099-01-01T00:00:00Z")  # editing does not reset "seen"

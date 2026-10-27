@@ -12,14 +12,14 @@ from app.domain.github import (
     EventKind,
     EventSource,
     GithubEvent,
-    PullDetails,
-    PushDetails,
-    ReviewDetails,
-    ReviewState,
     GithubEventBatch,
     GithubFeed,
     GithubFeedRepository,
     GithubProvider,
+    PullDetails,
+    PushDetails,
+    ReviewDetails,
+    ReviewState,
 )
 from app.domain.links import CommandRunner, ImageStore, Link, LinkRepository
 from app.domain.logs import LogEntry, LogFilter, LogFilterRepository, LogProvider, LogQuery
@@ -81,11 +81,14 @@ class FakeCommandRunner(CommandRunner):
 
 
 class FakeLogProvider(LogProvider):
-    def __init__(self, entries: list[LogEntry] | None = None, error: Exception | None = None,
-                 available: bool = True):
-        self.entries = entries if entries is not None else [
-            LogEntry(timestamp="2026-01-01T00:00:00Z", severity="ERROR", summary="boom")
-        ]
+    def __init__(
+        self, entries: list[LogEntry] | None = None, error: Exception | None = None, available: bool = True
+    ):
+        self.entries = (
+            entries
+            if entries is not None
+            else [LogEntry(timestamp="2026-01-01T00:00:00Z", severity="ERROR", summary="boom")]
+        )
         self.error = error
         self.available = available
         self.last_query: LogQuery | None = None
@@ -127,21 +130,45 @@ class FakeImageStore(ImageStore):
 
 
 def make_event(id_, kind="push", repo="acme/core", actor="bob", at="2026-10-22T10:00:00Z", **extra):
-    values = dict(id=str(id_), kind=EventKind(kind), type="", repo=repo, actor=actor,
-                  created_at=parse_timestamp(at), summary=kind)
+    values = dict(
+        id=str(id_),
+        kind=EventKind(kind),
+        type="",
+        repo=repo,
+        actor=actor,
+        created_at=parse_timestamp(at),
+        summary=kind,
+    )
     values.update(extra)
     return GithubEvent(**values)
 
 
 def make_push(id_, at, actor="bob", ref="main", before="b", head="h", repo="acme/core"):
-    return make_event(id_, "push", repo=repo, actor=actor, at=at, ref=ref, type="PushEvent",
-                  details=PushDetails(before=before, head=head, heads=(head,)))
+    return make_event(
+        id_,
+        "push",
+        repo=repo,
+        actor=actor,
+        at=at,
+        ref=ref,
+        type="PushEvent",
+        details=PushDetails(before=before, head=head, heads=(head,)),
+    )
 
 
 def make_code_comment(id_, at, number=13, actor="bob"):
-    return make_event(id_, "comment", actor=actor, at=at, number=number,
-                  type="PullRequestReviewCommentEvent", url=f"https://x/{id_}", body=f"c{id_}",
-                  is_pull=True, details=CodeCommentDetails(path=f"f{id_}.py"))
+    return make_event(
+        id_,
+        "comment",
+        actor=actor,
+        at=at,
+        number=number,
+        type="PullRequestReviewCommentEvent",
+        url=f"https://x/{id_}",
+        body=f"c{id_}",
+        is_pull=True,
+        details=CodeCommentDetails(path=f"f{id_}.py"),
+    )
 
 
 def make_batch(times, truncated=True):
@@ -149,16 +176,35 @@ def make_batch(times, truncated=True):
 
 
 def make_pr_action(id_, action, actor="carol", at="2026-10-23T12:12:17Z", number=112, source=""):
-    return make_event(id_, "pr", type="PullRequestEvent", action=action, actor=actor, at=at,
-                      number=number, repo="acme/dockerfiles", is_pull=True, details=PullDetails(),
-                      source=EventSource(source) if source else EventSource.EVENTS)
+    return make_event(
+        id_,
+        "pr",
+        type="PullRequestEvent",
+        action=action,
+        actor=actor,
+        at=at,
+        number=number,
+        repo="acme/dockerfiles",
+        is_pull=True,
+        details=PullDetails(),
+        source=EventSource(source) if source else EventSource.EVENTS,
+    )
 
 
 def make_review(id_, state, actor="carol", at="2026-10-23T12:12:06Z", source=""):
-    return make_event(id_, "review", type="PullRequestReviewEvent", action="created", actor=actor,
-                      at=at, number=112, repo="acme/dockerfiles", is_pull=True,
-                      details=ReviewDetails(state=ReviewState(state)),
-                      source=EventSource(source) if source else EventSource.EVENTS)
+    return make_event(
+        id_,
+        "review",
+        type="PullRequestReviewEvent",
+        action="created",
+        actor=actor,
+        at=at,
+        number=112,
+        repo="acme/dockerfiles",
+        is_pull=True,
+        details=ReviewDetails(state=ReviewState(state)),
+        source=EventSource(source) if source else EventSource.EVENTS,
+    )
 
 
 class InMemoryFeedRepository(GithubFeedRepository):
@@ -209,8 +255,11 @@ class FakeGithubProvider(GithubProvider):
                 elif isinstance(value, Exception):
                     errors.append(value)
                     value = []
-                batches.append(GithubEventBatch([GithubEvent(**vars(e)) for e in value],
-                                                (spec.org, repo) in self.truncated))
+                batches.append(
+                    GithubEventBatch(
+                        [GithubEvent(**vars(e)) for e in value], (spec.org, repo) in self.truncated
+                    )
+                )
             if errors and len(errors) == len(spec.repos):
                 first = errors[0]
                 raise first if isinstance(first, Exception) else GithubNotFoundError(first)
@@ -220,8 +269,9 @@ class FakeGithubProvider(GithubProvider):
             realtime = []
         else:
             realtime = [GithubEvent(**vars(e)) for e in self.searched]
-        return ActivitySnapshot(viewer="alice", batches=batches, realtime=realtime,
-                                warnings=warnings, quota=self.quota)
+        return ActivitySnapshot(
+            viewer="alice", batches=batches, realtime=realtime, warnings=warnings, quota=self.quota
+        )
 
     def org_repos(self, org):
         return []

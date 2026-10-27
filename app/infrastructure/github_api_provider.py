@@ -18,11 +18,12 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
 from app.domain.common import EPOCH, parse_timestamp
+from app.domain.errors import GithubError, GithubNotFoundError
 from app.domain.github import (
     ActivitySnapshot,
     FeedSpec,
@@ -36,7 +37,6 @@ from app.domain.github import (
     TokenKind,
     TokenStatus,
 )
-from app.domain.errors import GithubError, GithubNotFoundError
 from app.domain.github_rules import pull_url
 from app.infrastructure.github_event_parsing import events_from_search_pull, parse_event
 
@@ -82,6 +82,8 @@ def _missing_scopes(scopes: tuple[str, ...]) -> list[str]:
     if not _ORG_SCOPES & set(scopes):
         missing.append("read:org")
     return missing
+
+
 # GitHub rejects search queries longer than 256 characters; repo qualifiers
 # are split across several searches below that.
 SEARCH_QUERY_MAX = 240
@@ -89,7 +91,7 @@ SEARCH_PAGE_SIZE = 50
 SEARCH_MAX_PAGES = 2
 SEARCH_QUERY = """
 query($q: String!, $after: String) {
-  search(query: $q, type: ISSUE, first: %d, after: $after) {
+  search(query: $q, type: ISSUE, first: PAGE_SIZE, after: $after) {
     pageInfo { hasNextPage endCursor }
     nodes {
       ... on PullRequest {
@@ -105,7 +107,7 @@ query($q: String!, $after: String) {
     }
   }
 }
-""" % SEARCH_PAGE_SIZE
+""".replace("PAGE_SIZE", str(SEARCH_PAGE_SIZE))  # a placeholder keeps the GraphQL braces unescaped
 
 
 def resolve_github_token(configured: str = "") -> str:
@@ -116,8 +118,8 @@ def resolve_github_token(configured: str = "") -> str:
     if not gh:
         return ""
     try:
-        result = subprocess.run(
-            [gh, "auth", "token"], capture_output=True, text=True, timeout=10
+        result = subprocess.run(  # noqa: S603 - fixed arguments, gh resolved from PATH
+            [gh, "auth", "token"], capture_output=True, text=True, timeout=10, check=False
         )
     except (OSError, subprocess.TimeoutExpired):
         return ""
@@ -170,9 +172,9 @@ class GithubApiProvider(GithubProvider):
         token = self._ensure_token(raise_if_missing=False)
         kind = token_kind(token)
         if kind is TokenKind.NONE:
-            return TokenStatus(kind, problems=[
-                f"No GitHub token: set GITHUB_TOKEN or run `gh auth login`. {README_HINT}"
-            ])
+            return TokenStatus(
+                kind, problems=[f"No GitHub token: set GITHUB_TOKEN or run `gh auth login`. {README_HINT}"]
+            )
         try:
             response = self._send("GET", "/user")
         except GithubError as error:
@@ -181,8 +183,8 @@ class GithubApiProvider(GithubProvider):
         self._viewer = self._viewer or login
         # classic and OAuth tokens list their scopes; fine-grained ones do not
         header = response.headers.get("x-oauth-scopes")
-        scopes = None if header is None else tuple(
-            scope.strip() for scope in header.split(",") if scope.strip()
+        scopes = (
+            None if header is None else tuple(scope.strip() for scope in header.split(",") if scope.strip())
         )
         status = TokenStatus(kind, login=login, scopes=scopes)
         if scopes is not None and (missing := _missing_scopes(scopes)):
@@ -222,11 +224,12 @@ class GithubApiProvider(GithubProvider):
             try:
                 return self.repo_events(spec.org, repo), None
             except GithubNotFoundError:
-                hint = (" Fine-grained tokens only see the repositories they were granted."
-                        if token_kind(self._token) is TokenKind.FINE_GRAINED else "")
-                missing = GithubError(
-                    f"{spec.org}/{repo} does not exist or the token cannot see it.{hint}"
+                hint = (
+                    " Fine-grained tokens only see the repositories they were granted."
+                    if token_kind(self._token) is TokenKind.FINE_GRAINED
+                    else ""
                 )
+                missing = GithubError(f"{spec.org}/{repo} does not exist or the token cannot see it.{hint}")
                 return GithubEventBatch([]), missing
             except GithubError as error:
                 return GithubEventBatch([]), error
@@ -245,7 +248,8 @@ class GithubApiProvider(GithubProvider):
 
     def viewer(self) -> str:
         if not self._viewer:
-            self._viewer = self._get("/user").get("login", "")
+            user = self._get("/user")
+            self._viewer = user.get("login", "") if isinstance(user, dict) else ""
         return self._viewer
 
     def org_events(self, org: str) -> GithubEventBatch:
@@ -263,9 +267,11 @@ class GithubApiProvider(GithubProvider):
         if token_kind(self._token) is TokenKind.FINE_GRAINED:
             hint = FINE_GRAINED_HINT
         else:
-            hint = (f"Check that you are a member of {org} and that the token has the `repo`"
-                    f" and `read:org` scopes; if {org} uses SAML single sign-on, authorize"
-                    " the token for it.")
+            hint = (
+                f"Check that you are a member of {org} and that the token has the `repo`"
+                f" and `read:org` scopes; if {org} uses SAML single sign-on, authorize"
+                " the token for it."
+            )
         return f"Only public events of {org} are shown: the token cannot read its private activity. {hint}"
 
     def repo_events(self, org: str, repo: str) -> GithubEventBatch:
@@ -276,12 +282,10 @@ class GithubApiProvider(GithubProvider):
         at_api_cap = len(raw) >= EVENTS_API_CAP - EVENTS_CAP_SLACK
         return GithubEventBatch([parse_event(item) for item in raw], more_pages or at_api_cap)
 
-    def recent_pull_request_events(
-        self, org: str, repos: list[str], since: datetime
-    ) -> list[GithubEvent]:
+    def recent_pull_request_events(self, org: str, repos: list[str], since: datetime) -> list[GithubEvent]:
         # whole-minute "since" keeps the search query (and its cache key)
         # stable across refreshes within the same minute
-        floor = since.astimezone(timezone.utc).replace(second=0, microsecond=0)
+        floor = since.astimezone(UTC).replace(second=0, microsecond=0)
         stamp = floor.strftime("%Y-%m-%dT%H:%M:%SZ")
         events: list[GithubEvent] = []
         seen: set[str] = set()
@@ -339,9 +343,7 @@ class GithubApiProvider(GithubProvider):
         ]
         return sorted(repos, key=lambda repo: repo.pushed_at or EPOCH, reverse=True)
 
-    def pull_requests(
-        self, refs: list[tuple[str, int]]
-    ) -> dict[tuple[str, int], PullRequestInfo]:
+    def pull_requests(self, refs: list[tuple[str, int]]) -> dict[tuple[str, int], PullRequestInfo]:
         now = self._clock()
         result: dict[tuple[str, int], PullRequestInfo] = {}
         missing: list[tuple[str, int]] = []
@@ -366,9 +368,7 @@ class GithubApiProvider(GithubProvider):
         if not self._token:
             self._token = self._token_source() or ""
         if not self._token and raise_if_missing:
-            raise GithubError(
-                "No GitHub token: set GITHUB_TOKEN or run `gh auth login`"
-            )
+            raise GithubError("No GitHub token: set GITHUB_TOKEN or run `gh auth login`")
         return self._token
 
     def _send(self, method: str, path: str, **kwargs) -> httpx.Response:
@@ -458,9 +458,7 @@ class GithubApiProvider(GithubProvider):
 
     # ----- GraphQL -----------------------------------------------------
 
-    def _query_pull_requests(
-        self, refs: list[tuple[str, int]]
-    ) -> dict[tuple[str, int], PullRequestInfo]:
+    def _query_pull_requests(self, refs: list[tuple[str, int]]) -> dict[tuple[str, int], PullRequestInfo]:
         by_repo: dict[str, list[int]] = {}
         for repo, number in refs:
             by_repo.setdefault(repo, []).append(number)
@@ -471,10 +469,7 @@ class GithubApiProvider(GithubProvider):
             for number in numbers:
                 alias = f"p{number}"
                 aliases[(f"r{r_index}", alias)] = (repo, number)
-                fields.append(
-                    f"{alias}: pullRequest(number: {int(number)})"
-                    " { title state isDraft url }"
-                )
+                fields.append(f"{alias}: pullRequest(number: {int(number)}) {{ title state isDraft url }}")
             parts.append(
                 f"r{r_index}: repository(owner: {json.dumps(owner)}, name: {json.dumps(name)})"
                 " { " + " ".join(fields) + " }"
@@ -500,11 +495,15 @@ def _forbidden_message(message: str) -> str:
     """GitHub's 403 text plus what to do about the usual causes."""
     lower = message.lower()
     if "saml" in lower:
-        hint = ("The organization uses SAML single sign-on: open https://github.com/settings/tokens,"
-                " choose Configure SSO next to the token and authorize the organization.")
+        hint = (
+            "The organization uses SAML single sign-on: open https://github.com/settings/tokens,"
+            " choose Configure SSO next to the token and authorize the organization."
+        )
     elif "fine-grained" in lower:
-        hint = ("The organization restricts fine-grained tokens: ask an owner to allow or approve"
-                f" it, or use a classic token. {CLASSIC_HINT}")
+        hint = (
+            "The organization restricts fine-grained tokens: ask an owner to allow or approve"
+            f" it, or use a classic token. {CLASSIC_HINT}"
+        )
     else:
         hint = README_HINT
     return f"GitHub refused the request: {message}. {hint}"

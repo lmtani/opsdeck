@@ -37,8 +37,11 @@ export function notificationsBlocked() {
 }
 
 export function isNotifying(feedId) {
-  return read(ENABLED_KEY, []).includes(feedId) && notificationsSupported()
-    && Notification.permission === "granted";
+  return (
+    read(ENABLED_KEY, []).includes(feedId) &&
+    notificationsSupported() &&
+    Notification.permission === "granted"
+  );
 }
 
 export function anyNotifying(feedIds) {
@@ -51,13 +54,17 @@ export function anyNotifying(feedIds) {
 export async function toggleNotifications(feedId) {
   const enabled = read(ENABLED_KEY, []);
   if (enabled.includes(feedId) && Notification.permission === "granted") {
-    write(ENABLED_KEY, enabled.filter((id) => id !== feedId));
+    write(
+      ENABLED_KEY,
+      enabled.filter((id) => id !== feedId)
+    );
     return "off";
   }
   if (!notificationsSupported()) return "unsupported";
-  const permission = Notification.permission === "default"
-    ? await Notification.requestPermission()
-    : Notification.permission;
+  const permission =
+    Notification.permission === "default"
+      ? await Notification.requestPermission()
+      : Notification.permission;
   if (permission !== "granted") return "blocked";
   write(ENABLED_KEY, [...new Set([...enabled, feedId])]);
   write(MARK_PREFIX + feedId, new Date().toISOString());
@@ -65,7 +72,10 @@ export async function toggleNotifications(feedId) {
 }
 
 export function forgetFeed(feedId) {
-  write(ENABLED_KEY, read(ENABLED_KEY, []).filter((id) => id !== feedId));
+  write(
+    ENABLED_KEY,
+    read(ENABLED_KEY, []).filter((id) => id !== feedId)
+  );
   try {
     localStorage.removeItem(MARK_PREFIX + feedId);
   } catch {
@@ -76,7 +86,9 @@ export function forgetFeed(feedId) {
 const time = (value) => Date.parse(value || "") || 0;
 
 function shorten(text, max = MAX_LINE) {
-  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  const clean = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
@@ -151,7 +163,10 @@ export function announce(feed, activity, onOpen) {
   const fresh = activity.events.filter((event) => event.is_new && time(event.created_at) > mark);
   if (!fresh.length) return 0;
   show(feed, composeNotification(feed.name, fresh), onOpen);
-  const newest = fresh.reduce((max, event) => (time(event.created_at) > time(max) ? event.created_at : max), "");
+  const newest = fresh.reduce(
+    (max, event) => (time(event.created_at) > time(max) ? event.created_at : max),
+    ""
+  );
   write(MARK_PREFIX + feed.id, newest);
   return fresh.length;
 }

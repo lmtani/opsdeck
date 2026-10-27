@@ -106,7 +106,7 @@ def _fold_push(kept: GithubEvent, older: GithubEvent) -> None:
 def _fold_review_comment(kept: GithubEvent, older: GithubEvent) -> None:
     current = kept.details if isinstance(kept.details, CodeCommentDetails) else CodeCommentDetails()
     comments = current.comments or (_comment_item(kept),)
-    kept.details = replace(current, comments=comments + (_comment_item(older),))
+    kept.details = replace(current, comments=(*comments, _comment_item(older)))
     kept.summary = review_comments_summary(kept.number, kept.count)
 
 
@@ -180,10 +180,7 @@ def merge_realtime(published: list[GithubEvent], searched: list[GithubEvent]) ->
     missing = []
     for event in searched:
         twins = times.get(_same_action_key(event), [])
-        if any(
-            abs((event.created_at - other).total_seconds()) <= REALTIME_MATCH_SECONDS
-            for other in twins
-        ):
+        if any(abs((event.created_at - other).total_seconds()) <= REALTIME_MATCH_SECONDS for other in twins):
             continue
         missing.append(event)
     return missing

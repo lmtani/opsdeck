@@ -8,8 +8,8 @@ import json
 import shutil
 import subprocess
 
-from app.domain.logs import LogEntry, LogProvider, LogQuery
 from app.domain.errors import LogProviderError
+from app.domain.logs import LogEntry, LogProvider, LogQuery
 from app.infrastructure.log_entry_parsing import (
     build_gcloud_args,
     describe_gcloud_command,
@@ -30,21 +30,20 @@ class GcloudLogProvider(LogProvider):
 
     def query(self, query: LogQuery) -> list[LogEntry]:
         if not self.is_available():
-            raise LogProviderError(
-                "gcloud not found in PATH. Install the Google Cloud SDK."
-            )
-        args = build_gcloud_args(query, self._binary) + ["--format=json"]
+            raise LogProviderError("gcloud not found in PATH. Install the Google Cloud SDK.")
+        args = [*build_gcloud_args(query, self._binary), "--format=json"]
         try:
-            result = subprocess.run(
-                args, capture_output=True, text=True, timeout=self._timeout
+            # an argument list built from the query, never a shell; the exit code is read below
+            result = subprocess.run(  # noqa: S603
+                args, capture_output=True, text=True, timeout=self._timeout, check=False
             )
         except subprocess.TimeoutExpired:
-            raise LogProviderError(
-                f"gcloud timed out after {self._timeout}s"
-            ) from None
+            raise LogProviderError(f"gcloud timed out after {self._timeout}s") from None
         if result.returncode != 0:
             detail = _tail(result.stderr)
-            raise LogProviderError(f"gcloud failed: {detail}" if detail else "gcloud failed without a message")
+            raise LogProviderError(
+                f"gcloud failed: {detail}" if detail else "gcloud failed without a message"
+            )
         try:
             raw_entries = json.loads(result.stdout or "[]")
         except json.JSONDecodeError as error:

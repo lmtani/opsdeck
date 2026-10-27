@@ -6,7 +6,7 @@ async function request(path, options = {}) {
   const isJson = (response.headers.get("content-type") || "").includes("json");
   const body = isJson ? await response.json() : null;
   if (!response.ok) {
-    const detail = body && body.detail ? body.detail : `HTTP ${response.status}`;
+    const detail = body?.detail ? body.detail : `HTTP ${response.status}`;
     throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
   }
   return body;

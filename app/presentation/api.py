@@ -11,9 +11,9 @@ from app.application.github import GithubActivityService, GithubFeedService
 from app.application.links import CommandService, ImageService, LinkService
 from app.application.logs import LogFilterService, LogQueryService
 from app.application.settings import SettingsService
+from app.domain.errors import ExternalServiceError, NotFoundError, ValidationError
 from app.domain.github import FeedSpec
 from app.domain.logs import LogQuery
-from app.domain.errors import ExternalServiceError, NotFoundError, ValidationError
 from app.presentation import schemas
 
 
@@ -67,7 +67,9 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
         logging.getLogger("opsdeck").exception("unhandled error on %s", request.url.path)
         detail = str(error).strip().splitlines()[0] if str(error).strip() else ""
         message = f"Unexpected server error ({type(error).__name__})"
-        return JSONResponse(status_code=500, content={"detail": f"{message}: {detail}" if detail else message})
+        return JSONResponse(
+            status_code=500, content={"detail": f"{message}: {detail}" if detail else message}
+        )
 
     @app.exception_handler(ExternalServiceError)
     async def backend_failed(request: Request, error: ExternalServiceError):

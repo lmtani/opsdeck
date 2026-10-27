@@ -44,7 +44,8 @@ from app.infrastructure.mysql_repositories import (
     MySqlSettingsRepository,
 )
 from app.infrastructure.subprocess_command_runner import SubprocessCommandRunner
-from app.presentation.api import Services, create_app as _create_app
+from app.presentation.api import Services
+from app.presentation.api import create_app as _create_app
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -53,9 +54,7 @@ WEB_DIR = BASE_DIR / "web"
 
 def _build_repositories(
     data_dir: Path, settings: Settings
-) -> tuple[
-    LinkRepository, LogFilterRepository, SettingsRepository, GithubFeedRepository
-]:
+) -> tuple[LinkRepository, LogFilterRepository, SettingsRepository, GithubFeedRepository]:
     if settings.storage == "json":
         return (
             JsonLinkRepository(data_dir / "links.json"),
@@ -98,9 +97,7 @@ def build_services(data_dir: Path = DATA_DIR, settings: Settings | None = None) 
         settings_repository,
         github_feed_repository,
     ) = _build_repositories(data_dir, settings)
-    github_provider = GithubApiProvider(
-        token_source=lambda: resolve_github_token(settings.github_token)
-    )
+    github_provider = GithubApiProvider(token_source=lambda: resolve_github_token(settings.github_token))
     return Services(
         links=LinkService(link_repository),
         commands=CommandService(_build_command_runner(settings), link_repository),

@@ -15,15 +15,17 @@ USER = {"login": "alice"}
 
 def _event(index, type_="WatchEvent"):
     return {
-        "id": str(index), "type": type_, "actor": {"login": "bob"},
-        "repo": {"name": "acme/core"}, "payload": {}, "created_at": "2026-10-22T10:00:00Z",
+        "id": str(index),
+        "type": type_,
+        "actor": {"login": "bob"},
+        "repo": {"name": "acme/core"},
+        "payload": {},
+        "created_at": "2026-10-22T10:00:00Z",
     }
 
 
 def _provider(handler, token="t0ken", **kwargs):
-    return GithubApiProvider(
-        token_source=lambda: token, transport=httpx.MockTransport(handler), **kwargs
-    )
+    return GithubApiProvider(token_source=lambda: token, transport=httpx.MockTransport(handler), **kwargs)
 
 
 def test_conditional_requests_reuse_the_body_on_304():
@@ -54,7 +56,9 @@ def test_org_events_follow_the_link_header_not_the_page_size():
             return httpx.Response(200, json=USER)
         page = int(request.url.params["page"])
         # GitHub sometimes serves 99 items on a page that still has a successor
-        headers = {"link": f'<{request.url.copy_set_param("page", page + 1)}>; rel="next"'} if page < 2 else {}
+        headers = (
+            {"link": f'<{request.url.copy_set_param("page", page + 1)}>; rel="next"'} if page < 2 else {}
+        )
         return httpx.Response(200, json=[_event(page * 1000 + i) for i in range(99)], headers=headers)
 
     batch = _provider(handler).org_events("acme")
@@ -79,8 +83,11 @@ def test_rate_limit_exhaustion_is_reported_clearly():
         return httpx.Response(
             403,
             json={"message": "API rate limit exceeded"},
-            headers={"x-ratelimit-remaining": "0", "x-ratelimit-limit": "5000",
-                     "x-ratelimit-reset": "9999999999"},
+            headers={
+                "x-ratelimit-remaining": "0",
+                "x-ratelimit-limit": "5000",
+                "x-ratelimit-reset": "9999999999",
+            },
         )
 
     provider = _provider(handler)
@@ -105,14 +112,23 @@ def test_pull_requests_are_batched_in_graphql_and_cached():
     def handler(request):
         assert request.url.path == "/graphql"
         queries.append(request.content.decode())
-        return httpx.Response(200, json={"data": {
-            "r0": {
-                "p5": {"title": "Fix", "state": "MERGED", "isDraft": False,
-                       "url": "https://github.com/acme/core/pull/5"},
-                "p6": {"title": "WIP", "state": "OPEN", "isDraft": True, "url": ""},
-                "p7": None,
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "r0": {
+                        "p5": {
+                            "title": "Fix",
+                            "state": "MERGED",
+                            "isDraft": False,
+                            "url": "https://github.com/acme/core/pull/5",
+                        },
+                        "p6": {"title": "WIP", "state": "OPEN", "isDraft": True, "url": ""},
+                        "p7": None,
+                    },
+                }
             },
-        }})
+        )
 
     provider = _provider(handler)
     refs = [("acme/core", 5), ("acme/core", 6), ("acme/core", 7)]
@@ -130,11 +146,18 @@ def test_pull_requests_are_batched_in_graphql_and_cached():
 def test_org_repos_are_sorted_by_last_push():
     def handler(request):
         assert request.url.params["type"] == "all"
-        return httpx.Response(200, json=[
-            {"name": "old", "full_name": "acme/old", "pushed_at": "2025-01-01T00:00:00Z"},
-            {"name": "new", "full_name": "acme/new", "pushed_at": "2026-10-01T00:00:00Z",
-             "private": True},
-        ])
+        return httpx.Response(
+            200,
+            json=[
+                {"name": "old", "full_name": "acme/old", "pushed_at": "2025-01-01T00:00:00Z"},
+                {
+                    "name": "new",
+                    "full_name": "acme/new",
+                    "pushed_at": "2026-10-01T00:00:00Z",
+                    "private": True,
+                },
+            ],
+        )
 
     repos = _provider(handler).org_repos("acme")
     assert [r.name for r in repos] == ["new", "old"]
@@ -166,14 +189,22 @@ def test_a_read_that_hits_the_300_event_cap_is_truncated_without_next_link():
     assert batch.truncated is True
 
 
-
 def _search_node(number, merged_at):
     return {
-        "number": number, "title": f"PR {number}", "url": f"https://github.com/acme/core/pull/{number}",
-        "state": "MERGED", "isDraft": False, "createdAt": "2026-10-01T00:00:00Z",
-        "mergedAt": merged_at, "closedAt": merged_at, "headRefName": "x", "baseRefName": "main",
+        "number": number,
+        "title": f"PR {number}",
+        "url": f"https://github.com/acme/core/pull/{number}",
+        "state": "MERGED",
+        "isDraft": False,
+        "createdAt": "2026-10-01T00:00:00Z",
+        "mergedAt": merged_at,
+        "closedAt": merged_at,
+        "headRefName": "x",
+        "baseRefName": "main",
         "repository": {"nameWithOwner": "acme/core"},
-        "author": {"login": "alice"}, "mergedBy": {"login": "bob"}, "reviews": {"nodes": []},
+        "author": {"login": "alice"},
+        "mergedBy": {"login": "bob"},
+        "reviews": {"nodes": []},
     }
 
 
@@ -230,6 +261,7 @@ def test_activity_reads_repos_in_parallel_and_warns_about_the_missing_one():
 
     def handler(request):
         import threading
+
         threads.add(threading.get_ident())
         if request.url.path == "/user":
             return httpx.Response(200, json=USER)
@@ -238,8 +270,11 @@ def test_activity_reads_repos_in_parallel_and_warns_about_the_missing_one():
         if request.url.path == "/repos/acme/gone/events":
             return httpx.Response(404, json={"message": "Not Found"})
         repo = request.url.path.split("/")[3]
-        return httpx.Response(200, json=[_event(f"{repo}-1")],
-                              headers={"x-ratelimit-remaining": "4990", "x-ratelimit-limit": "5000"})
+        return httpx.Response(
+            200,
+            json=[_event(f"{repo}-1")],
+            headers={"x-ratelimit-remaining": "4990", "x-ratelimit-limit": "5000"},
+        )
 
     snapshot = _provider(handler).activity(FeedSpec("acme", repos=("core", "api", "gone")), SINCE)
     assert snapshot.viewer == "alice"
@@ -284,6 +319,7 @@ def _user_handler(scopes=None, status=200, message=""):
             headers = {} if scopes is None else {"x-oauth-scopes": scopes}
             return httpx.Response(200, json=USER, headers=headers)
         raise AssertionError(f"unexpected {request.url.path}")
+
     return handler
 
 
@@ -319,10 +355,16 @@ def test_rejected_token_explains_what_to_do():
 
 
 def test_saml_and_fine_grained_refusals_get_specific_hints():
-    saml = "Resource protected by organization SAML enforcement. You must grant your Personal Access token access to this organization."
+    saml = (
+        "Resource protected by organization SAML enforcement."
+        " You must grant your Personal Access token access to this organization."
+    )
     status = _provider(_user_handler(status=403, message=saml), token="ghp_x").token_status()
     assert "Configure SSO" in status.problems[0]
-    policy = "The 'acme' organization forbids access via a fine-grained personal access tokens if the token's lifetime is greater than 7 days."
+    policy = (
+        "The 'acme' organization forbids access via a fine-grained personal access tokens"
+        " if the token's lifetime is greater than 7 days."
+    )
     status = _provider(_user_handler(status=403, message=policy), token="github_pat_x").token_status()
     assert "restricts fine-grained tokens" in status.problems[0]
 
@@ -332,7 +374,9 @@ def test_org_feed_that_falls_back_to_public_events_says_so():
         if request.url.path == "/user":
             return httpx.Response(200, json=USER)
         if request.url.path == "/graphql":
-            return httpx.Response(200, json={"data": {"search": {"pageInfo": {"hasNextPage": False}, "nodes": []}}})
+            return httpx.Response(
+                200, json={"data": {"search": {"pageInfo": {"hasNextPage": False}, "nodes": []}}}
+            )
         if request.url.path.startswith("/users/alice/events/orgs/"):
             return httpx.Response(404, json={"message": "Not Found"})
         return httpx.Response(200, json=[_event(1)])

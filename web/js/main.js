@@ -17,7 +17,7 @@ function setupTabs() {
   }
 
   function activate(tab) {
-    tabs.forEach((item) => item.classList.toggle("is-active", item === tab));
+    for (const item of tabs) item.classList.toggle("is-active", item === tab);
     moveIndicator(tab);
     document.querySelectorAll(".view").forEach((view) => {
       view.hidden = view.id !== `view-${tab.dataset.view}`;
@@ -26,7 +26,7 @@ function setupTabs() {
     document.dispatchEvent(new CustomEvent("view:change", { detail: tab.dataset.view }));
   }
 
-  tabs.forEach((tab) => tab.addEventListener("click", () => activate(tab)));
+  for (const tab of tabs) tab.addEventListener("click", () => activate(tab));
   requestAnimationFrame(() => moveIndicator(tabs[0]));
   window.addEventListener("resize", () =>
     moveIndicator(tabs.find((tab) => tab.classList.contains("is-active")))

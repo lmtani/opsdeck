@@ -12,7 +12,7 @@ class MySqlSettings:
     host: str = "127.0.0.1"
     port: int = 13306
     user: str = "root"
-    password: str = "1234"
+    password: str = "1234"  # noqa: S105 - the documented local default, overridden by DASHBOARD_DB_PASSWORD
     database: str = "opsdeck"
 
 

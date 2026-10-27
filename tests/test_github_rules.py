@@ -14,9 +14,11 @@ from tests.fakes import (
 
 
 def test_selecting_every_kind_means_no_filter():
-    spec = FeedSpec("acme", event_kinds=("push", "pr", "review", "comment",
-                                         "issue", "branch", "release", "other"))
+    spec = FeedSpec(
+        "acme", event_kinds=("push", "pr", "review", "comment", "issue", "branch", "release", "other")
+    )
     assert spec.event_kinds == ()
+
 
 def test_consecutive_pushes_collapse_per_repo_actor_and_branch():
     events = [
@@ -36,6 +38,7 @@ def test_consecutive_pushes_collapse_per_repo_actor_and_branch():
     assert folded.details.heads == ("h3", "h2", "h1")
     assert folded.url == "https://github.com/acme/core/compare/b0...h3"
 
+
 def test_code_review_comment_bursts_collapse_per_pr():
     events = [
         make_code_comment(3, "2026-10-22T12:00:00Z"),
@@ -52,9 +55,11 @@ def test_code_review_comment_bursts_collapse_per_pr():
     assert [c.path for c in burst.details.comments] == ["f3.py", "f2.py", "f1.py"]
     assert burst.url == "https://x/3"
 
+
 def _api_order(*groups):
     """Concatenate timestamp groups as the API would serve them (processing order)."""
     return [at for group in groups for at in group]
+
 
 def test_coverage_is_the_median_of_the_last_processed_events():
     recent = [f"2026-10-22T{hour:02d}:00:00Z" for hour in range(23, 9, -1)] * 4  # dense, newest first
@@ -67,11 +72,13 @@ def test_coverage_is_the_median_of_the_last_processed_events():
     assert coverage_start([complete]) is None  # read to its end: no gap
     assert coverage_start([]) is None
 
+
 def test_coverage_of_several_sources_is_the_latest_cut():
     busy = make_batch(["2026-10-22T20:00:00Z"] * 10 + ["2026-10-22T12:00:00Z"] * 30)
     calmer = make_batch(["2026-10-22T20:00:00Z"] * 10 + ["2026-10-20T10:00:00Z"] * 30)
     quiet = make_batch(["2026-09-01T10:00:00Z"], truncated=False)
     assert coverage_start([busy, calmer, quiet]) == ts("2026-10-22T12:00:00Z")
+
 
 def test_searched_events_fill_the_gap_until_the_published_ones_arrive():
     searched = [
@@ -85,5 +92,8 @@ def test_searched_events_fill_the_gap_until_the_published_ones_arrive():
     published = [make_pr_action("p1", "merged", at="2026-10-23T12:12:19Z")]
     assert [e.id for e in merge_realtime(published, searched)] == ["s2", "s3"]
     # same verb by someone else, or far apart in time, is a different action
-    other = [make_review("p2", "approved", actor="erin"), make_review("p3", "approved", at="2026-10-22T10:00:00Z")]
+    other = [
+        make_review("p2", "approved", actor="erin"),
+        make_review("p3", "approved", at="2026-10-22T10:00:00Z"),
+    ]
     assert [e.id for e in merge_realtime(other, searched)] == ["s1", "s2", "s3"]

@@ -26,7 +26,7 @@ from tests.fakes import (
 )
 
 
-@pytest.fixture()
+@pytest.fixture
 def world(tmp_path):
     fakes = SimpleNamespace(
         links=InMemoryLinkRepository(),
@@ -132,8 +132,10 @@ def test_filters_crud_and_order_route(world):
 
 def test_log_query_saved_ad_hoc_and_failures(world):
     client = world.client
-    saved = client.post("/api/filters", json={"name": "a", "project": "proj-x", "expression": "e",
-                                              "freshness": "6h", "limit": 25}).json()
+    saved = client.post(
+        "/api/filters",
+        json={"name": "a", "project": "proj-x", "expression": "e", "freshness": "6h", "limit": 25},
+    ).json()
     result = client.post(f"/api/filters/{saved['id']}/query").json()
     assert result["command"] == "fake --project=proj-x"
     assert [e["summary"] for e in result["entries"]] == ["boom"]
@@ -154,8 +156,9 @@ def test_log_query_saved_ad_hoc_and_failures(world):
 
 def test_github_feeds_crud_seen_and_fixed_routes(world):
     client = world.client
-    created = client.post("/api/github/feeds", json={"name": "Core", "org": "acme",
-                                                     "repos": ["core", "acme/api"]})
+    created = client.post(
+        "/api/github/feeds", json={"name": "Core", "org": "acme", "repos": ["core", "acme/api"]}
+    )
     assert created.status_code == 201
     feed = created.json()
     assert feed["repos"] == ["core", "api"] and feed["last_seen_at"].endswith("Z")
@@ -173,7 +176,10 @@ def test_github_feeds_crud_seen_and_fixed_routes(world):
     unseen = client.get("/api/github/feeds/unseen")
     assert unseen.status_code == 200 and unseen.json()[other["id"]] == 1
 
-    assert client.put(f"/api/github/feeds/{feed['id']}", json={"name": "C2", "org": "acme"}).json()["name"] == "C2"
+    assert (
+        client.put(f"/api/github/feeds/{feed['id']}", json={"name": "C2", "org": "acme"}).json()["name"]
+        == "C2"
+    )
     assert client.delete(f"/api/github/feeds/{feed['id']}").status_code == 204
     assert client.delete(f"/api/github/feeds/{feed['id']}").status_code == 404
 
@@ -207,13 +213,22 @@ def test_github_events_query_and_repos(world):
     failed = client.post("/api/github/events/query", json={"org": "acme", "repos": ["core"]})
     assert failed.status_code == 502 and "token" in failed.json()["detail"]
 
-    preview = client.post("/api/github/feeds/preview", json={
-        "org": "acme", "repos": ["core", "acme/api", "https://github.com/acme/web.git", "CORE"],
-        "event_kinds": ["review", "pr"],
-    })
+    preview = client.post(
+        "/api/github/feeds/preview",
+        json={
+            "org": "acme",
+            "repos": ["core", "acme/api", "https://github.com/acme/web.git", "CORE"],
+            "event_kinds": ["review", "pr"],
+        },
+    )
     assert preview.status_code == 200
-    assert preview.json() == {"org": "acme", "repos": ["core", "api", "web"],
-                              "event_kinds": ["pr", "review"], "hide_own": False, "hide_bots": True}
+    assert preview.json() == {
+        "org": "acme",
+        "repos": ["core", "api", "web"],
+        "event_kinds": ["pr", "review"],
+        "hide_own": False,
+        "hide_bots": True,
+    }
     bad = client.post("/api/github/feeds/preview", json={"org": "acme", "repos": ["other/x"]})
     assert bad.status_code == 422 and "does not belong" in bad.json()["detail"]
 
@@ -252,11 +267,23 @@ def test_image_upload(world):
 def test_unexpected_errors_return_a_readable_reason(world):
     world.logs.error = OSError("Project was not passed and could not be determined")
     saved = world.client.post("/api/filters", json={"name": "a", "project": "p"}).json()
-    response = TestClient(world.client.app, raise_server_exceptions=False).post(f"/api/filters/{saved['id']}/query")
+    response = TestClient(world.client.app, raise_server_exceptions=False).post(
+        f"/api/filters/{saved['id']}/query"
+    )
     assert response.status_code == 500
-    assert response.json()["detail"] == "Unexpected server error (OSError): Project was not passed and could not be determined"
+    assert (
+        response.json()["detail"]
+        == "Unexpected server error (OSError): Project was not passed and could not be determined"
+    )
 
 
 def test_github_token_status_route(world):
     status = world.client.get("/api/github/token").json()
-    assert status == {"kind": "other", "login": "", "scopes": None, "usable": True, "problems": [], "notes": []}
+    assert status == {
+        "kind": "other",
+        "login": "",
+        "scopes": None,
+        "usable": True,
+        "problems": [],
+        "notes": [],
+    }

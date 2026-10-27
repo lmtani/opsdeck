@@ -27,9 +27,9 @@
 
     <nav class="tabs" id="tabs">
       <span class="tab-indicator" id="tab-indicator"></span>
-      <button class="tab is-active" data-view="links">Links</button>
-      <button class="tab" data-view="logs">GCP Logs</button>
-      <button class="tab" data-view="github">GitHub<span class="tab-badge" id="gh-tab-badge" hidden></span></button>
+      <button type="button" class="tab is-active" data-view="links">Links</button>
+      <button type="button" class="tab" data-view="logs">GCP Logs</button>
+      <button type="button" class="tab" data-view="github">GitHub<span class="tab-badge" id="gh-tab-badge" hidden></span></button>
     </nav>
 
     <div class="topbar-right">
@@ -46,7 +46,7 @@
         <span class="clock-date" id="clock-date"></span>
       </div>
       <div class="theme-picker">
-        <button class="icon-btn" id="theme-btn" title="Theme" aria-label="Choose theme">◐</button>
+        <button type="button" class="icon-btn" id="theme-btn" title="Theme" aria-label="Choose theme">◐</button>
         <div class="theme-pop" id="theme-pop" hidden></div>
       </div>
     </div>
@@ -65,7 +65,7 @@
             <span class="search-icon">⌕</span>
             <input type="search" id="link-search" placeholder="Search shortcuts…" autocomplete="off" />
           </div>
-          <button class="btn btn-primary" id="link-new-btn">+ New link</button>
+          <button type="button" class="btn btn-primary" id="link-new-btn">+ New link</button>
         </div>
       </div>
 
@@ -76,7 +76,7 @@
         <div class="empty-mark">▦</div>
         <h2>No shortcuts yet</h2>
         <p>Add links to the GCP projects, dashboards and tools you use every day.</p>
-        <button class="btn btn-primary" id="link-empty-btn">Create the first one</button>
+        <button type="button" class="btn btn-primary" id="link-empty-btn">Create the first one</button>
       </div>
     </section>
 
@@ -86,12 +86,12 @@
         <aside class="filters-panel">
           <div class="panel-head">
             <h2 class="panel-title">Saved filters</h2>
-            <button class="btn btn-ghost btn-sm" id="filter-new-btn">+ New</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="filter-new-btn">+ New</button>
           </div>
           <div class="filter-list" id="filter-list"></div>
           <div class="empty empty-sm" id="filters-empty" hidden>
             <p>Save Cloud Logging queries to run them with one click.</p>
-            <button class="btn btn-primary btn-sm" id="filter-empty-btn">Create filter</button>
+            <button type="button" class="btn btn-primary btn-sm" id="filter-empty-btn">Create filter</button>
           </div>
         </aside>
 
@@ -104,31 +104,32 @@
           <div class="results" id="results" hidden>
             <div class="results-head">
               <div class="results-heading">
-                <button class="btn btn-ghost btn-sm results-back" id="results-back-btn" hidden>← back</button>
+                <button type="button" class="btn btn-ghost btn-sm results-back" id="results-back-btn" hidden>← back</button>
+                <!-- biome-ignore lint/a11y/useHeadingContent: logs.js fills it with the filter name -->
                 <h2 class="results-title" id="results-title"></h2>
                 <p class="results-meta" id="results-meta"></p>
               </div>
               <div class="results-actions">
-                <button class="btn btn-ghost btn-sm" id="trace-projects-btn" hidden>⊕ other projects</button>
-                <button class="btn btn-ghost btn-sm" id="format-toggle" title="Format each line with payload values">⌗ format</button>
-                <button class="btn btn-ghost btn-sm" id="open-gcp-btn" title="Open this query in the GCP Logs Explorer">↗ open in GCP</button>
-                <button class="btn btn-primary btn-sm" id="rerun-btn">↻ Refresh</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="trace-projects-btn" hidden>⊕ other projects</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="format-toggle" title="Format each line with payload values">⌗ format</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="open-gcp-btn" title="Open this query in the GCP Logs Explorer">↗ open in GCP</button>
+                <button type="button" class="btn btn-primary btn-sm" id="rerun-btn">↻ Refresh</button>
               </div>
             </div>
 
             <div class="refine-bar" id="refine-bar" hidden>
               <span class="format-fields-label">refined by</span>
               <div class="refine-chips" id="refine-chips"></div>
-              <button class="btn btn-ghost btn-sm" id="refine-clear-btn" title="Back to the saved query">Clear</button>
-              <button class="btn btn-ghost btn-sm" id="refine-save-btn" title="Create a filter with the refined expression">Save as new filter</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="refine-clear-btn" title="Back to the saved query">Clear</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="refine-save-btn" title="Create a filter with the refined expression">Save as new filter</button>
             </div>
 
             <div class="format-bar" id="format-bar" hidden>
               <div class="format-row">
                 <input id="format-input" class="mono" spellcheck="false"
                   placeholder="e.g. {method} {resource} → {status} · use {field.subfield} to read the payload" />
-                <button class="btn btn-ghost btn-sm" id="format-clear-btn">Clear</button>
-                <button class="btn btn-primary btn-sm" id="format-save-btn">Save to filter</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="format-clear-btn">Clear</button>
+                <button type="button" class="btn btn-primary btn-sm" id="format-save-btn">Save to filter</button>
               </div>
               <div class="format-fields" id="format-fields"></div>
             </div>
@@ -146,15 +147,15 @@
           <div class="panel-head">
             <h2 class="panel-title">Feeds</h2>
             <span class="panel-head-actions">
-              <button class="btn btn-ghost btn-sm gh-poll is-on" id="gh-poll-btn" aria-pressed="true">● live</button>
-              <button class="btn btn-ghost btn-sm" id="gh-feed-new-btn">+ New</button>
+              <button type="button" class="btn btn-ghost btn-sm gh-poll is-on" id="gh-poll-btn" aria-pressed="true">● live</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="gh-feed-new-btn">+ New</button>
             </span>
           </div>
           <div class="gh-token-hint" id="gh-token-hint" role="status" hidden></div>
           <div class="filter-list" id="gh-feed-list"></div>
           <div class="empty empty-sm" id="gh-feeds-empty" hidden>
             <p>Follow a GitHub organization, whole or just the repositories that matter.</p>
-            <button class="btn btn-primary btn-sm" id="gh-feed-empty-btn">Create feed</button>
+            <button type="button" class="btn btn-primary btn-sm" id="gh-feed-empty-btn">Create feed</button>
           </div>
         </aside>
 
@@ -167,14 +168,15 @@
           <div class="results" id="gh-results" hidden>
             <div class="results-head">
               <div>
+                <!-- biome-ignore lint/a11y/useHeadingContent: github.js fills it with the feed name -->
                 <h2 class="results-title" id="gh-title"></h2>
                 <p class="results-meta" id="gh-meta"></p>
               </div>
               <div class="results-actions">
-                <button class="btn btn-ghost btn-sm gh-auto" id="gh-auto-btn" title="Refresh every 60 s">◷ auto</button>
-                <button class="btn btn-ghost btn-sm" id="gh-seen-btn" title="Mark everything as seen">✓ seen</button>
-                <a class="btn btn-ghost btn-sm" id="gh-open-btn" target="_blank" rel="noopener" title="Open on GitHub">↗ GitHub</a>
-                <button class="btn btn-primary btn-sm" id="gh-refresh-btn">↻ Refresh</button>
+                <button type="button" class="btn btn-ghost btn-sm gh-auto" id="gh-auto-btn" title="Refresh every 60 s">◷ auto</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="gh-seen-btn" title="Mark everything as seen">✓ seen</button>
+                <a class="btn btn-ghost btn-sm" id="gh-open-btn" href="https://github.com/" target="_blank" rel="noopener" title="Open on GitHub">↗ GitHub</a>
+                <button type="button" class="btn btn-primary btn-sm" id="gh-refresh-btn">↻ Refresh</button>
               </div>
             </div>
 
@@ -188,8 +190,8 @@
             <div class="gh-refine" id="gh-refine" hidden>
               <span class="format-fields-label">refined by</span>
               <div class="gh-refine-chips" id="gh-refine-chips"></div>
-              <button class="btn btn-ghost btn-sm" id="gh-refine-clear-btn">Clear</button>
-              <button class="btn btn-ghost btn-sm" id="gh-refine-save-btn" title="Create a feed with these repositories and kinds">Save as new feed</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="gh-refine-clear-btn">Clear</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="gh-refine-save-btn" title="Create a feed with these repositories and kinds">Save as new feed</button>
             </div>
 
             <div class="gh-warnings" id="gh-warnings" hidden></div>

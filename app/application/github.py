@@ -9,7 +9,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 from app.application.common import apply_order
-from app.domain.ordering import next_position, ordered
 from app.domain.common import utc_now
 from app.domain.errors import GithubError, NotFoundError
 from app.domain.github import (
@@ -30,6 +29,7 @@ from app.domain.github_rules import (
     keep_event,
     merge_realtime,
 )
+from app.domain.ordering import next_position, ordered
 
 MAX_FEED_EVENTS = 500
 # Published events can lag by hours; PR activity of this recent window is

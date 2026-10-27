@@ -6,6 +6,35 @@ on:
     branches: [main]
 
 jobs:
+  # The same hooks as `pre-commit install` runs locally, over every file.
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitleaks scans the whole history
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: pre-commit
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+
+      # the hook only sees staged changes; here every commit is checked
+      - name: Secrets in history
+        run: docker run --rm -v "$PWD:/repo:ro" ghcr.io/gitleaks/gitleaks:v8.30.1 git /repo --redact --no-banner
+
   tests:
     runs-on: ubuntu-latest
 

@@ -38,7 +38,7 @@ BODY_EXCERPT = 400
 def ref_name(ref: str) -> str:
     for prefix in ("refs/heads/", "refs/tags/"):
         if (ref or "").startswith(prefix):
-            return ref[len(prefix):]
+            return ref[len(prefix) :]
     return ref or ""
 
 
@@ -125,7 +125,7 @@ def _pull_request(event: GithubEvent, payload: dict) -> None:
         event.body = _excerpt(pull.get("body"))
 
 
-_REVIEW_VERBS = {
+_REVIEW_VERBS: dict[ReviewState | None, str] = {
     ReviewState.APPROVED: "approved PR",
     ReviewState.CHANGES_REQUESTED: "requested changes on PR",
     ReviewState.COMMENTED: "reviewed PR",
@@ -320,16 +320,23 @@ def _graphql_login(actor: dict | None) -> tuple[str, str]:
     return login, actor.get("avatarUrl") or ""
 
 
-def _search_event(pull: dict, type_: str, kind: EventKind, action: str, actor: dict | None,
-                  at: datetime, summary: str, url: str, details=None) -> GithubEvent:
+def _search_event(
+    pull: dict,
+    type_: str,
+    kind: EventKind,
+    action: str,
+    actor: dict | None,
+    at: datetime,
+    summary: str,
+    url: str,
+    details=None,
+) -> GithubEvent:
     repo = (pull.get("repository") or {}).get("nameWithOwner", "")
     number = int(pull.get("number") or 0)
     login, avatar = _graphql_login(actor)
     state = _item_state(pull.get("state"), draft=bool(pull.get("isDraft")))
     if details is None:
-        details = PullDetails(
-            head_ref=pull.get("headRefName") or "", base_ref=pull.get("baseRefName") or ""
-        )
+        details = PullDetails(head_ref=pull.get("headRefName") or "", base_ref=pull.get("baseRefName") or "")
     return GithubEvent(
         id=f"{EventSource.SEARCH}:{repo}#{number}:{action}:{login}:{at.isoformat()}",
         kind=kind,
@@ -361,24 +368,46 @@ def events_from_search_pull(pull: dict, since: datetime) -> list[GithubEvent]:
     events = []
     created, merged = parse_timestamp(pull.get("createdAt")), parse_timestamp(pull.get("mergedAt"))
     if created and created >= since:
-        events.append(_search_event(
-            pull, "PullRequestEvent", EventKind.PR, "opened", pull.get("author"),
-            created, f"{_PR_VERBS['opened']} #{number}", url,
-        ))
+        events.append(
+            _search_event(
+                pull,
+                "PullRequestEvent",
+                EventKind.PR,
+                "opened",
+                pull.get("author"),
+                created,
+                f"{_PR_VERBS['opened']} #{number}",
+                url,
+            )
+        )
     if merged and merged >= since:
-        events.append(_search_event(
-            pull, "PullRequestEvent", EventKind.PR, "merged", pull.get("mergedBy"),
-            merged, f"{_PR_VERBS['merged']} #{number}", url,
-        ))
-    for review in ((pull.get("reviews") or {}).get("nodes") or []):
+        events.append(
+            _search_event(
+                pull,
+                "PullRequestEvent",
+                EventKind.PR,
+                "merged",
+                pull.get("mergedBy"),
+                merged,
+                f"{_PR_VERBS['merged']} #{number}",
+                url,
+            )
+        )
+    for review in (pull.get("reviews") or {}).get("nodes") or []:
         state = _review_state(review.get("state"))
         submitted = parse_timestamp(review.get("submittedAt"))
         if state is None or submitted is None or submitted < since:
             continue  # pending (not submitted) or unknown reviews are skipped
         verb = _REVIEW_VERBS.get(state, "reviewed PR")
         event = _search_event(
-            pull, "PullRequestReviewEvent", EventKind.REVIEW, "created", review.get("author"),
-            submitted, f"{verb} #{number}", review.get("url") or url,
+            pull,
+            "PullRequestReviewEvent",
+            EventKind.REVIEW,
+            "created",
+            review.get("author"),
+            submitted,
+            f"{verb} #{number}",
+            review.get("url") or url,
             ReviewDetails(state=state),
         )
         event.body = _excerpt(review.get("body"))

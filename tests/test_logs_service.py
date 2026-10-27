@@ -29,10 +29,12 @@ def test_run_saved_filter_builds_query_from_filter():
     assert provider.last_query.freshness == "6h"
     assert provider.last_query.limit == 25
 
+
 def test_run_saved_filter_unknown_id():
     service = LogQueryService(FakeLogProvider(), InMemoryFilterRepository())
     with pytest.raises(NotFoundError):
         service.run_saved_filter("ghost")
+
 
 def test_a_query_needs_a_project():
     with pytest.raises(ValidationError):
@@ -46,8 +48,13 @@ def test_create_filter_trims_and_persists():
     repository = InMemoryFilterRepository()
     service = LogFilterService(repository)
     created = service.create_filter(
-        name=" Erros ", project=" proj-x ", expression=' severity>="ERROR" ',
-        freshness="6h", limit=25, description=" desc ", line_format=" {status} ",
+        name=" Erros ",
+        project=" proj-x ",
+        expression=' severity>="ERROR" ',
+        freshness="6h",
+        limit=25,
+        description=" desc ",
+        line_format=" {status} ",
     )
     assert created.id and created.created_at
     assert (created.name, created.project) == ("Erros", "proj-x")
@@ -67,8 +74,14 @@ def test_update_filter_replaces_fields_and_keeps_identity():
     service = LogFilterService(InMemoryFilterRepository())
     created = service.create_filter(name="a", project="p", expression="e")
     updated = service.update_filter(
-        created.id, name="b", project="q", expression="f", freshness="1d", limit=10,
-        description="d", line_format="{x}",
+        created.id,
+        name="b",
+        project="q",
+        expression="f",
+        freshness="1d",
+        limit=10,
+        description="d",
+        line_format="{x}",
     )
     assert updated.id == created.id and updated.created_at == created.created_at
     assert (updated.name, updated.project, updated.expression) == ("b", "q", "f")
@@ -103,4 +116,7 @@ def test_run_query_reports_provider_failures():
     with pytest.raises(LogProviderError, match="gcloud fora"):
         service.run_query(LogQuery(project="p", expression=""))
     assert service.provider_available() is True
-    assert LogQueryService(FakeLogProvider(available=False), InMemoryFilterRepository()).provider_available() is False
+    assert (
+        LogQueryService(FakeLogProvider(available=False), InMemoryFilterRepository()).provider_available()
+        is False
+    )
