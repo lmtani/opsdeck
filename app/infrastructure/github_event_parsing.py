@@ -10,11 +10,14 @@ when present.
 from datetime import datetime
 
 from app.domain.common import EPOCH, parse_timestamp
+from app.domain.errors import ValidationError
 from app.domain.github import (
     CodeCommentDetails,
     Commit,
+    EventContext,
     EventKind,
     EventSource,
+    EventSubject,
     GithubEvent,
     ItemState,
     PullDetails,
@@ -22,6 +25,7 @@ from app.domain.github import (
     RefDetails,
     ReviewDetails,
     ReviewState,
+    SubjectType,
 )
 from app.domain.github_rules import (
     GITHUB_WEB,
@@ -31,6 +35,7 @@ from app.domain.github_rules import (
     review_comments_summary,
     short_sha,
 )
+from app.infrastructure.html_sanitizer import sanitize_html
 
 BODY_EXCERPT = 400
 
@@ -45,6 +50,15 @@ def ref_name(ref: str) -> str:
 def _excerpt(text: str | None) -> str:
     text = (text or "").strip()
     return text if len(text) <= BODY_EXCERPT else text[: BODY_EXCERPT - 1] + "…"
+
+
+def _subject(type_: SubjectType, repo: str, number=0, item_id=0) -> EventSubject | None:
+    """None when the payload lacks an identifier: the event still shows, only
+    without a full context to open."""
+    try:
+        return EventSubject(type_, repo, int(number or 0), int(item_id or 0))
+    except (ValidationError, TypeError, ValueError):
+        return None
 
 
 def _html_url(obj: dict | None) -> str:
@@ -121,6 +135,7 @@ def _pull_request(event: GithubEvent, payload: dict) -> None:
     event.ref = head.get("ref", "")
     event.is_pull = True
     event.details = PullDetails(head_ref=head.get("ref", ""), base_ref=base.get("ref", ""))
+    event.subject = _subject(SubjectType.PULL, event.repo, event.number)
     if event.action == "opened":
         event.body = _excerpt(pull.get("body"))
 
@@ -152,6 +167,7 @@ def _review(event: GithubEvent, payload: dict) -> None:
     event.body = _excerpt(review.get("body"))
     event.is_pull = True
     event.details = ReviewDetails(state=state)
+    event.subject = _subject(SubjectType.REVIEW, event.repo, event.number, review.get("id"))
 
 
 def _review_comment(event: GithubEvent, payload: dict) -> None:
@@ -168,6 +184,7 @@ def _review_comment(event: GithubEvent, payload: dict) -> None:
         path=comment.get("path") or "",
         line=comment.get("line") or comment.get("original_line"),
     )
+    event.subject = _subject(SubjectType.REVIEW_COMMENT, event.repo, item_id=comment.get("id"))
 
 
 def _issue_comment(event: GithubEvent, payload: dict) -> None:
@@ -183,6 +200,7 @@ def _issue_comment(event: GithubEvent, payload: dict) -> None:
     event.state = None if is_pull else _item_state(issue.get("state"))
     event.body = _excerpt(comment.get("body"))
     event.is_pull = is_pull
+    event.subject = _subject(SubjectType.ISSUE_COMMENT, event.repo, item_id=comment.get("id"))
 
 
 _ISSUE_VERBS = {
@@ -203,6 +221,7 @@ def _issues(event: GithubEvent, payload: dict) -> None:
     event.url = _html_url(issue) or f"{GITHUB_WEB}/{event.repo}/issues/{event.number}"
     event.title = issue.get("title") or ""
     event.state = _item_state(issue.get("state"))
+    event.subject = _subject(SubjectType.ISSUE, event.repo, event.number)
     if event.action == "opened":
         event.body = _excerpt(issue.get("body"))
 
@@ -245,6 +264,7 @@ def _release(event: GithubEvent, payload: dict) -> None:
     event.title = release.get("name") or ""
     event.url = _html_url(release) or f"{GITHUB_WEB}/{event.repo}/releases"
     event.body = _excerpt(release.get("body"))
+    event.subject = _subject(SubjectType.RELEASE, event.repo, item_id=release.get("id"))
 
 
 _SIMPLE = {
@@ -267,7 +287,9 @@ def _other(event: GithubEvent, payload: dict) -> None:
         event.url = _html_url(payload.get("forkee")) or event.url
     if event.type == "CommitCommentEvent":
         event.url = _html_url(payload.get("comment")) or event.url
-        event.body = _excerpt((payload.get("comment") or {}).get("body"))
+        comment = payload.get("comment") or {}
+        event.body = _excerpt(comment.get("body"))
+        event.subject = _subject(SubjectType.COMMIT_COMMENT, event.repo, item_id=comment.get("id"))
     event.summary = _SIMPLE.get(event.type, event.type.removesuffix("Event") or "evento")
 
 
@@ -355,6 +377,7 @@ def _search_event(
         is_pull=True,
         source=EventSource.SEARCH,
         details=details,
+        subject=_subject(SubjectType.PULL, repo, number),
     )
 
 
@@ -411,5 +434,37 @@ def events_from_search_pull(pull: dict, since: datetime) -> list[GithubEvent]:
             ReviewDetails(state=state),
         )
         event.body = _excerpt(review.get("body"))
+        event.subject = _subject(SubjectType.REVIEW, event.repo, number, review.get("databaseId"))
         events.append(event)
     return events
+
+
+# ----- full context of one subject (REST, html media type) ----------------
+
+
+def context_from_api(subject: EventSubject, data: dict) -> EventContext:
+    """The REST object behind a subject, read with the html media type, as
+    an EventContext. Its body_html is sanitized here."""
+    user = data.get("user") or data.get("author") or {}
+    when = data.get("submitted_at") or data.get("published_at") or data.get("created_at")
+    if subject.type == SubjectType.PULL:
+        state = _pull_state(data)
+    elif subject.type == SubjectType.ISSUE:
+        state = _item_state(data.get("state"))
+    else:
+        state = None
+    is_review = subject.type == SubjectType.REVIEW
+    return EventContext(
+        subject=subject,
+        url=_html_url(data),
+        author=user.get("login") or "",
+        author_avatar=user.get("avatar_url") or "",
+        created_at=parse_timestamp(when),
+        title=data.get("title") or data.get("name") or "",
+        state=state,
+        review_state=_review_state(data.get("state")) if is_review else None,
+        body_html=sanitize_html(data.get("body_html") or ""),
+        path=data.get("path") or "",
+        line=data.get("line") or data.get("original_line"),
+        diff_hunk=data.get("diff_hunk") or "",
+    )

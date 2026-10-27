@@ -53,6 +53,8 @@ def test_code_review_comment_bursts_collapse_per_pr():
     assert burst.count == 3
     assert burst.summary == "left 3 review comments on PR #13"
     assert [c.path for c in burst.details.comments] == ["f3.py", "f2.py", "f1.py"]
+    # each folded comment can still open its own full context
+    assert [c.subject.item_id for c in burst.details.comments] == [4, 3, 2]
     assert burst.url == "https://x/3"
 
 

@@ -26,6 +26,8 @@ from app.domain.common import EPOCH, parse_timestamp
 from app.domain.errors import GithubError, GithubNotFoundError
 from app.domain.github import (
     ActivitySnapshot,
+    EventContext,
+    EventSubject,
     FeedSpec,
     GithubEvent,
     GithubEventBatch,
@@ -34,13 +36,25 @@ from app.domain.github import (
     ItemState,
     PullRequestInfo,
     Quota,
+    SubjectType,
     TokenKind,
     TokenStatus,
 )
 from app.domain.github_rules import pull_url
-from app.infrastructure.github_event_parsing import events_from_search_pull, parse_event
+from app.infrastructure.github_event_parsing import context_from_api, events_from_search_pull, parse_event
 
 API_URL = "https://api.github.com"
+# asks the REST API for bodies rendered as HTML (body_html) instead of Markdown
+HTML_MEDIA_TYPE = "application/vnd.github.html+json"
+_CONTEXT_PATHS = {
+    SubjectType.PULL: "/repos/{repo}/pulls/{number}",
+    SubjectType.ISSUE: "/repos/{repo}/issues/{number}",
+    SubjectType.REVIEW: "/repos/{repo}/pulls/{number}/reviews/{item_id}",
+    SubjectType.ISSUE_COMMENT: "/repos/{repo}/issues/comments/{item_id}",
+    SubjectType.REVIEW_COMMENT: "/repos/{repo}/pulls/comments/{item_id}",
+    SubjectType.RELEASE: "/repos/{repo}/releases/{item_id}",
+    SubjectType.COMMIT_COMMENT: "/repos/{repo}/comments/{item_id}",
+}
 PER_PAGE = 100
 GRAPHQL_CHUNK = 40
 # The events API never serves more than 300 events per source (its last page
@@ -101,7 +115,7 @@ query($q: String!, $after: String) {
         author { __typename login avatarUrl }
         mergedBy { __typename login avatarUrl }
         reviews(last: 20) {
-          nodes { state submittedAt url body author { __typename login avatarUrl } }
+          nodes { databaseId state submittedAt url body author { __typename login avatarUrl } }
         }
       }
     }
@@ -361,6 +375,17 @@ class GithubApiProvider(GithubProvider):
                     self._pr_cache[ref] = (expires, info)
             result.update(fetched)
         return result
+
+    def event_context(self, subject: EventSubject) -> EventContext:
+        # not conditional: the signed URLs of private images in body_html
+        # expire within minutes, so a remembered body would show broken images
+        path = _CONTEXT_PATHS[subject.type].format(
+            repo=subject.repo, number=subject.number, item_id=subject.item_id
+        )
+        data = self._send("GET", path, headers={"Accept": HTML_MEDIA_TYPE}).json()
+        if not isinstance(data, dict):
+            raise GithubError("GitHub returned an unexpected answer for this item")
+        return context_from_api(subject, data)
 
     # ----- HTTP --------------------------------------------------------
 

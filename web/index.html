@@ -372,6 +372,21 @@
     </div>
   </div>
 
+  <aside class="ctx-drawer" id="gh-drawer" aria-label="Event context" hidden>
+    <header class="ctx-head">
+      <div class="ctx-head-what" id="gh-drawer-head"></div>
+      <div class="ctx-head-actions">
+        <span class="ctx-keys" title="Previous / next event · close">↑ ↓ · esc</span>
+        <a class="btn btn-ghost btn-sm" id="gh-drawer-open" href="https://github.com/" target="_blank" rel="noopener">↗ GitHub</a>
+        <button type="button" class="icon-btn" id="gh-drawer-close" aria-label="Close" title="Close (Esc)">✕</button>
+      </div>
+    </header>
+    <!-- biome-ignore lint/a11y/useHeadingContent: github-context.js fills it with the event title -->
+    <h2 class="ctx-title" id="gh-drawer-title"></h2>
+    <div class="ctx-meta" id="gh-drawer-meta"></div>
+    <div class="ctx-body" id="gh-drawer-body"></div>
+  </aside>
+
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
   <script type="module" src="/js/main.js"></script>

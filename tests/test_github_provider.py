@@ -6,8 +6,8 @@ import httpx
 import pytest
 
 from app.domain.common import parse_timestamp
-from app.domain.errors import GithubError
-from app.domain.github import FeedSpec, Quota, TokenKind
+from app.domain.errors import GithubError, GithubNotFoundError
+from app.domain.github import EventSubject, FeedSpec, Quota, ReviewState, SubjectType, TokenKind
 from app.infrastructure.github_api_provider import GithubApiProvider, search_queries
 
 USER = {"login": "alice"}
@@ -385,3 +385,37 @@ def test_org_feed_that_falls_back_to_public_events_says_so():
     assert [e.id for b in snapshot.batches for e in b.events] == ["1"]
     assert snapshot.warnings[0].startswith("Only public events of acme are shown")
     assert "Resource owner to the organization" in snapshot.warnings[0]
+
+
+def test_event_context_reads_the_subject_rendered_as_html():
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "html_url": "https://github.com/acme/core/pull/12#pullrequestreview-7",
+                "user": {"login": "carol"},
+                "state": "CHANGES_REQUESTED",
+                "submitted_at": "2026-10-22T10:00:00Z",
+                "body_html": "<p>Please <strong>split</strong> it</p>",
+            },
+            headers={"etag": '"r1"'},
+        )
+
+    provider = _provider(handler)
+    subject = EventSubject(SubjectType.REVIEW, "acme/core", number=12, item_id=7)
+    context = provider.event_context(subject)
+    assert calls[0].url.path == "/repos/acme/core/pulls/12/reviews/7"
+    assert calls[0].headers["accept"] == "application/vnd.github.html+json"
+    assert context.body_html == "<p>Please <strong>split</strong> it</p>"
+    assert (context.author, context.review_state) == ("carol", ReviewState.CHANGES_REQUESTED)
+    provider.event_context(subject)
+    assert "if-none-match" not in calls[1].headers  # signed image URLs expire: never reuse a body
+
+
+def test_event_context_of_a_deleted_item_is_not_found():
+    provider = _provider(lambda request: httpx.Response(404, json={"message": "Not Found"}))
+    with pytest.raises(GithubNotFoundError):
+        provider.event_context(EventSubject(SubjectType.ISSUE_COMMENT, "acme/core", item_id=3))

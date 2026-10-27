@@ -6,7 +6,7 @@ import pytest
 
 from app.domain.common import utc_now
 from app.domain.errors import ValidationError
-from app.domain.github import EventKind, FeedSpec, GithubFeed
+from app.domain.github import EventKind, EventSubject, FeedSpec, GithubFeed, SubjectType
 from app.domain.links import Link, LinkKind
 from app.domain.logs import Freshness, LogFilter, LogQuery
 from tests.fakes import ts
@@ -116,3 +116,19 @@ def test_feed_carries_its_spec_and_marks_seen_forward_only():
     with pytest.raises(ValidationError):
         feed.update(name="Core", org="acme", repos=["other/x"])
     assert feed.repos == ["core"]  # nothing changed
+
+
+def test_event_subject_needs_a_valid_repo_and_the_ids_of_its_type():
+    review = EventSubject("review", "acme/core", number=12, item_id=7)
+    assert review.type is SubjectType.REVIEW
+    assert EventSubject(SubjectType.ISSUE_COMMENT, "acme/core.js", item_id=3).item_id == 3
+    with pytest.raises(ValidationError, match="repository"):
+        EventSubject(SubjectType.PULL, "acme", number=1)
+    with pytest.raises(ValidationError, match="repository"):
+        EventSubject(SubjectType.PULL, "acme/..", number=1)  # could walk up the API path
+    with pytest.raises(ValidationError, match="item_id"):
+        EventSubject(SubjectType.REVIEW, "acme/core", number=12)
+    with pytest.raises(ValidationError, match="number"):
+        EventSubject(SubjectType.PULL, "acme/core", item_id=5)
+    with pytest.raises(ValueError, match="wiki"):
+        EventSubject("wiki", "acme/core", item_id=5)

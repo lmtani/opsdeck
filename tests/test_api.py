@@ -11,6 +11,7 @@ from app.application.links import CommandService, ImageService, LinkService
 from app.application.logs import LogFilterService, LogQueryService
 from app.application.settings import SettingsService
 from app.domain.errors import CommandError, GithubError, LogProviderError
+from app.domain.github import EventContext, EventSubject, SubjectType
 from app.presentation.api import Services, create_app
 from tests.fakes import (
     FakeCommandRunner,
@@ -21,6 +22,7 @@ from tests.fakes import (
     InMemoryFilterRepository,
     InMemoryLinkRepository,
     InMemorySettingsRepository,
+    make_code_comment,
     make_event,
     make_push,
 )
@@ -287,3 +289,28 @@ def test_github_token_status_route(world):
         "problems": [],
         "notes": [],
     }
+
+
+def test_github_event_context_route(world):
+    client = world.client
+    subject = EventSubject(SubjectType.REVIEW_COMMENT, "acme/core", item_id=5)
+    world.github.contexts[subject] = EventContext(
+        subject=subject, author="bob", body_html="<p>full</p>", path="a.py", line=3, diff_hunk="@@ +1 @@"
+    )
+    body = {"type": "review_comment", "repo": "acme/core", "item_id": 5}
+    ok = client.post("/api/github/events/context", json=body)
+    assert ok.status_code == 200
+    assert ok.json()["body_html"] == "<p>full</p>" and ok.json()["subject"] == {**body, "number": 0}
+    assert (ok.json()["path"], ok.json()["line"], ok.json()["diff_hunk"]) == ("a.py", 3, "@@ +1 @@")
+    gone = client.post("/api/github/events/context", json={**body, "item_id": 6})
+    assert gone.status_code == 404 and "no longer exists" in gone.json()["detail"]
+    assert client.post("/api/github/events/context", json={**body, "item_id": 0}).status_code == 422
+    assert client.post("/api/github/events/context", json={**body, "repo": "acme/.."}).status_code == 422
+    assert client.post("/api/github/events/context", json={**body, "type": "wiki"}).status_code == 422
+
+
+def test_github_events_expose_their_subject(world):
+    client = world.client
+    world.github.org["acme"] = [make_code_comment(1, "2026-10-22T10:00:00Z")]
+    events = client.post("/api/github/events/query", json={"org": "acme"}).json()["events"]
+    assert events[0]["subject"] == {"type": "review_comment", "repo": "acme/core", "number": 0, "item_id": 2}

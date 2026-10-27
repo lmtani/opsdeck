@@ -117,6 +117,51 @@ class EventSource(StrEnum):
     SEARCH = "search"  # PR search: near real time, replaced once the API publishes
 
 
+class SubjectType(StrEnum):
+    """The GitHub object an event is about, which holds its full text."""
+
+    PULL = "pull"
+    ISSUE = "issue"
+    ISSUE_COMMENT = "issue_comment"  # also comments on a PR's conversation
+    REVIEW = "review"
+    REVIEW_COMMENT = "review_comment"  # a comment on a line of a PR's diff
+    RELEASE = "release"
+    COMMIT_COMMENT = "commit_comment"
+
+
+# which identifiers each subject needs to be fetched
+_SUBJECT_NEEDS = {
+    SubjectType.PULL: ("number",),
+    SubjectType.ISSUE: ("number",),
+    SubjectType.REVIEW: ("number", "item_id"),
+    SubjectType.ISSUE_COMMENT: ("item_id",),
+    SubjectType.REVIEW_COMMENT: ("item_id",),
+    SubjectType.RELEASE: ("item_id",),
+    SubjectType.COMMIT_COMMENT: ("item_id",),
+}
+
+
+@dataclass(frozen=True)
+class EventSubject:
+    """Enough to fetch what an event is about: identifiers only, so the
+    adapter builds every URL itself."""
+
+    type: SubjectType
+    repo: str  # "org/name"
+    number: int = 0  # PR or issue number
+    item_id: int = 0  # comment, review or release id
+
+    def __post_init__(self):
+        object.__setattr__(self, "type", SubjectType(self.type))
+        owner, _, name = (self.repo or "").partition("/")
+        if not GITHUB_ORG_NAME.match(owner) or not GITHUB_REPO_NAME.match(name) or name in (".", ".."):
+            raise ValidationError("Invalid GitHub repository")
+        for needed in _SUBJECT_NEEDS[self.type]:
+            value = getattr(self, needed)
+            if not isinstance(value, int) or value <= 0:
+                raise ValidationError(f"A {self.type} subject needs a positive {needed}")
+
+
 # ----- event details: one value object per shape, immutable --------------
 
 
@@ -150,6 +195,7 @@ class CodeComment:
     url: str
     path: str
     body: str
+    subject: EventSubject | None = None
 
 
 @dataclass(frozen=True)
@@ -284,12 +330,31 @@ class GithubEvent:
     number: int = 0  # PR / issue number
     title: str = ""
     state: ItemState | None = None
-    body: str = ""  # excerpt of the comment / review / issue text
+    body: str = ""  # excerpt of the comment / review / issue text; the full text is in the context
     is_pull: bool = False  # `number` refers to a pull request (else an issue, or nothing)
     source: EventSource = EventSource.EVENTS
     details: EventDetails = None
     count: int = 1  # > 1 when consecutive pushes were collapsed into this one
     is_new: bool = False  # newer than the feed's last-seen mark (set for saved feeds)
+    subject: EventSubject | None = None  # what to fetch for the full context, when there is any
+
+
+@dataclass(frozen=True)
+class EventContext:
+    """The full text behind an event, fetched when the user opens it."""
+
+    subject: EventSubject
+    url: str = ""
+    author: str = ""
+    author_avatar: str = ""
+    created_at: datetime | None = None
+    title: str = ""  # of the PR, issue or release
+    state: ItemState | None = None
+    review_state: ReviewState | None = None
+    body_html: str = ""  # rendered by GitHub and sanitized by the adapter: safe to display
+    path: str = ""  # file of a code comment
+    line: int | None = None
+    diff_hunk: str = ""  # the diff lines a code comment refers to, ending at its line
 
 
 @dataclass
@@ -420,3 +485,8 @@ class GithubProvider(ABC):
     def pull_requests(self, refs: list[tuple[str, int]]) -> dict[tuple[str, int], PullRequestInfo]:
         """Current title and state of PRs given as ("org/repo", number);
         unknown refs are omitted."""
+
+    @abstractmethod
+    def event_context(self, subject: EventSubject) -> EventContext:
+        """The full, rendered text of what an event is about. Raises
+        GithubNotFoundError when it was deleted or the token cannot see it."""

@@ -11,7 +11,15 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.domain.github import EventKind, EventSource, GithubActivity, GithubEvent, ItemState
+from app.domain.github import (
+    EventKind,
+    EventSource,
+    GithubActivity,
+    GithubEvent,
+    ItemState,
+    ReviewState,
+    SubjectType,
+)
 from app.domain.links import LinkKind
 from app.domain.logs import Freshness
 
@@ -179,6 +187,35 @@ class FeedSpecOut(BaseModel):
     hide_bots: bool = True
 
 
+class EventSubjectModel(BaseModel):
+    """What an event is about: the frontend sends it back as is to read the
+    event's full context (POST /api/github/events/context)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    type: SubjectType
+    repo: str
+    number: int = 0
+    item_id: int = 0
+
+
+class EventContextOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    subject: EventSubjectModel
+    url: str = ""
+    author: str = ""
+    author_avatar: str = ""
+    created_at: datetime | None = None
+    title: str = ""
+    state: ItemState | None = None
+    review_state: ReviewState | None = None
+    body_html: str = ""  # sanitized server-side: safe to set as innerHTML
+    path: str = ""
+    line: int | None = None
+    diff_hunk: str = ""
+
+
 class GithubEventOut(BaseModel):
     id: str
     kind: EventKind
@@ -200,11 +237,17 @@ class GithubEventOut(BaseModel):
     details: dict | None = None  # shape depends on the event: push, PR, review, code comment, ref
     count: int = 1
     is_new: bool = False
+    subject: EventSubjectModel | None = None  # absent: nothing more to open
 
     @classmethod
     def from_entity(cls, event: GithubEvent) -> "GithubEventOut":
-        values = {name: getattr(event, name) for name in cls.model_fields if name != "details"}
-        return cls(details=asdict(event.details) if event.details is not None else None, **values)
+        built = ("details", "subject")
+        values = {name: getattr(event, name) for name in cls.model_fields if name not in built}
+        return cls(
+            details=asdict(event.details) if event.details is not None else None,
+            subject=EventSubjectModel.model_validate(event.subject) if event.subject else None,
+            **values,
+        )
 
 
 class GithubActivityOut(BaseModel):

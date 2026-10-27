@@ -1,0 +1,235 @@
+// Side panel with the full context of a GitHub event: the whole text of the
+// comment, review, issue, PR or release (rendered by GitHub, sanitized by the
+// server), and the code a review comment points at. The timeline stays in
+// place; ↑/↓ move to the neighbouring events and Esc closes.
+//
+// The server decides what an event is about (`event.subject`) and builds the
+// GitHub requests; this module only sends that subject back and renders.
+
+import { api } from "./api.js";
+import { escapeHtml, LOCALE } from "./ui.js";
+
+const CACHE_MS = 2 * 60_000; // private images in body_html are signed for a few minutes
+const HUNK_LINES = 12; // GitHub also shows only the last lines of a commented hunk
+const MAX_BURST = 15; // comments of a folded burst read in one go
+
+const REVIEW_LABELS = {
+  approved: "approved",
+  changes_requested: "changes requested",
+  commented: "commented",
+  dismissed: "dismissed",
+};
+
+const cache = new Map(); // subject key -> { at, promise }
+
+function subjectKey(subject) {
+  return `${subject.type}:${subject.repo}:${subject.number}:${subject.item_id}`;
+}
+
+function loadContext(subject) {
+  const key = subjectKey(subject);
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.promise;
+  const promise = api.githubEventContext(subject);
+  cache.set(key, { at: Date.now(), promise });
+  promise.catch(() => cache.delete(key)); // a failure is retried next time
+  return promise;
+}
+
+// Subjects to read for an event: each comment of a folded burst, or its own.
+export function contextSubjects(event) {
+  const comments = event.details?.comments || [];
+  const folded = comments.map((comment) => comment.subject).filter(Boolean);
+  if (folded.length) return folded.slice(0, MAX_BURST);
+  return event.subject ? [event.subject] : [];
+}
+
+export const hasContext = (event) => contextSubjects(event).length > 0;
+
+const when = (value) =>
+  value
+    ? new Date(value).toLocaleString(LOCALE, {
+        day: "2-digit",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      })
+    : "";
+
+// The file and line a review comment is on, with the diff lines it refers to
+// when GitHub still has them (replies to outdated comments may come without).
+function codeNode(context) {
+  const lines = context.diff_hunk ? context.diff_hunk.split("\n") : [];
+  const hidden = Math.max(0, lines.length - HUNK_LINES);
+  const render = (from) =>
+    lines
+      .slice(from)
+      .map((line) => {
+        const kind = line.startsWith("@@")
+          ? "is-meta"
+          : line.startsWith("+")
+            ? "is-add"
+            : line.startsWith("-")
+              ? "is-del"
+              : "";
+        return `<span class="ctx-line ${kind}">${escapeHtml(line) || " "}</span>`;
+      })
+      .join("");
+  const where = context.line ? `${context.path}:${context.line}` : context.path;
+  const node = document.createElement("div");
+  node.className = "ctx-code";
+  node.innerHTML = `
+    <div class="ctx-file">${escapeHtml(where)}</div>
+    ${hidden ? `<button type="button" class="ctx-more">show ${hidden} earlier lines</button>` : ""}
+    ${lines.length ? `<pre class="ctx-hunk">${render(hidden)}</pre>` : ""}`;
+  node.querySelector(".ctx-more")?.addEventListener("click", (click) => {
+    node.querySelector(".ctx-hunk").innerHTML = render(0);
+    click.currentTarget.remove();
+  });
+  return node;
+}
+
+function emptyText(subject) {
+  if (subject.type === "review") {
+    return "This review has no summary text; its line comments show up as their own events.";
+  }
+  if (subject.type === "pull" || subject.type === "issue") return "No description provided.";
+  return "No text.";
+}
+
+function itemNode(context, avatarUrl) {
+  const node = document.createElement("section");
+  node.className = "ctx-item";
+  const avatar = context.author_avatar
+    ? `<img class="ctx-avatar" src="${escapeHtml(avatarUrl(context.author_avatar))}" alt="" />`
+    : `<span class="ctx-avatar">${escapeHtml((context.author || "?").slice(0, 1).toUpperCase())}</span>`;
+  const review = context.review_state
+    ? `<span class="ctx-review rv-${escapeHtml(context.review_state)}">${escapeHtml(
+        REVIEW_LABELS[context.review_state] || context.review_state
+      )}</span>`
+    : "";
+  node.innerHTML = `
+    <div class="ctx-byline">
+      ${avatar}
+      <b>${escapeHtml(context.author || "ghost")}</b>
+      <time>${escapeHtml(when(context.created_at))}</time>
+      ${review}
+      ${
+        context.url
+          ? `<a class="ctx-link" href="${escapeHtml(context.url)}" target="_blank" rel="noopener" title="Open on GitHub">↗</a>`
+          : ""
+      }
+    </div>`;
+  if (context.path) node.appendChild(codeNode(context));
+  const body = document.createElement("div");
+  if (context.body_html) {
+    body.className = "gh-markdown";
+    body.innerHTML = context.body_html; // sanitized by the server (nh3 allowlist)
+  } else {
+    body.className = "ctx-empty";
+    body.textContent = emptyText(context.subject);
+  }
+  node.appendChild(body);
+  return node;
+}
+
+// `labels`: { kind, state } display names; `avatarUrl`: sizes an avatar URL;
+// `onStep(delta)`: open the previous (-1) or next (+1) event; `onClose()`.
+export function createContextDrawer({ labels, avatarUrl, onStep, onClose }) {
+  const drawer = document.getElementById("gh-drawer");
+  const head = document.getElementById("gh-drawer-head");
+  const title = document.getElementById("gh-drawer-title");
+  const meta = document.getElementById("gh-drawer-meta");
+  const body = document.getElementById("gh-drawer-body");
+  const openLink = document.getElementById("gh-drawer-open");
+  let current = null;
+  let seq = 0;
+
+  function renderHead(event) {
+    head.innerHTML = `
+      <span class="gh-kind kind-${escapeHtml(event.kind)}">${escapeHtml(
+        labels.kind[event.kind] || event.kind
+      )}</span>
+      <span class="ctx-what"><b>${escapeHtml(event.actor)}</b> ${escapeHtml(event.summary)}</span>`;
+    title.textContent = event.title || event.summary;
+    const parts = [event.repo, when(event.created_at)];
+    meta.innerHTML =
+      parts.map((part) => `<span>${escapeHtml(part)}</span>`).join("<span>·</span>") +
+      (event.state
+        ? `<span class="gh-state st-${escapeHtml(event.state)}">${escapeHtml(
+            labels.state[event.state] || event.state
+          )}</span>`
+        : "");
+    openLink.href = event.url?.startsWith("https://github.com/")
+      ? event.url
+      : "https://github.com/";
+  }
+
+  async function load(event) {
+    const mine = ++seq;
+    body.innerHTML =
+      '<div class="skeleton ctx-skeleton"></div><div class="skeleton ctx-skeleton is-short"></div>';
+    const subjects = contextSubjects(event);
+    const results = await Promise.allSettled(subjects.map(loadContext));
+    if (mine !== seq) return; // the user moved on to another event
+    body.innerHTML = "";
+    const failed = results.filter((result) => result.status === "rejected");
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        // a PR or issue: its current title and state beat the event's snapshot
+        if (result.value.title && subjects.length === 1) title.textContent = result.value.title;
+        body.appendChild(itemNode(result.value, avatarUrl));
+      }
+    }
+    if (failed.length) {
+      const { reason } = failed[0];
+      const gone = reason?.status === 404; // deleted: retrying cannot help
+      const note = document.createElement("div");
+      note.className = "ctx-error";
+      note.innerHTML = `<span>${escapeHtml(reason?.message || "Could not load the full context.")}</span>${
+        gone ? "" : ' <button type="button" class="btn btn-ghost btn-sm">Retry</button>'
+      }`;
+      note.querySelector("button")?.addEventListener("click", () => load(event));
+      body.appendChild(note);
+    }
+  }
+
+  function open(event) {
+    current = event;
+    renderHead(event);
+    drawer.hidden = false;
+    requestAnimationFrame(() => drawer.classList.add("is-open"));
+    body.scrollTop = 0;
+    load(event);
+  }
+
+  function close() {
+    if (!current) return;
+    current = null;
+    seq++;
+    drawer.classList.remove("is-open");
+    drawer.hidden = true;
+    onClose();
+  }
+
+  document.getElementById("gh-drawer-close").addEventListener("click", close);
+  document.addEventListener("keydown", (event) => {
+    if (!current || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (document.querySelector(".modal-backdrop:not([hidden])")) return;
+    if (event.target.closest?.("input, textarea, select, [contenteditable]")) return;
+    if (event.key === "Escape") {
+      close();
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      onStep(event.key === "ArrowDown" ? 1 : -1);
+    }
+  });
+
+  return {
+    open,
+    close,
+    isOpen: () => current !== null,
+    currentId: () => current?.id ?? null,
+  };
+}
