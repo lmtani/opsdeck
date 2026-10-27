@@ -76,7 +76,17 @@ async function checkHealth() {
   }
 }
 
+// Makes the app installable as a PWA with an offline notice; see sw.js. Browsers only allow
+// service workers in a secure context (HTTPS or localhost).
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.register("/sw.js").catch(() => {
+    /* not a secure context: the app still works, it just cannot be installed */
+  });
+}
+
 async function start() {
+  registerServiceWorker();
   setupModalDismissal();
   setupConfirmModal();
   setupTabs();
