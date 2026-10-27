@@ -1864,6 +1864,69 @@ body {
 .ctx-skeleton { height: 70px; }
 .ctx-skeleton.is-short { height: 120px; width: 80%; }
 
+/* the conversation around a review comment, and a review's line comments */
+.ctx-thread { display: flex; flex-direction: column; gap: 4px; }
+.ctx-comment { padding: 10px 12px; border-left: 2px solid var(--border); }
+.ctx-comment + .ctx-comment { margin-top: 2px; }
+.ctx-comment.is-current { border-left-color: var(--accent); background: var(--accent-soft); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.ctx-subhead {
+  margin: 18px 0 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.ctx-linecomment + .ctx-linecomment { margin-top: 16px; }
+
+/* size, labels and reviewers of a pull request */
+.ctx-pull {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+.ctx-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); }
+.ctx-stats code { color: var(--text); font-size: 11.5px; }
+.ctx-sep { opacity: 0.6; }
+.ctx-add { color: var(--ok); font-weight: 600; }
+.ctx-del { color: var(--danger); font-weight: 600; }
+.ctx-diffstat { display: inline-flex; gap: 2px; vertical-align: -1px; }
+.ctx-diffstat i { width: 8px; height: 8px; border-radius: 1px; background: var(--border-strong); }
+.ctx-diffstat i.is-add { background: var(--ok); }
+.ctx-diffstat i.is-del { background: var(--danger); }
+.ctx-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ctx-chips-key { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); margin-right: 2px; }
+.ctx-label {
+  --label: var(--text-dim);
+  padding: 1px 9px;
+  border: 1px solid color-mix(in srgb, var(--label) 55%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--label) 18%, transparent);
+  color: color-mix(in srgb, var(--label) 55%, var(--text));
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.ctx-reviewer {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+}
+.ctx-reviewer b { font-weight: 600; }
+.ctx-reviewer.rv-approved b { color: var(--ok); }
+.ctx-reviewer.rv-changes_requested b { color: var(--danger); }
+.ctx-reviewer.rv-requested { border-style: dashed; color: var(--text-dim); }
+.ctx-reviewer.rv-requested b { color: var(--warn); }
+.ctx-reviewer.rv-commented b, .ctx-reviewer.rv-dismissed b { color: var(--text-dim); }
+
 /* the code a review comment points at */
 .ctx-code { margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
 .ctx-file {

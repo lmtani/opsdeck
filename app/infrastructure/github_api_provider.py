@@ -18,6 +18,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import httpx
@@ -41,7 +42,15 @@ from app.domain.github import (
     TokenStatus,
 )
 from app.domain.github_rules import pull_url
-from app.infrastructure.github_event_parsing import context_from_api, events_from_search_pull, parse_event
+from app.infrastructure.github_event_parsing import (
+    context_from_api,
+    events_from_search_pull,
+    parse_event,
+    pull_number,
+    pull_stats_from_api,
+    review_thread,
+    thread_comment_from_api,
+)
 
 API_URL = "https://api.github.com"
 # asks the REST API for bodies rendered as HTML (body_html) instead of Markdown
@@ -55,6 +64,9 @@ _CONTEXT_PATHS = {
     SubjectType.RELEASE: "/repos/{repo}/releases/{item_id}",
     SubjectType.COMMIT_COMMENT: "/repos/{repo}/comments/{item_id}",
 }
+# pages of 100 read around one event: a thread's replies, a review's line
+# comments, a pull request's reviews
+CONTEXT_PAGES = 3
 PER_PAGE = 100
 GRAPHQL_CHUNK = 40
 # The events API never serves more than 300 events per source (its last page
@@ -377,15 +389,65 @@ class GithubApiProvider(GithubProvider):
         return result
 
     def event_context(self, subject: EventSubject) -> EventContext:
-        # not conditional: the signed URLs of private images in body_html
-        # expire within minutes, so a remembered body would show broken images
         path = _CONTEXT_PATHS[subject.type].format(
             repo=subject.repo, number=subject.number, item_id=subject.item_id
         )
+        data = self._read_html(path)
+        context = context_from_api(subject, data)
+        base = f"/repos/{subject.repo}/pulls"
+        if subject.type == SubjectType.PULL:
+            reviews = self._read_html_pages(f"{base}/{subject.number}/reviews")
+            return replace(context, pull=pull_stats_from_api(data, reviews))
+        if subject.type == SubjectType.REVIEW:
+            comments = self._read_html_pages(f"{base}/{subject.number}/reviews/{subject.item_id}/comments")
+            return replace(context, thread=tuple(thread_comment_from_api(c) for c in comments))
+        if subject.type == SubjectType.REVIEW_COMMENT:
+            return replace(context, thread=self._review_thread(subject.repo, data))
+        return context
+
+    def _review_thread(self, repo: str, comment: dict):
+        """The thread a review comment belongs to: its root (fetched when the
+        comment is a reply) and every reply posted since the root."""
+        root = comment
+        root_id = comment.get("in_reply_to_id")
+        if isinstance(root_id, int):
+            try:
+                root = self._read_html(f"/repos/{repo}/pulls/comments/{root_id}")
+            except GithubNotFoundError:
+                root = comment  # the root was deleted: the reply stands alone
+        number = pull_number(comment.get("pull_request_url"))
+        if not number:
+            return review_thread(root, [comment])
+        replies = self._read_html_pages(
+            f"/repos/{repo}/pulls/{number}/comments", since=root.get("created_at") or ""
+        )
+        return review_thread(root, [*replies, comment])
+
+    # Context reads are not conditional: the signed URLs of private images in
+    # body_html expire within minutes, so a remembered body would show broken
+    # images.
+    def _read_html(self, path: str) -> dict:
         data = self._send("GET", path, headers={"Accept": HTML_MEDIA_TYPE}).json()
         if not isinstance(data, dict):
             raise GithubError("GitHub returned an unexpected answer for this item")
-        return context_from_api(subject, data)
+        return data
+
+    def _read_html_pages(self, path: str, **params) -> list[dict]:
+        items: list[dict] = []
+        for page in range(1, CONTEXT_PAGES + 1):
+            response = self._send(
+                "GET",
+                path,
+                params={**params, "per_page": PER_PAGE, "page": page},
+                headers={"Accept": HTML_MEDIA_TYPE},
+            )
+            batch = response.json()
+            if not isinstance(batch, list):
+                break
+            items.extend(item for item in batch if isinstance(item, dict))
+            if "next" not in response.links:
+                break
+        return items
 
     # ----- HTTP --------------------------------------------------------
 

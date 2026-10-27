@@ -340,8 +340,51 @@ class GithubEvent:
 
 
 @dataclass(frozen=True)
+class ThreadComment:
+    """One comment around an event: a reply in a review thread, or a line
+    comment of a review."""
+
+    id: int
+    author: str
+    author_avatar: str = ""
+    created_at: datetime | None = None
+    body_html: str = ""  # sanitized, like EventContext.body_html
+    url: str = ""
+    path: str = ""
+    line: int | None = None
+    diff_hunk: str = ""
+
+
+@dataclass(frozen=True)
+class Label:
+    name: str
+    color: str = ""  # six hex digits, as GitHub sends it; empty when not valid
+
+
+@dataclass(frozen=True)
+class Reviewer:
+    login: str  # a user, or "org/team" for a requested team
+    state: ReviewState | None = None  # their latest review; None = requested, not reviewed yet
+
+
+@dataclass(frozen=True)
+class PullStats:
+    additions: int = 0
+    deletions: int = 0
+    changed_files: int = 0
+    commits: int = 0
+    head_ref: str = ""
+    base_ref: str = ""
+    labels: tuple[Label, ...] = ()
+    reviewers: tuple[Reviewer, ...] = ()
+
+
+@dataclass(frozen=True)
 class EventContext:
-    """The full text behind an event, fetched when the user opens it."""
+    """The full text behind an event, fetched when the user opens it, with
+    the conversation around it: the whole thread of a review comment (oldest
+    first, the event's own comment included) or the line comments of a
+    review; and, for a pull request, its size, labels and reviewers."""
 
     subject: EventSubject
     url: str = ""
@@ -355,6 +398,8 @@ class EventContext:
     path: str = ""  # file of a code comment
     line: int | None = None
     diff_hunk: str = ""  # the diff lines a code comment refers to, ending at its line
+    thread: tuple[ThreadComment, ...] = ()
+    pull: PullStats | None = None
 
 
 @dataclass

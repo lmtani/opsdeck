@@ -9,13 +9,22 @@ from app.domain.github import (
     EventSource,
     EventSubject,
     ItemState,
+    Label,
     PullDetails,
     ReviewDetails,
+    Reviewer,
     ReviewState,
     SubjectType,
 )
 from app.domain.github_rules import compare_url, is_bot
-from app.infrastructure.github_event_parsing import context_from_api, events_from_search_pull, parse_event
+from app.infrastructure.github_event_parsing import (
+    context_from_api,
+    events_from_search_pull,
+    parse_event,
+    pull_number,
+    pull_stats_from_api,
+    review_thread,
+)
 
 ACTOR = {
     "id": 1,
@@ -355,3 +364,72 @@ def test_context_of_a_pull_request_and_of_a_release():
     assert release.created_at == parse_timestamp("2026-10-21T09:00:00Z")
     review = context_from_api(EventSubject(SubjectType.REVIEW, "acme/core", 12, 7), {"state": "APPROVED"})
     assert (review.review_state, review.state) == (ReviewState.APPROVED, None)
+
+
+def _comment(id_, at, reply_to=None, login="bob", **extra):
+    return {
+        "id": id_,
+        "in_reply_to_id": reply_to,
+        "created_at": at,
+        "user": {"login": login},
+        "body_html": f"<p>c{id_}</p>",
+        **extra,
+    }
+
+
+def test_review_thread_is_the_root_and_its_replies_oldest_first():
+    root = _comment(1, "2026-10-22T10:00:00Z", path="a.py", diff_hunk="@@ +1 @@")
+    listed = [
+        _comment(3, "2026-10-22T12:00:00Z", reply_to=1, login="carol"),
+        _comment(2, "2026-10-22T11:00:00Z", reply_to=1),
+        _comment(9, "2026-10-22T11:30:00Z", reply_to=8),  # another thread
+        _comment(3, "2026-10-22T12:00:00Z", reply_to=1, login="carol"),  # listed twice
+    ]
+    thread = review_thread(root, listed)
+    assert [c.id for c in thread] == [1, 2, 3]
+    assert thread[0].diff_hunk == "@@ +1 @@" and thread[2].author == "carol"
+    assert thread[1].body_html == "<p>c2</p>"
+
+
+def test_pull_number_from_its_rest_url():
+    assert pull_number("https://api.github.com/repos/acme/core/pulls/26") == 26
+    assert pull_number("") == pull_number(None) == 0
+
+
+def test_pull_stats_keep_each_reviewers_latest_verdict():
+    pull = {
+        "user": {"login": "alice"},
+        "additions": 120,
+        "deletions": 30,
+        "changed_files": 8,
+        "commits": 5,
+        "head": {"ref": "feat/x"},
+        "base": {"ref": "main"},
+        "labels": [
+            {"name": "bug", "color": "d73a4a"},
+            {"name": "odd", "color": "fff;background:url(x)"},  # never reaches a style
+            {"name": ""},
+        ],
+        "requested_reviewers": [{"login": "erin"}, {"login": "dave"}],
+        "requested_teams": [{"slug": "infra"}],
+    }
+    reviews = [
+        {"user": {"login": "bob"}, "state": "CHANGES_REQUESTED"},
+        {"user": {"login": "bob"}, "state": "APPROVED"},
+        {"user": {"login": "carol"}, "state": "APPROVED"},
+        {"user": {"login": "carol"}, "state": "COMMENTED"},  # does not undo the approval
+        {"user": {"login": "alice"}, "state": "COMMENTED"},  # the author answering
+        {"user": {"login": "dave"}, "state": "APPROVED"},  # re-requested since
+        {"user": {"login": "x"}, "state": "PENDING"},
+    ]
+    stats = pull_stats_from_api(pull, reviews)
+    assert (stats.additions, stats.deletions, stats.changed_files, stats.commits) == (120, 30, 8, 5)
+    assert (stats.head_ref, stats.base_ref) == ("feat/x", "main")
+    assert stats.labels == (Label("bug", "d73a4a"), Label("odd", ""))
+    assert stats.reviewers == (
+        Reviewer("bob", ReviewState.APPROVED),
+        Reviewer("carol", ReviewState.APPROVED),
+        Reviewer("erin"),
+        Reviewer("dave"),
+        Reviewer("infra"),
+    )

@@ -419,3 +419,93 @@ def test_event_context_of_a_deleted_item_is_not_found():
     provider = _provider(lambda request: httpx.Response(404, json={"message": "Not Found"}))
     with pytest.raises(GithubNotFoundError):
         provider.event_context(EventSubject(SubjectType.ISSUE_COMMENT, "acme/core", item_id=3))
+
+
+def _context_handler(routes, calls):
+    def handler(request):
+        calls.append(request)
+        return routes[request.url.path](request)
+
+    return handler
+
+
+def test_a_reply_brings_its_whole_review_thread():
+    calls = []
+    reply = {
+        "id": 30,
+        "in_reply_to_id": 10,
+        "pull_request_url": "https://api.github.com/repos/acme/core/pulls/26",
+        "created_at": "2026-10-22T12:00:00Z",
+        "user": {"login": "carol"},
+        "body_html": "<p>agreed</p>",
+        "path": "a.py",
+        "diff_hunk": "",
+    }
+    root = {
+        "id": 10,
+        "created_at": "2026-10-22T10:00:00Z",
+        "user": {"login": "bob"},
+        "body_html": "<p>rename it?</p>",
+        "path": "a.py",
+        "diff_hunk": "@@ -1 +1 @@\n-a\n+b",
+    }
+    listed = [
+        root,
+        {**reply, "id": 20, "created_at": "2026-10-22T11:00:00Z"},
+        reply,
+        {"id": 99, "in_reply_to_id": 5},
+    ]
+    routes = {
+        "/repos/acme/core/pulls/comments/30": lambda r: httpx.Response(200, json=reply),
+        "/repos/acme/core/pulls/comments/10": lambda r: httpx.Response(200, json=root),
+        "/repos/acme/core/pulls/26/comments": lambda r: httpx.Response(200, json=listed),
+    }
+    provider = _provider(_context_handler(routes, calls))
+    context = provider.event_context(EventSubject(SubjectType.REVIEW_COMMENT, "acme/core", item_id=30))
+    assert [c.id for c in context.thread] == [10, 20, 30]
+    assert context.thread[0].diff_hunk.endswith("+b")  # the root keeps the code
+    listing = calls[-1]
+    assert listing.url.params["since"] == "2026-10-22T10:00:00Z"
+    assert listing.headers["accept"] == "application/vnd.github.html+json"
+
+
+def test_a_reply_whose_root_was_deleted_stands_alone():
+    reply = {"id": 30, "in_reply_to_id": 10, "user": {"login": "carol"}, "pull_request_url": ""}
+    routes = {
+        "/repos/acme/core/pulls/comments/30": lambda r: httpx.Response(200, json=reply),
+        "/repos/acme/core/pulls/comments/10": lambda r: httpx.Response(404, json={"message": "Not Found"}),
+    }
+    provider = _provider(_context_handler(routes, []))
+    context = provider.event_context(EventSubject(SubjectType.REVIEW_COMMENT, "acme/core", item_id=30))
+    assert [c.id for c in context.thread] == [30]
+
+
+def test_a_review_brings_its_line_comments_and_a_pull_its_stats():
+    calls = []
+    routes = {
+        "/repos/acme/core/pulls/12/reviews/7": lambda r: httpx.Response(200, json={"state": "COMMENTED"}),
+        "/repos/acme/core/pulls/12/reviews/7/comments": lambda r: httpx.Response(
+            200, json=[{"id": 1, "path": "a.py", "user": {"login": "bob"}}, {"id": 2, "path": "b.py"}]
+        ),
+        "/repos/acme/core/pulls/12": lambda r: httpx.Response(
+            200, json={"user": {"login": "alice"}, "additions": 3, "requested_reviewers": [{"login": "bob"}]}
+        ),
+        "/repos/acme/core/pulls/12/reviews": lambda r: httpx.Response(
+            200,
+            json=[{"user": {"login": "carol"}, "state": "APPROVED"}],
+            headers={"link": '<https://api.github.com/x?page=2>; rel="next"'}
+            if r.url.params["page"] == "1"
+            else {},
+        ),
+    }
+    provider = _provider(_context_handler(routes, calls))
+    review = provider.event_context(EventSubject(SubjectType.REVIEW, "acme/core", number=12, item_id=7))
+    assert [(c.id, c.path) for c in review.thread] == [(1, "a.py"), (2, "b.py")]
+    pull = provider.event_context(EventSubject(SubjectType.PULL, "acme/core", number=12))
+    assert pull.pull.additions == 3
+    assert [(r.login, r.state) for r in pull.pull.reviewers] == [
+        ("carol", ReviewState.APPROVED),
+        ("bob", None),
+    ]
+    pages = [c.url.params["page"] for c in calls if c.url.path.endswith("/12/reviews")]
+    assert pages == ["1", "2"]  # follows the Link header

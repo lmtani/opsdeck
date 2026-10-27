@@ -7,6 +7,7 @@ GraphQL by the application service. Older, fuller payloads are still read
 when present.
 """
 
+import re
 from datetime import datetime
 
 from app.domain.common import EPOCH, parse_timestamp
@@ -20,12 +21,16 @@ from app.domain.github import (
     EventSubject,
     GithubEvent,
     ItemState,
+    Label,
     PullDetails,
+    PullStats,
     PushDetails,
     RefDetails,
     ReviewDetails,
+    Reviewer,
     ReviewState,
     SubjectType,
+    ThreadComment,
 )
 from app.domain.github_rules import (
     GITHUB_WEB,
@@ -467,4 +472,76 @@ def context_from_api(subject: EventSubject, data: dict) -> EventContext:
         path=data.get("path") or "",
         line=data.get("line") or data.get("original_line"),
         diff_hunk=data.get("diff_hunk") or "",
+    )
+
+
+def thread_comment_from_api(data: dict) -> ThreadComment:
+    user = data.get("user") or {}
+    return ThreadComment(
+        id=int(data.get("id") or 0),
+        author=user.get("login") or "ghost",
+        author_avatar=user.get("avatar_url") or "",
+        created_at=parse_timestamp(data.get("created_at")),
+        body_html=sanitize_html(data.get("body_html") or ""),
+        url=_html_url(data),
+        path=data.get("path") or "",
+        line=data.get("line") or data.get("original_line"),
+        diff_hunk=data.get("diff_hunk") or "",
+    )
+
+
+def review_thread(root: dict, comments: list[dict]) -> tuple[ThreadComment, ...]:
+    """A review thread, oldest first: its root comment and the replies among
+    `comments` (GitHub points every reply at the root, not at its parent)."""
+    root_id = root.get("id")
+    by_id = {root_id: root}
+    for comment in comments:
+        if comment.get("in_reply_to_id") == root_id:
+            by_id.setdefault(comment.get("id"), comment)
+    ordered = sorted(by_id.values(), key=lambda c: parse_timestamp(c.get("created_at")) or EPOCH)
+    return tuple(thread_comment_from_api(comment) for comment in ordered)
+
+
+def pull_number(pull_request_url: str | None) -> int:
+    """The number at the end of a REST pull request URL (…/pulls/26), or 0."""
+    tail = (pull_request_url or "").rstrip("/").rsplit("/", 1)[-1]
+    return int(tail) if tail.isdigit() else 0
+
+
+_HEX_COLOR = re.compile(r"^[0-9a-fA-F]{6}$")
+
+
+def pull_stats_from_api(pull: dict, reviews: list[dict]) -> PullStats:
+    """Size, branches, labels and reviewers of a REST pull request; `reviews`
+    in the order GitHub lists them (oldest first)."""
+    author = (pull.get("user") or {}).get("login")
+    latest: dict[str, ReviewState] = {}
+    for review in reviews:
+        login = (review.get("user") or {}).get("login")
+        state = _review_state(review.get("state"))
+        if not login or login == author or state is None:
+            continue
+        if state == ReviewState.COMMENTED and login in latest:
+            continue  # a later comment does not undo an approval or a change request
+        latest[login] = state
+    requested = [user.get("login") for user in pull.get("requested_reviewers") or []]
+    requested += [team.get("slug") for team in pull.get("requested_teams") or []]
+    requested = [login for login in requested if login]
+    # re-requested after reviewing: their old verdict no longer counts
+    reviewers = [Reviewer(login, state) for login, state in latest.items() if login not in requested]
+    reviewers += [Reviewer(login) for login in requested]
+    labels = tuple(
+        Label(label["name"], color if _HEX_COLOR.match(color := label.get("color") or "") else "")
+        for label in pull.get("labels") or []
+        if label.get("name")
+    )
+    return PullStats(
+        additions=int(pull.get("additions") or 0),
+        deletions=int(pull.get("deletions") or 0),
+        changed_files=int(pull.get("changed_files") or 0),
+        commits=int(pull.get("commits") or 0),
+        head_ref=(pull.get("head") or {}).get("ref") or "",
+        base_ref=(pull.get("base") or {}).get("ref") or "",
+        labels=labels,
+        reviewers=tuple(reviewers),
     )
