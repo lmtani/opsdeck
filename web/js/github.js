@@ -610,6 +610,175 @@ function histogramNode(date, bins, peak, coverageStart) {
   return node;
 }
 
+// Highlight one person's share of each half hour (null clears it). Their
+// bars are drawn over the dimmed day, on the same scale.
+function focusHistogram(histogram, person, peak) {
+  histogram.classList.toggle("is-focus", Boolean(person));
+  histogram.querySelectorAll("[data-bin]").forEach((column) => {
+    const weight = person?.bins.get(Number(column.dataset.bin)) || 0;
+    const height = weight && peak ? Math.min(100, Math.max(6, Math.round((weight / peak) * 100))) : 0;
+    column.style.setProperty("--mine", `${height}%`);
+  });
+}
+
+// ----- per-day contributors ----------------------------------------------
+
+const PEOPLE_SHOWN = 8;
+
+// Who was active on each day, from the events that match every refinement
+// but the author one: the strip works like a facet, so picking a person
+// keeps the others visible (dimmed) and one click away.
+function dayContributors(events) {
+  const days = new Map(); // toDateString() -> Map(login -> person)
+  for (const event of events) {
+    const date = new Date(event.created_at);
+    const key = date.toDateString();
+    if (!days.has(key)) days.set(key, new Map());
+    const people = days.get(key);
+    const person = people.get(event.actor) || {
+      login: event.actor,
+      avatar: event.actor_avatar,
+      count: 0,
+      kinds: new Map(),
+      repos: new Map(),
+      bins: new Map(),
+      first: date,
+      last: date,
+    };
+    const weight = event.count || 1;
+    const bin = Math.floor((date.getHours() * 60 + date.getMinutes()) / BIN_MINUTES);
+    person.count += weight;
+    person.avatar ||= event.actor_avatar;
+    person.kinds.set(event.kind, (person.kinds.get(event.kind) || 0) + weight);
+    person.repos.set(event.repo, (person.repos.get(event.repo) || 0) + weight);
+    person.bins.set(bin, (person.bins.get(bin) || 0) + weight);
+    if (date < person.first) person.first = date;
+    if (date > person.last) person.last = date;
+    people.set(event.actor, person);
+  }
+  return days;
+}
+
+const hhmm = (date) => date.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+function personTooltip(person, { isYou, active, filtering }) {
+  const span = person.first.getTime() === person.last.getTime()
+    ? `at ${hhmm(person.first)}`
+    : `${hhmm(person.first)}–${hhmm(person.last)}`;
+  const kinds = KIND_ORDER.filter((kind) => person.kinds.has(kind))
+    .map(
+      (kind) =>
+        `<span class="gh-tip-kind kind-${kind}">${escapeHtml(KIND_LABELS[kind])} ${person.kinds.get(kind)}</span>`
+    )
+    .join("");
+  const repos = [...person.repos.entries()].sort((a, b) => b[1] - a[1]).map(([repo]) => shortRepo(repo));
+  const repoLine = repos.slice(0, 3).join(", ") + (repos.length > 3 ? ` +${repos.length - 3}` : "");
+  const hint = active
+    ? "click to show everyone again"
+    : filtering
+      ? "click to add them to the author filter"
+      : "click to show only their events";
+  return (
+    `<div class="gh-tooltip-main">${escapeHtml(person.login)}${isYou ? " (you)" : ""}</div>` +
+    `<div class="gh-tooltip-sub">${plural(person.count, "event")} · ${span}</div>` +
+    (kinds ? `<div class="gh-tip-kinds">${kinds}</div>` : "") +
+    `<div class="gh-tooltip-sub gh-tip-repos">${escapeHtml(repoLine)}</div>` +
+    `<div class="gh-tooltip-sub gh-tip-hint">${hint}</div>`
+  );
+}
+
+// The strip under a day's histogram: one avatar per contributor, busiest
+// first (an order to read by, not a ranking), with how many events each.
+function contributorsNode(day, people, { histogram, peak, partial }) {
+  const viewer = (view.activity.viewer || "").toLowerCase();
+  const chosen = new Set(view.refinements.filter((r) => r.field === "actor").map((r) => r.value));
+  const sorted = [...people.values()].sort((a, b) => b.count - a.count || a.login.localeCompare(b.login));
+  // the first few, plus anyone picked in the author filter
+  const extra = sorted.filter((person, index) => index >= PEOPLE_SHOWN && !chosen.has(person.login));
+  const repos = new Set(sorted.flatMap((person) => [...person.repos.keys()]));
+  view.peopleOpen ||= new Set();
+
+  const node = document.createElement("div");
+  node.className = `gh-people${view.peopleOpen.has(day) ? " is-open" : ""}`;
+  node.innerHTML = `
+    <div class="gh-people-list">
+      ${sorted
+        .map((person) => {
+          const isYou = viewer && person.login.toLowerCase() === viewer;
+          const state = [
+            isYou ? "is-you" : "",
+            chosen.has(person.login) ? "is-active" : chosen.size ? "is-dimmed" : "",
+            extra.includes(person) ? "is-extra" : "",
+          ].filter(Boolean).join(" ");
+          const avatar = person.avatar
+            ? `<img class="gh-person-avatar" src="${escapeHtml(avatarUrl(person.avatar))}" alt="" loading="lazy" />`
+            : `<span class="gh-person-avatar">${escapeHtml(person.login.slice(0, 1).toUpperCase())}</span>`;
+          return `
+            <button type="button" class="gh-person ${state}" data-person="${escapeHtml(person.login)}"
+              aria-pressed="${chosen.has(person.login)}"
+              aria-label="${escapeHtml(`${person.login}, ${plural(person.count, "event")}`)}">
+              ${avatar}<span class="gh-person-count">${person.count}</span>
+            </button>`;
+        })
+        .join("")}
+      ${
+        extra.length
+          ? `<button type="button" class="gh-people-more" data-more aria-expanded="${view.peopleOpen.has(day)}"></button>`
+          : ""
+      }
+    </div>
+    <div class="gh-people-total">
+      ${plural(sorted.length, "contributor")} · ${plural(repos.size, "repo")}${
+        partial
+          ? ' <span class="gh-people-partial" data-tip="partial day">· partial</span>'
+          : ""
+      }
+    </div>`;
+
+  const partialNote = node.querySelector(".gh-people-partial");
+  if (partialNote) {
+    tooltipContent.set(
+      partialNote,
+      () =>
+        '<div class="gh-tooltip-main">Partial day</div>' +
+        '<div class="gh-tooltip-sub">It starts before the oldest event GitHub returned, so some activity, and some contributors, may be missing.</div>'
+    );
+  }
+
+  const more = node.querySelector("[data-more]");
+  const labelMore = () => {
+    const open = node.classList.contains("is-open");
+    more.textContent = open ? "less" : `+${extra.length}`;
+    more.title = open ? "Show fewer contributors" : `Show ${plural(extra.length, "more contributor", "more contributors")}`;
+    more.setAttribute("aria-expanded", String(open));
+  };
+  if (more) {
+    labelMore();
+    more.addEventListener("click", () => {
+      node.classList.toggle("is-open");
+      if (node.classList.contains("is-open")) view.peopleOpen.add(day);
+      else view.peopleOpen.delete(day);
+      labelMore();
+    });
+  }
+
+  node.querySelectorAll("[data-person]").forEach((button) => {
+    const person = people.get(button.dataset.person);
+    const isYou = button.classList.contains("is-you");
+    tooltipContent.set(button, () =>
+      personTooltip(person, { isYou, active: chosen.has(person.login), filtering: chosen.size > 0 })
+    );
+    const focus = () => focusHistogram(histogram, person, peak);
+    const blur = () => focusHistogram(histogram, null, peak);
+    button.addEventListener("mouseenter", focus);
+    button.addEventListener("mouseleave", blur);
+    button.addEventListener("focus", focus);
+    button.addEventListener("blur", blur);
+    button.addEventListener("click", () => toggleRefinement("actor", person.login));
+  });
+  return node;
+}
+
 function renderTimeline(animate) {
   hideTooltip();
   const container = document.getElementById("gh-timeline");
@@ -629,6 +798,7 @@ function renderTimeline(animate) {
   // one scale for every day, so days can be compared at a glance
   const peak = Math.max(...[...volume.values()].flat().map((bin) => bin.count));
   const coverageStart = view.activity.coverage_start ? time(view.activity.coverage_start) : null;
+  const contributors = dayContributors(view.activity.events.filter((event) => matches(event, "actor")));
 
   const anyNew = events.some((event) => event.is_new);
   let lastDay = "";
@@ -649,7 +819,16 @@ function renderTimeline(animate) {
       header.className = "gh-day";
       header.innerHTML = `${escapeHtml(main)}${sub ? ` <span>${escapeHtml(sub)}</span>` : ""}`;
       container.appendChild(header);
-      container.appendChild(histogramNode(date, volume.get(day), peak, coverageStart));
+      const histogram = histogramNode(date, volume.get(day), peak, coverageStart);
+      container.appendChild(histogram);
+      const dayStart = new Date(date).setHours(0, 0, 0, 0);
+      container.appendChild(
+        contributorsNode(day, contributors.get(day), {
+          histogram,
+          peak,
+          partial: coverageStart !== null && dayStart < coverageStart,
+        })
+      );
       lastDay = day;
     }
     container.appendChild(eventNode(event, index, animate));
@@ -803,7 +982,7 @@ const TOOLTIP_DELAY_MS = 220;
 let tooltip = null;
 let tooltipTarget = null;
 let tooltipTimer = null;
-// elements whose tooltip is HTML built on demand (histogram bins); the
+// elements whose tooltip is HTML built on demand (histogram bins, people); the
 // builder must escape everything it interpolates
 const tooltipContent = new WeakMap();
 
@@ -856,7 +1035,7 @@ function setupTooltips(container) {
   document.body.appendChild(tooltip);
 
   container.addEventListener("mouseover", (event) => {
-    const target = event.target.closest("[data-tip], [data-bin], [data-live]");
+    const target = event.target.closest("[data-tip], [data-bin], [data-live], [data-person]");
     if (target === tooltipTarget) return;
     hideTooltip();
     if (!target) return;

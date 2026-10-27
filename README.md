@@ -32,6 +32,8 @@ Otherwise create a token in GitHub's Developer settings. Either kind works:
 
 Restart with `docker compose up -d` after changing `.env`. If the token cannot do what the dashboard needs (rejected, missing scopes, not authorized for SAML single sign-on, or limited to public events), the GitHub tab says so and what to change.
 
+Each day of a feed's timeline opens with a histogram of its activity per half hour and a strip of who contributed, busiest first. Hovering a person shows what they did (kinds, repositories, first and last event) and highlights their share of the histogram; clicking filters the timeline to them.
+
 To get desktop notifications of new events, hover a feed and click 🔔. The browser asks for permission once and a test notification confirms they reach your desktop (if it does not show up, check the system's notification settings, such as do-not-disturb, for the browser); a feed that notifies shows a bell next to its name. Notifications arrive while OpsDeck is open in some tab, even in the background (it checks every 2 minutes), and clicking one opens the feed. Browsers only allow them on `localhost` or HTTPS, and the choice is kept per browser.
 
 The **● live** switch at the top of the feed list pauses every background update: unread badges, notifications and the 60 s auto refresh. While paused, a feed only updates when you open it or click Refresh. The setting is saved with the theme.

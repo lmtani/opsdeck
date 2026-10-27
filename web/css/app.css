@@ -1498,8 +1498,7 @@ body {
   display: grid;
   grid-template-columns: 1fr auto;
   column-gap: 14px;
-  padding: 8px 0 10px;
-  border-bottom: 1px solid var(--border);
+  padding: 8px 0 4px; /* the contributors strip below closes the day header */
 }
 .gh-hist-bars {
   display: grid;
@@ -1575,6 +1574,85 @@ body {
   font-size: 11px;
   color: var(--text-dim);
   white-space: nowrap;
+}
+
+/* a contributor hovered in the strip below: their share over the dimmed day */
+.gh-hist-col::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: var(--mine, 0%);
+  border-radius: 3px 3px 1px 1px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--speed) ease, height 200ms var(--ease);
+}
+.gh-hist.is-focus .gh-hist-bar { opacity: 0.18; }
+.gh-hist.is-focus .gh-hist-col::after { opacity: 1; }
+
+/* per-day contributors under the histogram (github.js) */
+.gh-people {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+.gh-people-list { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+.gh-person,
+.gh-people-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px 0 2px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--bg-elev) 55%, transparent);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color var(--speed) ease, background var(--speed) ease, opacity var(--speed) ease;
+}
+.gh-person:hover,
+.gh-person:focus-visible,
+.gh-people-more:hover { border-color: var(--border-strong); color: var(--text); }
+.gh-person-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bg-input);
+  display: inline-grid;
+  place-items: center;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.gh-person-count { min-width: 1ch; }
+.gh-person.is-you .gh-person-avatar { box-shadow: 0 0 0 1.5px var(--accent); }
+.gh-person.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.gh-person.is-dimmed { opacity: 0.45; }
+.gh-person.is-dimmed:hover { opacity: 1; }
+.gh-people:not(.is-open) .gh-person.is-extra { display: none; }
+.gh-people-more { padding: 0 10px; }
+.gh-people-total {
+  align-self: flex-start;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.gh-people-partial { cursor: help; border-bottom: 1px dotted currentColor; }
+.gh-tip-repos { font-family: var(--font-mono); font-size: 11px; }
+.gh-tip-hint { font-style: italic; }
+@media (max-width: 720px) {
+  .gh-people { flex-direction: column; align-items: stretch; gap: 6px; }
+  .gh-people-total { margin-top: 0; }
 }
 
 /* tooltip revealing text cut off by an ellipsis (github.js) */
