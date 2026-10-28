@@ -169,6 +169,7 @@
           </div>
 
           <div class="results" id="gh-results" hidden>
+            <div class="gh-progress" id="gh-progress" role="progressbar" aria-label="Loading" hidden></div>
             <div class="results-head">
               <div>
                 <!-- biome-ignore lint/a11y/useHeadingContent: github.js fills it with the feed name -->
@@ -188,7 +189,7 @@
                 <button type="button" class="btn btn-ghost btn-sm gh-auto" id="gh-auto-btn" title="Refresh every 60 s">◷ auto</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="gh-seen-btn" title="Mark everything as seen">✓ seen</button>
                 <a class="btn btn-ghost btn-sm" id="gh-open-btn" href="https://github.com/" target="_blank" rel="noopener" title="Open on GitHub">↗ GitHub</a>
-                <button type="button" class="btn btn-primary btn-sm" id="gh-refresh-btn">↻ Refresh</button>
+                <button type="button" class="btn btn-primary btn-sm" id="gh-refresh-btn"><span class="btn-spin" aria-hidden="true">↻</span> Refresh</button>
               </div>
             </div>
 

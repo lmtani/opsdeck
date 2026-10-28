@@ -366,11 +366,48 @@ function pollTick() {
 
 // ----- timeline --------------------------------------------------------
 
+// Placeholder shaped like the timeline: a day header, its histogram and
+// event rows, swept by one shimmer.
+const SKELETON_WIDTHS = [62, 48, 71, 55, 66, 40, 58, 69, 45];
+
 function showSkeleton() {
-  document.getElementById("gh-timeline").innerHTML = Array.from(
-    { length: 8 },
-    () => '<div class="skeleton"></div>'
+  const bars = Array.from(
+    { length: 48 },
+    (_, index) =>
+      `<i style="--i:${index};--h:${Math.round(20 + 70 * Math.abs(Math.sin(index * 0.7) * Math.cos(index * 0.23)))}%"></i>`
   ).join("");
+  const rows = SKELETON_WIDTHS.map(
+    (width, index) => `
+      <div class="gh-skel-row" style="--i:${index}">
+        <span class="gh-skel gh-skel-time"></span><span class="gh-skel gh-skel-avatar"></span>
+        <span class="gh-skel gh-skel-chip"></span><span class="gh-skel gh-skel-line" style="--w:${width}%"></span>
+      </div>`
+  ).join("");
+  document.getElementById("gh-timeline").innerHTML = `
+    <div class="gh-skeleton" role="status" aria-label="Loading activity">
+      <span class="gh-skel gh-skel-day"></span>
+      <div class="gh-skel-hist">${bars}</div>
+      ${rows}
+    </div>`;
+}
+
+// ----- busy state ------------------------------------------------------
+
+const busy = new Set(); // what is loading: "timeline", "contributors"
+
+function setBusy(what, on) {
+  if (on) busy.add(what);
+  else busy.delete(what);
+  document.getElementById("gh-progress").hidden = busy.size === 0;
+  document.getElementById("gh-refresh-btn").classList.toggle("is-busy", busy.size > 0);
+}
+
+// What the timeline shows of an activity, to skip rebuilding it when a
+// refresh brings nothing new.
+function activitySignature(activity) {
+  return JSON.stringify(
+    activity.events.map((e) => [e.id, e.count, e.state, e.title, e.is_new, e.source])
+  );
 }
 
 function openFeed(feed) {
@@ -397,16 +434,25 @@ async function loadActivity({ initial = false } = {}) {
   const feed = view.feed;
   if (!feed) return;
   const seq = ++requestSeq;
-  const refreshBtn = document.getElementById("gh-refresh-btn");
-  refreshBtn.classList.add("is-busy");
+  setBusy("timeline", true);
   try {
     const activity = await api.runFeed(feed.id);
     if (seq !== requestSeq || view.feed?.id !== feed.id) return;
+    const signature = activitySignature(activity);
+    const changed = signature !== view.signature;
+    // events this refresh brought, to set them apart as they appear
+    const shown = view.activity ? new Set(view.activity.events.map((e) => e.id)) : null;
+    const arrived = new Set(
+      shown ? activity.events.filter((e) => !shown.has(e.id)).map((e) => e.id) : []
+    );
     view.activity = activity;
+    view.signature = signature;
     unseen[feed.id] = activity.unseen;
     contributors.setTimelineStart(timelineStart(activity));
     renderFeedList();
-    renderActivity({ animate: initial });
+    if (initial || !shown) renderActivity({ animate: true });
+    else if (changed) renderActivity({ arrived });
+    else renderMeta();
   } catch (error) {
     if (seq !== requestSeq || view.feed?.id !== feed.id) return;
     if (initial || !view.activity) {
@@ -419,16 +465,16 @@ async function loadActivity({ initial = false } = {}) {
       toast(`Could not refresh the feed: ${error.message}`, "error");
     }
   } finally {
-    if (seq === requestSeq) refreshBtn.classList.remove("is-busy");
+    if (seq === requestSeq) setBusy("timeline", false);
   }
 }
 
-function renderActivity({ animate = false } = {}) {
+function renderActivity({ animate = false, arrived = null } = {}) {
   if (!view.activity) return;
   renderKinds();
   renderRefineBar();
   renderWarnings();
-  renderTimeline(animate);
+  renderTimeline(animate, arrived);
   renderMeta();
 }
 
@@ -899,7 +945,7 @@ function contributorsNode(day, people, { histogram, peak, partial }) {
   return node;
 }
 
-function renderTimeline(animate) {
+function renderTimeline(animate, arrived = null) {
   hideTooltip();
   const container = document.getElementById("gh-timeline");
   container.innerHTML = "";
@@ -953,7 +999,7 @@ function renderTimeline(animate) {
       );
       lastDay = day;
     }
-    container.appendChild(eventNode(event, index, animate));
+    container.appendChild(eventNode(event, index, animate, arrived?.has(event.id)));
   });
 }
 
@@ -968,15 +1014,15 @@ function liveTooltip() {
   );
 }
 
-function eventNode(event, index, animate) {
+function eventNode(event, index, animate, isArrived = false) {
   const date = new Date(event.created_at);
   const viewer = (view.activity.viewer || "").toLowerCase();
   const isYou = viewer && event.actor.toLowerCase() === viewer;
 
   const node = document.createElement("div");
   node.className = `gh-event${event.is_new ? " is-new" : ""}${animate ? "" : " no-anim"}${
-    drawer?.currentId() === event.id ? " is-current" : ""
-  }`;
+    isArrived ? " is-arrived" : ""
+  }${drawer?.currentId() === event.id ? " is-current" : ""}`;
   node.dataset.id = event.id;
   node.style.setProperty("--i", Math.min(index, 20));
 
@@ -1567,6 +1613,7 @@ export async function initGithub() {
     tooltips: tooltipContent,
     avatarUrl,
     onTimeline: openPersonDay,
+    onBusy: (on) => setBusy("contributors", on),
     onLoaded: () => {
       hideTooltip();
       if (mode === "contributors") renderMeta();

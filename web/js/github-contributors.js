@@ -118,13 +118,22 @@ function rowsTable(rows, total) {
  * @param {(url: string) => string} deps.avatarUrl sized avatar URL
  * @param {(drill: {login: string, day: string}) => void} deps.onTimeline open the timeline on a person's day
  * @param {() => void} deps.onLoaded called after each render (meta line refresh)
+ * @param {(busy: boolean) => void} deps.onBusy a read of the grid started or ended
  */
-export function createContributorsView({ container, tooltips, avatarUrl, onTimeline, onLoaded }) {
+export function createContributorsView({
+  container,
+  tooltips,
+  avatarUrl,
+  onTimeline,
+  onLoaded,
+  onBusy,
+}) {
   let feed = null;
   let data = null; // last response for (feed, days)
   let error = null;
   let loading = false;
   let seq = 0;
+  let elapsedTimer = null;
   let timelineStart = null; // Date: the timeline has events from this day on
   const savedRange = Number(storageGet(RANGE_KEY));
   let days = RANGES.includes(savedRange) ? savedRange : 28;
@@ -150,6 +159,13 @@ export function createContributorsView({ container, tooltips, avatarUrl, onTimel
     if (!feed) return;
     const current = ++seq;
     loading = true;
+    onBusy?.(true);
+    const started = Date.now();
+    clearInterval(elapsedTimer);
+    elapsedTimer = setInterval(() => {
+      const label = container.querySelector("[data-elapsed]");
+      if (label) label.textContent = `${Math.round((Date.now() - started) / 1000)} s`;
+    }, 1000);
     if (!quiet || !data) {
       data = null;
       error = null;
@@ -168,6 +184,8 @@ export function createContributorsView({ container, tooltips, avatarUrl, onTimel
     } finally {
       if (current === seq) {
         loading = false;
+        clearInterval(elapsedTimer);
+        onBusy?.(false);
         render();
       }
     }
@@ -180,8 +198,7 @@ export function createContributorsView({ container, tooltips, avatarUrl, onTimel
     if (!data) {
       container.innerHTML = error
         ? `<div class="error-box"><strong>Could not read the contributions</strong>${escapeHtml(error.message)}</div>`
-        : `<p class="gh-cg-loading">Reading ${plural(days / 7, "week")} of commits, pull requests and reviews…</p>
-           ${'<div class="skeleton"></div>'.repeat(6)}`;
+        : skeletonHtml();
       onLoaded?.();
       return;
     }
@@ -233,6 +250,39 @@ export function createContributorsView({ container, tooltips, avatarUrl, onTimel
       </div>`;
     attachTooltips(columns, visible, people, today);
     onLoaded?.();
+  }
+
+  // Placeholder shaped like the grid, swept by a diagonal wave, while the
+  // first read (several seconds for a whole org) runs.
+  function skeletonHtml() {
+    const cells = (row) =>
+      Array.from(
+        { length: days },
+        (_, column) => `<i class="gh-cg-skel-cell" style="--d:${column + row * 2}"></i>`
+      ).join("");
+    const bars = Array.from(
+      { length: days },
+      (_, column) =>
+        `<i class="gh-cg-skel-bar" style="--d:${column};--h:${Math.round(25 + 60 * Math.abs(Math.sin(column * 0.9)))}%"></i>`
+    ).join("");
+    const rows = Array.from(
+      { length: 8 },
+      (_, row) => `
+        <div class="gh-cg-row gh-cg-skel-row">
+          <span class="gh-skel gh-cg-skel-name" style="--w:${55 + ((row * 37) % 40)}%"></span>${cells(row)}<span></span>
+        </div>`
+    ).join("");
+    return `
+      <p class="gh-cg-loading" role="status">
+        Reading ${plural(days / 7, "week")} of commits, pull requests and reviews
+        <b data-elapsed>0 s</b>
+      </p>
+      <div class="gh-cg-wrap">
+        <div class="gh-cg gh-cg-skeleton" style="--days:${days}">
+          <div class="gh-cg-row gh-cg-strip"><span class="gh-skel gh-cg-skel-name"></span>${bars}<span></span></div>
+          ${rows}
+        </div>
+      </div>`;
   }
 
   function warningsHtml() {
