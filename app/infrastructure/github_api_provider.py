@@ -8,8 +8,11 @@ locally, the user's `gh auth token`. Classic PAT scopes needed:
 
 Every GET is conditional: the provider remembers each URL's ETag and body,
 and a 304 answer (which does not count against the rate limit) reuses the
-remembered body. That keeps 60 s polling of several feeds cheap. PR titles
-and states come from one batched GraphQL query, cached for a few minutes.
+remembered body. That keeps 60 s polling of several feeds cheap. Each
+source's event window is also remembered: a refresh reads pages only until it
+meets an event it already holds (usually page 1 alone) and prepends what is
+new, instead of reading every page again. PR titles and states come from one
+batched GraphQL query, cached for a few minutes.
 """
 
 import json
@@ -19,7 +22,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -81,6 +84,9 @@ GRAPHQL_CHUNK = 40
 EVENTS_API_CAP = 300
 EVENTS_CAP_SLACK = 15
 REPO_FETCH_WORKERS = 8
+# a remembered event window is read in full again after this long, in case
+# GitHub reordered or dropped events below the pages a refresh looks at
+EVENTS_RESYNC_SECONDS = 900.0
 
 README_HINT = "See the GitHub tab section of the README."
 CLASSIC_HINT = "A classic token with the `repo` and `read:org` scopes is the simplest setup."
@@ -220,6 +226,7 @@ class GithubApiProvider(GithubProvider):
         pr_cache_seconds: float = 300.0,
         search_cache_seconds: float = 60.0,
         contributions_cache_seconds: float = 600.0,
+        events_resync_seconds: float = EVENTS_RESYNC_SECONDS,
         clock: Callable[[], float] = time.monotonic,
     ):
         self._token_source = token_source
@@ -244,6 +251,8 @@ class GithubApiProvider(GithubProvider):
         self._clock = clock
         self._lock = threading.Lock()
         self._etags: dict[str, tuple[str, object, bool]] = {}
+        self._events_resync_seconds = events_resync_seconds
+        self._windows: dict[str, _EventWindow] = {}
         self._pr_cache: dict[tuple[str, int], tuple[float, PullRequestInfo]] = {}
         self._viewer = ""
         self._rate: tuple[int, int] | None = None
@@ -363,9 +372,45 @@ class GithubApiProvider(GithubProvider):
         return self._event_batch(f"/repos/{org}/{repo}/events", self._repo_pages)
 
     def _event_batch(self, path: str, max_pages: int) -> GithubEventBatch:
-        raw, more_pages = self._paged_with_more(path, max_pages)
+        raw, more_pages = self._event_window(path, max_pages)
         at_api_cap = len(raw) >= EVENTS_API_CAP - EVENTS_CAP_SLACK
         return GithubEventBatch([parse_event(item) for item in raw], more_pages or at_api_cap)
+
+    def _event_window(self, path: str, max_pages: int) -> tuple[list[dict], bool]:
+        """A source's raw events in API order (newest processed first), and
+        whether older ones remained beyond the pages read.
+
+        A remembered window is refreshed by walking the pages only until an
+        event it already holds shows up: the new ones go on top and what
+        falls past the page limit is dropped. Without a window (or once it is
+        due for a resync) every page is read, which is also what the walk
+        amounts to when no known event shows up."""
+        window = self._windows.get(path)
+        if window is None or window.resync_at <= self._clock():
+            window = _EventWindow([], False, self._clock() + self._events_resync_seconds)
+        known = {str(item.get("id")) for item in window.items}
+        fresh: list[dict] = []
+        more = False
+        overlap = None
+        for page in range(1, max_pages + 1):
+            batch, more = self._get_with_next(path, per_page=PER_PAGE, page=page)
+            if not isinstance(batch, list):
+                more = False
+                break
+            overlap = next((i for i, item in enumerate(batch) if str(item.get("id")) in known), None)
+            if overlap is not None:
+                merged = fresh + batch[:overlap] + window.items
+                limit = max_pages * PER_PAGE
+                window = _EventWindow(merged[:limit], window.more or len(merged) > limit, window.resync_at)
+                break
+            fresh += batch
+            if not more:
+                break
+        if overlap is None:
+            window = _EventWindow(fresh, more, window.resync_at)
+        with self._lock:
+            self._windows[path] = window
+        return window.items, window.more
 
     def recent_pull_request_events(self, org: str, repos: list[str], since: datetime) -> list[GithubEvent]:
         # whole-minute "since" keeps the search query (and its cache key)
@@ -753,6 +798,13 @@ class GithubApiProvider(GithubProvider):
                 url=node.get("url") or pull_url(repo, number),
             )
         return result
+
+
+@dataclass(frozen=True)
+class _EventWindow:
+    items: list[dict]  # raw events in API order
+    more: bool  # older events remained beyond the pages read
+    resync_at: float  # clock time after which the window is read in full again
 
 
 def _forbidden_message(message: str) -> str:

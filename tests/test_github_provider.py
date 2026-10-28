@@ -609,3 +609,65 @@ def test_contributions_of_a_whole_org_read_only_repos_pushed_in_the_window():
     assert len(history_queries) == 1 and '"core"' in history_queries[0] and '"old"' not in history_queries[0]
     # a search over GitHub's 1000-result cap says what is missing
     assert snapshot.warnings and "returned 0 of 1500 items" in snapshot.warnings[0]
+
+
+# ----- incremental event windows -------------------------------------------
+
+
+class _Feed:
+    """An org feed whose newest events come first, served 100 per page."""
+
+    def __init__(self, count):
+        self.ids = list(range(count, 0, -1))
+        self.calls = []
+
+    def publish(self, count):
+        top = self.ids[0] if self.ids else 0
+        self.ids = list(range(top + count, top, -1)) + self.ids
+
+    def handler(self, request):
+        if request.url.path == "/user":
+            return httpx.Response(200, json=USER)
+        page = int(request.url.params["page"])
+        self.calls.append(page)
+        items = [_event(i) for i in self.ids[(page - 1) * 100 : page * 100]]
+        more = len(self.ids) > page * 100
+        headers = {"link": f'<{request.url.copy_set_param("page", page + 1)}>; rel="next"'} if more else {}
+        return httpx.Response(200, json=items, headers=headers)
+
+
+def test_a_refresh_reads_only_the_pages_with_new_events():
+    feed = _Feed(250)
+    provider = _provider(feed.handler)
+    first = provider.org_events("acme")
+    assert len(first.events) == 250 and feed.calls == [1, 2, 3]
+
+    feed.calls.clear()
+    feed.publish(3)
+    second = provider.org_events("acme")
+    assert feed.calls == [1]  # page 1 still holds known events
+    assert [e.id for e in second.events[:4]] == ["253", "252", "251", "250"]
+    assert len(second.events) == 253
+
+    feed.calls.clear()
+    feed.publish(120)  # more than a page: the walk goes on to page 2
+    third = provider.org_events("acme")
+    assert feed.calls == [1, 2]
+    assert len(third.events) == 300 and third.events[0].id == "373"
+    assert third.truncated is True  # the oldest events fell off the window
+
+
+def test_an_event_window_is_read_in_full_again_after_the_resync_interval():
+    now = [0.0]
+    feed = _Feed(150)
+    provider = _provider(feed.handler, clock=lambda: now[0], events_resync_seconds=900)
+    provider.org_events("acme")
+    feed.calls.clear()
+    provider.org_events("acme")
+    assert feed.calls == [1]
+
+    now[0] = 901.0
+    feed.calls.clear()
+    feed.ids = feed.ids[:100]  # GitHub dropped older events: only a full read notices
+    assert len(provider.org_events("acme").events) == 100
+    assert feed.calls == [1]  # page 1 has no successor any more, so the full read stops there
