@@ -2,19 +2,21 @@
 
 The *Out models are the response contract: they read the entity's
 attributes by name (from_attributes), so a field is only sent when it is
-declared here, and the two models with a shape of their own (events,
-activity) are built explicitly.
+declared here, and the models with a shape of their own (events, activity,
+contributions) are built explicitly.
 """
 
 from dataclasses import asdict
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.domain.github import (
+    ContributionKind,
     EventKind,
     EventSource,
     GithubActivity,
+    GithubContributions,
     GithubEvent,
     ItemState,
     ReviewState,
@@ -314,6 +316,47 @@ class GithubActivityOut(BaseModel):
             unseen=activity.unseen,
             rate_remaining=activity.quota.remaining if activity.quota else None,
             rate_limit=activity.quota.limit if activity.quota else None,
+        )
+
+
+class GithubContributionsIn(BaseModel):
+    days: int = 28
+    tz: str = "UTC"  # IANA name of the browser's time zone: days are local days
+
+
+class DailyContributionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    login: str
+    day: date
+    kind: ContributionKind
+    repo: str
+    count: int
+
+
+class GithubContributionsOut(BaseModel):
+    since: date
+    until: date
+    counts: list[DailyContributionOut]
+    avatars: dict[str, str] = {}
+    viewer: str = ""
+    fetched_at: datetime
+    warnings: list[str] = []
+    rate_remaining: int | None = None
+    rate_limit: int | None = None
+
+    @classmethod
+    def from_entity(cls, result: GithubContributions) -> "GithubContributionsOut":
+        return cls(
+            since=result.since,
+            until=result.until,
+            counts=[DailyContributionOut.model_validate(count) for count in result.counts],
+            avatars=result.avatars,
+            viewer=result.viewer,
+            fetched_at=result.fetched_at,
+            warnings=result.warnings,
+            rate_remaining=result.quota.remaining if result.quota else None,
+            rate_limit=result.quota.limit if result.quota else None,
         )
 
 

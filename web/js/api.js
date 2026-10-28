@@ -53,6 +53,8 @@ export const api = {
   githubToken: () => request("/api/github/token"),
   previewGithubFeed: (data) => request("/api/github/feeds/preview", json("POST", data)),
   runFeed: (id) => request(`/api/github/feeds/${id}/query`, { method: "POST" }),
+  feedContributions: (id, data) =>
+    request(`/api/github/feeds/${id}/contributions`, json("POST", data)),
   githubEventContext: (subject) => request("/api/github/events/context", json("POST", subject)),
   queryGithub: (data) => request("/api/github/events/query", json("POST", data)),
   githubOrgRepos: (org) => request(`/api/github/orgs/${encodeURIComponent(org)}/repos`),

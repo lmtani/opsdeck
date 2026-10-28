@@ -5,6 +5,7 @@ import pytest
 from app.domain.common import parse_timestamp
 from app.domain.github import (
     CodeCommentDetails,
+    ContributionKind,
     EventKind,
     EventSource,
     EventSubject,
@@ -18,12 +19,14 @@ from app.domain.github import (
 )
 from app.domain.github_rules import compare_url, is_bot
 from app.infrastructure.github_event_parsing import (
+    commit_contributions,
     context_from_api,
     events_from_search_pull,
     parse_event,
     pull_number,
     pull_stats_from_api,
     review_thread,
+    search_contributions,
 )
 
 ACTOR = {
@@ -433,3 +436,53 @@ def test_pull_stats_keep_each_reviewers_latest_verdict():
         Reviewer("dave"),
         Reviewer("infra"),
     )
+
+
+# ----- contributions ---------------------------------------------------------
+
+
+def _commit(at, login="bob", parents=1):
+    return {
+        "committedDate": at,
+        "parents": {"totalCount": parents},
+        "author": {"user": {"login": login, "avatarUrl": "https://a/bob"} if login else None},
+    }
+
+
+def test_commit_contributions_skip_merge_commits_and_count_unlinked_authors():
+    nodes = [
+        _commit("2026-10-22T10:00:00Z"),
+        _commit("2026-10-22T11:00:00Z", parents=2),  # merge commit
+        _commit("2026-10-22T12:00:00Z", login=None),  # email not linked to an account
+    ]
+    contributions, unlinked = commit_contributions("acme/core", nodes)
+    assert [(c.login, c.kind, c.repo, c.avatar) for c in contributions] == [
+        ("bob", ContributionKind.COMMIT, "acme/core", "https://a/bob")
+    ]
+    assert unlinked == 1
+
+
+def test_search_contributions_of_a_pull_request_and_its_reviews():
+    since = parse_timestamp("2026-10-20T00:00:00Z")
+    pull = {
+        "__typename": "PullRequest",
+        "createdAt": "2026-10-21T09:00:00Z",
+        "repository": {"nameWithOwner": "acme/core"},
+        "author": {"__typename": "User", "login": "bob", "avatarUrl": ""},
+        "reviews": {
+            "nodes": [
+                {"submittedAt": "2026-10-21T10:00:00Z", "author": {"__typename": "User", "login": "ana"}},
+                {"submittedAt": "2026-10-21T11:00:00Z", "author": {"__typename": "User", "login": "bob"}},
+                {"submittedAt": None, "author": {"__typename": "User", "login": "eve"}},  # pending
+                {"submittedAt": "2026-10-19T10:00:00Z", "author": {"__typename": "User", "login": "eve"}},
+                {"submittedAt": "2026-10-21T12:00:00Z", "author": {"__typename": "Bot", "login": "copilot"}},
+            ]
+        },
+    }
+    found = [(c.login, c.kind.value) for c in search_contributions(pull, since)]
+    assert found == [("bob", "pr"), ("ana", "review"), ("copilot[bot]", "review")]
+
+    older = {**pull, "createdAt": "2026-10-01T09:00:00Z", "reviews": {"nodes": []}}
+    assert search_contributions(older, since) == []  # updated in the window, opened before it
+    issue = {**pull, "__typename": "Issue"}
+    assert [c.kind.value for c in search_contributions(issue, since)] == ["issue"]

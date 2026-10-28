@@ -6,16 +6,18 @@ provider read for a feed spec.
 """
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.application.common import apply_order
 from app.domain.common import utc_now
-from app.domain.errors import GithubError, GithubNotFoundError, NotFoundError
+from app.domain.errors import GithubError, GithubNotFoundError, NotFoundError, ValidationError
 from app.domain.github import (
     EventContext,
     EventSubject,
     FeedSpec,
     GithubActivity,
+    GithubContributions,
     GithubEvent,
     GithubFeed,
     GithubFeedRepository,
@@ -27,6 +29,7 @@ from app.domain.github import (
 from app.domain.github_rules import (
     collapse_bursts,
     coverage_start,
+    daily_contributions,
     is_unseen,
     keep_event,
     merge_realtime,
@@ -37,6 +40,7 @@ MAX_FEED_EVENTS = 500
 # Published events can lag by hours; PR activity of this recent window is
 # also asked from the provider's near-real-time source.
 REALTIME_WINDOW = timedelta(hours=12)
+MAX_CONTRIBUTION_DAYS = 92
 
 
 class GithubFeedService:
@@ -140,6 +144,30 @@ class GithubActivityService:
             results = list(pool.map(count, feeds))
         return {feed_id: total for feed_id, total in results if total is not None}
 
+    def feed_contributions(self, feed_id: str, days: int, zone_name: str) -> GithubContributions:
+        """A saved feed's daily contributions per person over the last `days`
+        days (today included), with days as seen in the `zone_name` time zone."""
+        feed = self._feeds.get(feed_id)
+        if feed is None:
+            raise NotFoundError(f"Feed '{feed_id}' not found")
+        if not 1 <= days <= MAX_CONTRIBUTION_DAYS:
+            raise ValidationError(f"Pick between 1 and {MAX_CONTRIBUTION_DAYS} days")
+        zone = _zone(zone_name)
+        until = utc_now().astimezone(zone).date()
+        since = until - timedelta(days=days - 1)
+        snapshot = self._provider.contributions(feed.spec, datetime.combine(since, time.min, tzinfo=zone))
+        avatars = {item.login: item.avatar for item in snapshot.contributions if item.avatar}
+        return GithubContributions(
+            since=since,
+            until=until,
+            counts=daily_contributions(snapshot.contributions, feed.spec, zone, since, until),
+            avatars=avatars,
+            viewer=snapshot.viewer,
+            fetched_at=snapshot.fetched_at,
+            warnings=snapshot.warnings,
+            quota=snapshot.quota,
+        )
+
     def list_org_repos(self, org: str) -> list[GithubRepo]:
         return self._provider.org_repos(validate_org(org))
 
@@ -169,3 +197,10 @@ class GithubActivityService:
                 continue
             event.title = event.title or info.title
             event.state = info.state
+
+
+def _zone(name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(name or "UTC")
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValidationError(f"Unknown time zone: '{name}'") from None

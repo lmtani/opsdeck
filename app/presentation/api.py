@@ -208,6 +208,11 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
     def run_saved_feed(feed_id: str):
         return schemas.GithubActivityOut.from_entity(services.github.run_feed(feed_id))
 
+    @app.post("/api/github/feeds/{feed_id}/contributions", response_model=schemas.GithubContributionsOut)
+    def github_feed_contributions(feed_id: str, body: schemas.GithubContributionsIn):
+        result = services.github.feed_contributions(feed_id, body.days, body.tz)
+        return schemas.GithubContributionsOut.from_entity(result)
+
     @app.post("/api/github/events/query", response_model=schemas.GithubActivityOut)
     def query_github_events(body: schemas.GithubQueryIn):
         return schemas.GithubActivityOut.from_entity(services.github.run_query(_spec(body)))

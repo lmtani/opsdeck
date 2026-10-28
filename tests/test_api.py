@@ -10,12 +10,16 @@ from app.application.github import GithubActivityService, GithubFeedService
 from app.application.links import CommandService, ImageService, LinkService
 from app.application.logs import LogFilterService, LogQueryService
 from app.application.settings import SettingsService
+from app.domain.common import utc_now
 from app.domain.errors import CommandError, GithubError, LogProviderError
 from app.domain.github import (
+    Contribution,
+    ContributionKind,
     EventContext,
     EventSubject,
     Label,
     PullStats,
+    Quota,
     Reviewer,
     ReviewState,
     SubjectType,
@@ -347,3 +351,21 @@ def test_github_event_context_carries_the_thread_and_pull_stats(world):
     ).json()
     assert stats["pull"]["additions"] == 3 and stats["pull"]["labels"] == [{"name": "bug", "color": "d73a4a"}]
     assert stats["pull"]["reviewers"] == [{"login": "bob", "state": "approved"}]
+
+
+def test_github_feed_contributions_route(world):
+    client = world.client
+    feed = client.post("/api/github/feeds", json={"name": "Org", "org": "acme"}).json()
+    world.github.contributed = [Contribution("bob", ContributionKind.PR, "acme/core", utc_now(), "")]
+    world.github.quota = Quota(remaining=4000, limit=5000)
+
+    body = client.post(f"/api/github/feeds/{feed['id']}/contributions", json={"days": 7, "tz": "UTC"}).json()
+    assert body["counts"] == [
+        {"login": "bob", "day": body["until"], "kind": "pr", "repo": "acme/core", "count": 1}
+    ]
+    assert (body["rate_remaining"], body["rate_limit"], body["viewer"]) == (4000, 5000, "alice")
+    url = f"/api/github/feeds/{feed['id']}/contributions"
+    assert client.post(url, json={"days": 7, "tz": "Nowhere/Here"}).status_code == 422
+    assert client.post("/api/github/feeds/ghost/contributions", json={}).status_code == 404
+    world.github.contributed = GithubError("GitHub GraphQL failed: boom")
+    assert client.post(url, json={}).status_code == 502

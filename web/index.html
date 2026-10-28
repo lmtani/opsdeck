@@ -176,6 +176,15 @@
                 <p class="results-meta" id="gh-meta"></p>
               </div>
               <div class="results-actions">
+                <div class="gh-seg" role="group" aria-label="View" id="gh-mode">
+                  <button type="button" data-mode="timeline" aria-pressed="true">timeline</button>
+                  <button type="button" data-mode="contributors" aria-pressed="false">contributors</button>
+                </div>
+                <div class="gh-seg" role="group" aria-label="Period" id="gh-range" hidden>
+                  <button type="button" data-days="14" aria-pressed="false">2 w</button>
+                  <button type="button" data-days="28" aria-pressed="false">4 w</button>
+                  <button type="button" data-days="56" aria-pressed="false">8 w</button>
+                </div>
                 <button type="button" class="btn btn-ghost btn-sm gh-auto" id="gh-auto-btn" title="Refresh every 60 s">◷ auto</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="gh-seen-btn" title="Mark everything as seen">✓ seen</button>
                 <a class="btn btn-ghost btn-sm" id="gh-open-btn" href="https://github.com/" target="_blank" rel="noopener" title="Open on GitHub">↗ GitHub</a>
@@ -183,6 +192,7 @@
               </div>
             </div>
 
+            <div id="gh-timeline-view">
             <p class="gh-latency-note">
               <span class="gh-live" aria-hidden="true">⚡</span>
               GitHub's events API can lag by a few hours. PR openings, reviews and merges from the last 12 h
@@ -199,6 +209,8 @@
 
             <div class="gh-warnings" id="gh-warnings" hidden></div>
             <div class="gh-timeline" id="gh-timeline"></div>
+            </div>
+            <div class="gh-contributors" id="gh-contributors" hidden></div>
           </div>
         </div>
       </div>
