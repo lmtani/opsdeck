@@ -6,13 +6,14 @@ provider read for a feed spec.
 """
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.application.common import apply_order
 from app.domain.common import utc_now
 from app.domain.errors import GithubError, GithubNotFoundError, NotFoundError, ValidationError
 from app.domain.github import (
+    Contribution,
     EventContext,
     EventSubject,
     FeedSpec,
@@ -28,6 +29,7 @@ from app.domain.github import (
 )
 from app.domain.github_rules import (
     collapse_bursts,
+    contributions_on,
     coverage_start,
     daily_contributions,
     is_unseen,
@@ -147,14 +149,7 @@ class GithubActivityService:
     def feed_contributions(self, feed_id: str, days: int, zone_name: str) -> GithubContributions:
         """A saved feed's daily contributions per person over the last `days`
         days (today included), with days as seen in the `zone_name` time zone."""
-        feed = self._feeds.get(feed_id)
-        if feed is None:
-            raise NotFoundError(f"Feed '{feed_id}' not found")
-        if not 1 <= days <= MAX_CONTRIBUTION_DAYS:
-            raise ValidationError(f"Pick between 1 and {MAX_CONTRIBUTION_DAYS} days")
-        zone = _zone(zone_name)
-        until = utc_now().astimezone(zone).date()
-        since = until - timedelta(days=days - 1)
+        feed, zone, since, until = self._contribution_window(feed_id, days, zone_name)
         snapshot = self._provider.contributions(feed.spec, datetime.combine(since, time.min, tzinfo=zone))
         avatars = {item.login: item.avatar for item in snapshot.contributions if item.avatar}
         return GithubContributions(
@@ -167,6 +162,27 @@ class GithubActivityService:
             warnings=snapshot.warnings,
             quota=snapshot.quota,
         )
+
+    def contribution_day(
+        self, feed_id: str, days: int, zone_name: str, login: str, day: date
+    ) -> list[Contribution]:
+        """The contributions behind one cell of feed_contributions (same
+        `days` and zone, so the provider answers from the same read)."""
+        feed, zone, since, until = self._contribution_window(feed_id, days, zone_name)
+        if not since <= day <= until:
+            raise ValidationError(f"{day} is outside the last {days} days")
+        snapshot = self._provider.contributions(feed.spec, datetime.combine(since, time.min, tzinfo=zone))
+        return contributions_on(snapshot.contributions, feed.spec, zone, login, day)
+
+    def _contribution_window(self, feed_id: str, days: int, zone_name: str):
+        feed = self._feeds.get(feed_id)
+        if feed is None:
+            raise NotFoundError(f"Feed '{feed_id}' not found")
+        if not 1 <= days <= MAX_CONTRIBUTION_DAYS:
+            raise ValidationError(f"Pick between 1 and {MAX_CONTRIBUTION_DAYS} days")
+        zone = _zone(zone_name)
+        until = utc_now().astimezone(zone).date()
+        return feed, zone, until - timedelta(days=days - 1), until
 
     def list_org_repos(self, org: str) -> list[GithubRepo]:
         return self._provider.org_repos(validate_org(org))

@@ -213,6 +213,11 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
         result = services.github.feed_contributions(feed_id, body.days, body.tz)
         return schemas.GithubContributionsOut.from_entity(result)
 
+    @app.post("/api/github/feeds/{feed_id}/contributions/day", response_model=list[schemas.ContributionOut])
+    def github_feed_contribution_day(feed_id: str, body: schemas.ContributionDayIn):
+        items = services.github.contribution_day(feed_id, body.days, body.tz, body.login, body.day)
+        return [schemas.ContributionOut.model_validate(item) for item in items]
+
     @app.post("/api/github/events/query", response_model=schemas.GithubActivityOut)
     def query_github_events(body: schemas.GithubQueryIn):
         return schemas.GithubActivityOut.from_entity(services.github.run_query(_spec(body)))

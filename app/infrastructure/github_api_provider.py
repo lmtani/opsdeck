@@ -155,7 +155,10 @@ r{index}: repository(owner: {owner}, name: {name}) {{
   defaultBranchRef {{ target {{ ... on Commit {{
     history(first: 100, since: {since}{after}) {{
       pageInfo {{ hasNextPage endCursor }}
-      nodes {{ committedDate parents {{ totalCount }} author {{ user {{ login avatarUrl }} }} }}
+      nodes {{
+        committedDate messageHeadline url parents {{ totalCount }}
+        author {{ user {{ login avatarUrl }} }}
+      }}
     }}
   }} }} }}
 }}"""
@@ -172,14 +175,14 @@ query($q: String!, $after: String) {
       __typename
       ... on PullRequest {
         id
-        createdAt
+        number title url createdAt
         repository { nameWithOwner }
         author { __typename login avatarUrl }
-        reviews(first: 50) { nodes { submittedAt author { __typename login avatarUrl } } }
+        reviews(first: 50) { nodes { submittedAt state url author { __typename login avatarUrl } } }
       }
       ... on Issue {
         id
-        createdAt
+        number title url createdAt
         repository { nameWithOwner }
         author { __typename login avatarUrl }
       }

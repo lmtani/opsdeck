@@ -569,7 +569,15 @@ def commit_contributions(repo: str, nodes: list[dict]) -> tuple[list[Contributio
             unlinked += 1
             continue
         contributions.append(
-            Contribution(user["login"], ContributionKind.COMMIT, repo, at, user.get("avatarUrl") or "")
+            Contribution(
+                user["login"],
+                ContributionKind.COMMIT,
+                repo,
+                at,
+                user.get("avatarUrl") or "",
+                title=node.get("messageHeadline") or "",
+                url=_github_url(node.get("url")),
+            )
         )
     return contributions, unlinked
 
@@ -583,16 +591,28 @@ def search_contributions(node: dict, since: datetime) -> list[Contribution]:
         return []
     is_pull = node.get("__typename") == "PullRequest"
     author, avatar = _graphql_login(node.get("author"))
+    number, title, url = int(node.get("number") or 0), node.get("title") or "", _github_url(node.get("url"))
     contributions = []
     created = parse_timestamp(node.get("createdAt"))
     if created and created >= since:
         kind = ContributionKind.PR if is_pull else ContributionKind.ISSUE
-        contributions.append(Contribution(author, kind, repo, created, avatar))
+        contributions.append(Contribution(author, kind, repo, created, avatar, number, title, url))
     reviews = (node.get("reviews") or {}).get("nodes") or [] if is_pull else []
     for review in filter(None, reviews):
         at = parse_timestamp(review.get("submittedAt"))  # None while pending
         login, review_avatar = _graphql_login(review.get("author"))
         if at is None or at < since or login == author:
             continue
-        contributions.append(Contribution(login, ContributionKind.REVIEW, repo, at, review_avatar))
+        review_url = _github_url(review.get("url")) or url
+        state = _review_state(review.get("state"))
+        contributions.append(
+            Contribution(
+                login, ContributionKind.REVIEW, repo, at, review_avatar, number, title, review_url, state
+            )
+        )
     return contributions
+
+
+def _github_url(url) -> str:
+    """Only github.com links reach the page."""
+    return url if isinstance(url, str) and url.startswith(f"{GITHUB_WEB}/") else ""

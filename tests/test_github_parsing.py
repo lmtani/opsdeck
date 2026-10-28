@@ -444,6 +444,8 @@ def test_pull_stats_keep_each_reviewers_latest_verdict():
 def _commit(at, login="bob", parents=1):
     return {
         "committedDate": at,
+        "messageHeadline": "fix: the thing",
+        "url": "https://github.com/acme/core/commit/abc",
         "parents": {"totalCount": parents},
         "author": {"user": {"login": login, "avatarUrl": "https://a/bob"} if login else None},
     }
@@ -456,8 +458,15 @@ def test_commit_contributions_skip_merge_commits_and_count_unlinked_authors():
         _commit("2026-10-22T12:00:00Z", login=None),  # email not linked to an account
     ]
     contributions, unlinked = commit_contributions("acme/core", nodes)
-    assert [(c.login, c.kind, c.repo, c.avatar) for c in contributions] == [
-        ("bob", ContributionKind.COMMIT, "acme/core", "https://a/bob")
+    assert [(c.login, c.kind, c.repo, c.avatar, c.title, c.url) for c in contributions] == [
+        (
+            "bob",
+            ContributionKind.COMMIT,
+            "acme/core",
+            "https://a/bob",
+            "fix: the thing",
+            "https://github.com/acme/core/commit/abc",
+        )
     ]
     assert unlinked == 1
 
@@ -466,12 +475,20 @@ def test_search_contributions_of_a_pull_request_and_its_reviews():
     since = parse_timestamp("2026-10-20T00:00:00Z")
     pull = {
         "__typename": "PullRequest",
+        "number": 7,
+        "title": "Add the thing",
+        "url": "https://github.com/acme/core/pull/7",
         "createdAt": "2026-10-21T09:00:00Z",
         "repository": {"nameWithOwner": "acme/core"},
         "author": {"__typename": "User", "login": "bob", "avatarUrl": ""},
         "reviews": {
             "nodes": [
-                {"submittedAt": "2026-10-21T10:00:00Z", "author": {"__typename": "User", "login": "ana"}},
+                {
+                    "submittedAt": "2026-10-21T10:00:00Z",
+                    "state": "APPROVED",
+                    "url": "https://github.com/acme/core/pull/7#pullrequestreview-1",
+                    "author": {"__typename": "User", "login": "ana"},
+                },
                 {"submittedAt": "2026-10-21T11:00:00Z", "author": {"__typename": "User", "login": "bob"}},
                 {"submittedAt": None, "author": {"__typename": "User", "login": "eve"}},  # pending
                 {"submittedAt": "2026-10-19T10:00:00Z", "author": {"__typename": "User", "login": "eve"}},
@@ -481,6 +498,20 @@ def test_search_contributions_of_a_pull_request_and_its_reviews():
     }
     found = [(c.login, c.kind.value) for c in search_contributions(pull, since)]
     assert found == [("bob", "pr"), ("ana", "review"), ("copilot[bot]", "review")]
+    opened, approval, bot_review = search_contributions(pull, since)
+    assert (opened.number, opened.title, opened.url) == (
+        7,
+        "Add the thing",
+        "https://github.com/acme/core/pull/7",
+    )
+    assert (approval.number, approval.review_state, approval.url) == (
+        7,
+        ReviewState.APPROVED,
+        "https://github.com/acme/core/pull/7#pullrequestreview-1",
+    )
+    assert (bot_review.review_state, bot_review.url) == (None, "https://github.com/acme/core/pull/7")
+    not_github = {**pull, "url": "javascript:alert(1)", "reviews": {"nodes": []}}
+    assert search_contributions(not_github, since)[0].url == ""
 
     older = {**pull, "createdAt": "2026-10-01T09:00:00Z", "reviews": {"nodes": []}}
     assert search_contributions(older, since) == []  # updated in the window, opened before it

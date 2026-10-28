@@ -8,6 +8,7 @@ from app.domain.github import Contribution, ContributionKind, FeedSpec
 from app.domain.github_rules import (
     collapse_bursts,
     contribution_kinds,
+    contributions_on,
     coverage_start,
     daily_contributions,
     merge_realtime,
@@ -157,3 +158,40 @@ def test_daily_contributions_follow_the_feed_kinds_and_bot_filter():
 def test_feed_kinds_without_a_contribution_counterpart_leave_nothing():
     assert contribution_kinds(FeedSpec("acme", event_kinds=("comment", "release"))) == set()
     assert contribution_kinds(FeedSpec("acme")) == set(ContributionKind)
+
+
+def test_contributions_on_one_local_day_newest_first():
+    zone = ZoneInfo("America/Sao_Paulo")
+    items = [
+        _contribution("bob", "commit", "2026-10-22T12:00:00Z"),
+        _contribution("bob", "pr", "2026-10-22T18:00:00Z"),
+        _contribution("Bob", "review", "2026-10-23T02:00:00Z"),  # Oct 22, 23:00 in São Paulo
+        _contribution("bob", "commit", "2026-10-23T12:00:00Z"),  # next day
+        _contribution("ana", "commit", "2026-10-22T12:00:00Z"),
+    ]
+    picked = contributions_on(items, FeedSpec("acme"), zone, "bob", date(2026, 10, 22))
+    assert [c.kind.value for c in picked] == ["review", "pr", "commit"]
+    narrowed = FeedSpec("acme", event_kinds=("push",))
+    assert [c.kind.value for c in contributions_on(items, narrowed, zone, "bob", date(2026, 10, 22))] == [
+        "commit"
+    ]
+
+
+def test_reviews_of_one_pull_request_count_once_per_day():
+    def review(at, number, login="ana"):
+        return Contribution(login, ContributionKind.REVIEW, "acme/core", ts(at), number=number)
+
+    items = [
+        review("2026-10-22T10:00:00Z", 7),
+        review("2026-10-22T11:00:00Z", 7),  # a reply in the same review thread
+        review("2026-10-22T12:00:00Z", 7),
+        review("2026-10-22T12:30:00Z", 8),
+        review("2026-10-23T09:00:00Z", 7),  # the next day counts again
+        review("2026-10-22T13:00:00Z", 7, login="bob"),
+    ]
+    counts = daily_contributions(items, FeedSpec("acme"), UTC, date(2026, 10, 22), date(2026, 10, 23))
+    assert [(c.login, str(c.day), c.count) for c in counts] == [
+        ("ana", "2026-10-22", 2),
+        ("ana", "2026-10-23", 1),
+        ("bob", "2026-10-22", 1),
+    ]
