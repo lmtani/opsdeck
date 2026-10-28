@@ -224,12 +224,23 @@ def daily_contributions(
     contributions: list[Contribution], spec: FeedSpec, zone: tzinfo, since: date, until: date
 ) -> list[DailyContribution]:
     """Contributions counted per person, local day, kind and repo, keeping
-    the days in [since, until] that the feed lets through."""
+    the days in [since, until] that the feed lets through.
+
+    A person's reviews of one pull request count once per day: every reply
+    in a review thread is a "commented" review of its own, so counting them
+    one by one ranks whoever discusses most over whoever reviews most."""
     counts: Counter[tuple[str, date, ContributionKind, str]] = Counter()
+    reviewed: set[tuple[str, date, str, int]] = set()
     for item in _kept_contributions(contributions, spec):
         day = item.at.astimezone(zone).date()
-        if since <= day <= until:
-            counts[(item.login, day, item.kind, item.repo)] += 1
+        if not since <= day <= until:
+            continue
+        if item.kind is ContributionKind.REVIEW and item.number:
+            pull = (item.login.lower(), day, item.repo, item.number)
+            if pull in reviewed:
+                continue
+            reviewed.add(pull)
+        counts[(item.login, day, item.kind, item.repo)] += 1
     return [
         DailyContribution(login=login, day=day, kind=kind, repo=repo, count=count)
         for (login, day, kind, repo), count in sorted(counts.items(), key=lambda pair: pair[0][:2])

@@ -175,3 +175,23 @@ def test_contributions_on_one_local_day_newest_first():
     assert [c.kind.value for c in contributions_on(items, narrowed, zone, "bob", date(2026, 10, 22))] == [
         "commit"
     ]
+
+
+def test_reviews_of_one_pull_request_count_once_per_day():
+    def review(at, number, login="ana"):
+        return Contribution(login, ContributionKind.REVIEW, "acme/core", ts(at), number=number)
+
+    items = [
+        review("2026-10-22T10:00:00Z", 7),
+        review("2026-10-22T11:00:00Z", 7),  # a reply in the same review thread
+        review("2026-10-22T12:00:00Z", 7),
+        review("2026-10-22T12:30:00Z", 8),
+        review("2026-10-23T09:00:00Z", 7),  # the next day counts again
+        review("2026-10-22T13:00:00Z", 7, login="bob"),
+    ]
+    counts = daily_contributions(items, FeedSpec("acme"), UTC, date(2026, 10, 22), date(2026, 10, 23))
+    assert [(c.login, str(c.day), c.count) for c in counts] == [
+        ("ana", "2026-10-22", 2),
+        ("ana", "2026-10-23", 1),
+        ("bob", "2026-10-22", 1),
+    ]

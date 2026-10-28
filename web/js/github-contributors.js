@@ -193,7 +193,7 @@ export function createContributorsView({ container, tooltips, avatarUrl, onTimel
 
     container.innerHTML = `
       <p class="gh-cg-source">Commits that reached a default branch, pull requests and issues opened,
-        reviews of other people's pull requests. Read from the repositories, so it reaches weeks back;
+        reviews of other people's pull requests (once per pull request and day, however many comments). Read from the repositories, so it reaches weeks back;
         pushes to other branches and comments are not counted.</p>
       ${warningsHtml()}
       <div class="gh-cg-toolbar">
