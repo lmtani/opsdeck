@@ -2187,6 +2187,124 @@ body {
 .gh-cg-tip-kind { display: inline-flex; align-items: center; gap: 6px; color: var(--k); }
 .gh-cg-tip-kind i { width: 8px; height: 8px; border-radius: 2px; background: var(--k); }
 
+/* ----- network mode: people ↔ repositories (github-network.js) ----- */
+.gh-net-range { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); }
+.gh-net-range input { width: 120px; accent-color: var(--accent); }
+.gh-net-range b { min-width: 4ch; font-weight: 500; color: var(--accent); font-variant-numeric: tabular-nums; }
+.gh-net-status { margin: 8px 0 0; font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.gh-net-status b { color: var(--text); font-weight: 500; }
+.gh-net-stage { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; margin-top: 12px; }
+@media (max-width: 980px) { .gh-net-stage { grid-template-columns: 1fr; } }
+.gh-net-canvas { position: relative; height: clamp(440px, 64vh, 720px); min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input) radial-gradient(color-mix(in srgb, var(--text-dim) 20%, transparent) 1px, transparent 1.2px) 0 0 / 22px 22px; overflow: hidden; }
+.gh-net-svg { display: block; width: 100%; height: 100%; touch-action: none; cursor: default; outline: none; }
+.gh-net-svg:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.gh-net-svg.is-panning { cursor: grabbing; }
+.gh-net-empty { position: absolute; inset: 0; display: grid; place-items: center; }
+
+/* skeleton: a few pulsing nodes while the contributions are read */
+.gh-net-skeleton { --cell-empty: color-mix(in srgb, var(--border) 55%, var(--bg-panel)); }
+.gh-net-skel-blob { position: absolute; left: var(--x); top: var(--y); width: var(--s); height: var(--s); margin: calc(var(--s) / -2) 0 0 calc(var(--s) / -2); border-radius: 50%; background: var(--cell-empty); animation: cell-wave 1.8s ease-in-out infinite; animation-delay: calc(var(--d) * 120ms); }
+.gh-net-skel-line { height: 12px; width: var(--w, 60%); margin-top: 14px; }
+.gh-net-skel-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 14px; }
+.gh-net-skel-stats .gh-skel { height: 46px; }
+
+/* links */
+.gh-net-link-line { stroke: var(--text-dim); stroke-opacity: 0.36; stroke-linecap: round; transition: stroke-opacity 160ms ease, stroke 160ms ease; }
+.gh-net-link-hit { stroke: transparent; fill: none; cursor: pointer; }
+.gh-net-link.is-lit .gh-net-link-line { stroke: var(--accent); stroke-opacity: 0.95; }
+.gh-net-svg.is-focus .gh-net-link:not(.is-lit) .gh-net-link-line { stroke-opacity: 0.07; }
+
+/* nodes */
+.gh-net-node { cursor: grab; transition: opacity 160ms ease; }
+.gh-net-node.is-dragging { cursor: grabbing; }
+.gh-net-svg.is-focus .gh-net-node:not(.is-lit) { opacity: 0.14; }
+.gh-net-body { fill: var(--bg-elev); stroke: var(--border-strong); stroke-width: 1.2; }
+.gh-net-node:hover .gh-net-body { stroke-width: 2; }
+.gh-net-node.is-you .gh-net-body { stroke: var(--accent); stroke-width: 1.6; }
+.gh-net-node.is-repo .gh-net-body { fill: color-mix(in srgb, var(--accent) 9%, var(--bg-elev)); stroke: var(--accent); stroke-width: 1.4; }
+.gh-net-node.is-empty .gh-net-body { fill: transparent; stroke: var(--border-strong); stroke-dasharray: 3 4; }
+.gh-net-text { font: 500 10px var(--font-mono); fill: var(--text); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.gh-net-node.is-repo .gh-net-text { font: 600 13px var(--font-display); fill: var(--accent); font-variant-numeric: tabular-nums; }
+.gh-net-node.is-empty .gh-net-text { fill: var(--text-dim); }
+.gh-net-avatar { clip-path: circle(50% at 50% 50%); pointer-events: none; }
+.gh-net-ring path { fill: var(--k); }
+.gh-net-ring circle { fill: none; stroke: var(--k); }
+.gh-net-halo { fill: none; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 2 3; stroke-opacity: 0.75; }
+.gh-net-sel { fill: none; stroke: var(--accent); stroke-width: 2; filter: drop-shadow(0 0 6px var(--glow)); }
+.gh-net-pin { fill: var(--warn); stroke: var(--bg-input); stroke-width: 1.5; }
+.gh-net-hit { fill: transparent; }
+
+/* labels: repos always, the busiest people, and whoever is lit */
+.gh-net-label { font: 500 10.5px var(--font-mono); fill: var(--text-dim); text-anchor: middle; paint-order: stroke; stroke: var(--bg-input); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; transition: opacity 160ms ease, fill 160ms ease; }
+.gh-net-label.is-repo { font: 600 12px var(--font-display); fill: var(--text); letter-spacing: 0.02em; }
+.gh-net-label.is-quiet { opacity: 0; }
+.gh-net-svg.is-focus .gh-net-label.is-lit { opacity: 1; fill: var(--text); }
+.gh-net-svg.is-focus .gh-net-label:not(.is-lit) { opacity: 0; }
+.gh-net-svg.is-focus .gh-net-label.is-repo:not(.is-lit) { opacity: 0.18; }
+.gh-net-label.is-subject, .gh-net-svg.is-focus .gh-net-label.is-subject { fill: var(--accent); }
+
+/* canvas overlays */
+.gh-net-ctl { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; }
+.gh-net-ctl button { width: 30px; height: 30px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--bg-panel) 88%, transparent); backdrop-filter: blur(6px); color: var(--text-dim); cursor: pointer; font-family: var(--font-mono); font-size: 14px; line-height: 1; }
+.gh-net-ctl button:hover { color: var(--accent); border-color: var(--accent); }
+.gh-net-legend { position: absolute; left: 10px; right: 48px; bottom: 8px; display: flex; flex-wrap: wrap; gap: 4px 14px; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); pointer-events: none; }
+.gh-net-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.gh-net-lg-repo { width: 12px; height: 12px; border-radius: 50%; border: 1.4px solid var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--bg-elev)); }
+.gh-net-lg-person { width: 9px; height: 9px; border-radius: 50%; border: 1.2px solid var(--border-strong); background: var(--bg-elev); }
+.gh-net-lg-ring { width: 10px; height: 10px; border-radius: 50%; background: conic-gradient(var(--kind-commit) 0 45%, var(--bg-input) 45% 47%, var(--kind-pr) 47% 65%, var(--bg-input) 65% 67%, var(--kind-review) 67% 92%, var(--bg-input) 92% 94%, var(--kind-issue) 94% 100%); mask: radial-gradient(circle, transparent 2.6px, #000 3px); }
+.gh-net-lg-link { width: 16px; height: 0; border-top: 3px solid var(--text-dim); opacity: 0.5; border-radius: 2px; }
+.gh-net-lg-bridge { width: 12px; height: 12px; border-radius: 50%; border: 1px dashed var(--accent); }
+.gh-net-hint { position: absolute; left: 10px; top: 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); opacity: 0.8; pointer-events: none; }
+@media (max-width: 720px) { .gh-net-hint { display: none; } }
+
+/* the detail panel beside the canvas */
+.gh-net-panel { min-width: 0; max-height: clamp(440px, 64vh, 720px); overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-panel); padding: 14px 14px 12px; scrollbar-width: thin; }
+@media (max-width: 980px) { .gh-net-panel { max-height: none; } }
+.gh-net-eyebrow { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
+.gh-net-unpin { margin-left: auto; width: 24px; height: 24px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: transparent; color: var(--text-dim); cursor: pointer; font-size: 12px; line-height: 1; }
+.gh-net-unpin:hover { color: var(--accent); border-color: var(--accent); }
+.gh-net-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 12px 0 4px; }
+.gh-net-stat { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); }
+.gh-net-stat b { display: block; font-family: var(--font-display); font-size: 20px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.gh-net-stat span { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.gh-net-stat.is-warn b { color: var(--warn); }
+.gh-net-section { margin-top: 16px; }
+.gh-net-section h4 { margin: 0 0 8px; display: flex; align-items: baseline; gap: 8px; font-family: var(--font-display); font-size: 12.5px; letter-spacing: 0.04em; text-transform: uppercase; }
+.gh-net-section h4 span { font-family: var(--font-mono); font-size: 10.5px; font-weight: 400; color: var(--text-dim); text-transform: none; letter-spacing: 0; }
+.gh-net-list { display: flex; flex-direction: column; gap: 2px; }
+.gh-net-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; width: calc(100% + 12px); margin: 0 -6px; padding: 5px 6px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text); text-align: left; cursor: pointer; transition: background var(--speed) ease; }
+.gh-net-row:hover { background: var(--accent-soft); }
+.gh-net-row-text { min-width: 0; }
+.gh-net-row-name { display: block; font-family: var(--font-mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-net-row-sub { display: block; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.gh-net-row-num { font-family: var(--font-mono); font-size: 11px; color: var(--accent); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gh-net-row-num.is-warn { color: var(--warn); }
+.gh-net-avatar-img { width: 22px; height: 22px; border: 1px solid var(--border-strong); flex-shrink: 0; }
+.gh-net-avatar-img.is-large { width: 38px; height: 38px; font-size: 14px; }
+.gh-net-repo-glyph { display: block; width: 22px; height: 22px; border-radius: 50%; border: 1.4px solid var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--bg-elev)); flex-shrink: 0; }
+.gh-net-repo-glyph.is-large { width: 38px; height: 38px; }
+.gh-net-bar { display: block; height: 5px; margin-top: 4px; border-radius: 3px; background: color-mix(in srgb, var(--border) 60%, var(--bg-panel)); overflow: hidden; }
+.gh-net-bar i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.gh-net-bar.is-warn i { background: var(--warn); }
+.gh-net-head { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.gh-net-who { min-width: 0; }
+.gh-net-login { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 15px; font-weight: 500; }
+.gh-net-meta { margin-top: 2px; font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.gh-net-badge { font-family: var(--font-mono); font-size: 10px; font-weight: 400; letter-spacing: 0.05em; text-transform: uppercase; padding: 1px 7px; border-radius: 4px; color: var(--accent); background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+.gh-net-badge.is-warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.gh-net-mix { display: flex; gap: 2px; height: 8px; margin-top: 14px; border-radius: 4px; overflow: hidden; }
+.gh-net-mix i { display: block; height: 100%; min-width: 2px; background: var(--k); }
+.gh-net-mix-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 7px; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); }
+.gh-net-mix-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.gh-net-mix-legend i { width: 7px; height: 7px; border-radius: 2px; background: var(--k); }
+.gh-net-mix-legend b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+.gh-net-note { margin: 12px 0 0; padding: 8px 10px; border-left: 3px solid var(--warn); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: color-mix(in srgb, var(--warn) 8%, transparent); font-size: 12px; }
+.gh-net-note b { color: var(--warn); font-weight: 500; }
+.gh-net-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
+.gh-net-help { margin: 16px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--text-dim); }
+.gh-net-none { margin: 0; font-family: var(--font-mono); font-size: 11.5px; font-style: italic; color: var(--text-dim); }
+
+
 
 @media (prefers-reduced-motion: reduce) {
   /* reduced motion must override every animation and transition */
