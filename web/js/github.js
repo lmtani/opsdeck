@@ -1,6 +1,7 @@
 // GitHub view: saved feeds sidebar, org/repo activity timeline grouped by
-// day, client-side refinements (repo / kind / author), "new since the last
-// visit" marks and the optional 60 s auto-refresh.
+// day, client-side refinements (repo / kind / author / day), "new since the
+// last visit" marks and the optional 60 s auto-refresh. The "contributors"
+// mode (github-contributors.js) shows the same feed as daily volume per person.
 //
 // Seen marks: the server flags each event of a saved feed as `is_new` when
 // it is newer than the feed's last_seen_at, and counts them in `unseen`.
@@ -10,6 +11,7 @@
 import { api } from "./api.js";
 import { makeSortable } from "./dnd.js";
 import { createContextDrawer, hasContext } from "./github-context.js";
+import { createContributorsView, dayKey } from "./github-contributors.js";
 import {
   announce,
   anyNotifying,
@@ -33,12 +35,13 @@ const KIND_LABELS = {
 };
 const KIND_ORDER = Object.keys(KIND_LABELS);
 const STATE_LABELS = { open: "open", draft: "draft", merged: "merged", closed: "closed" };
-const FIELD_LABELS = { repo: "repo", kind: "kind", actor: "author" };
+const FIELD_LABELS = { repo: "repo", kind: "kind", actor: "author", day: "day" };
 const AUTO_REFRESH_MS = 60_000;
 const UNSEEN_REFRESH_MS = 5 * 60_000; // badges only, while the page is visible
 const NOTIFY_REFRESH_MS = 2 * 60_000; // when some feed notifies, also in the background
 const POLL_TICK_MS = 60_000;
 const AUTO_KEY = "opsdeck.github.auto";
+const MODE_KEY = "opsdeck.github.mode";
 const GITHUB_WEB = "https://github.com/";
 const SUGGESTED_REPOS = 10;
 
@@ -58,6 +61,8 @@ let requestSeq = 0;
 let autoTimer = null;
 let polling = true; // the "live" switch, saved in the backend settings
 let drawer = null; // side panel with an event's full context (github-context.js)
+let contributors = null; // the contributors mode (github-contributors.js)
+let mode = "timeline"; // or "contributors"
 
 // ----- small helpers ---------------------------------------------------
 
@@ -96,14 +101,26 @@ function avatarUrl(url) {
 }
 
 function fieldValue(event, field) {
+  if (field === "day") return dayKey(new Date(event.created_at));
   return field === "repo" ? event.repo : field === "kind" ? event.kind : event.actor;
 }
 
 function refinementLabel({ field, value }) {
   if (field === "repo") return shortRepo(value);
   if (field === "kind") return KIND_LABELS[value] || value;
+  if (field === "day") {
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString(LOCALE, {
+      weekday: "short",
+      day: "2-digit",
+      month: "short",
+    });
+  }
   return value;
 }
+
+// the refinements that map onto feed fields (and can be saved as a feed)
+const isFeedField = (field) => field === "repo" || field === "kind";
 
 function matches(event, ignoreField = null) {
   const groups = {};
@@ -372,6 +389,8 @@ function openFeed(feed) {
   document.getElementById("gh-warnings").hidden = true;
   showSkeleton();
   loadActivity({ initial: true });
+  contributors.setTimelineStart(null);
+  if (mode === "contributors") contributors.open(feed);
 }
 
 async function loadActivity({ initial = false } = {}) {
@@ -385,13 +404,15 @@ async function loadActivity({ initial = false } = {}) {
     if (seq !== requestSeq || view.feed?.id !== feed.id) return;
     view.activity = activity;
     unseen[feed.id] = activity.unseen;
+    contributors.setTimelineStart(timelineStart(activity));
     renderFeedList();
     renderActivity({ animate: initial });
   } catch (error) {
     if (seq !== requestSeq || view.feed?.id !== feed.id) return;
     if (initial || !view.activity) {
       view.activity = null;
-      document.getElementById("gh-meta").textContent = `${feed.org} · failed`;
+      if (mode === "timeline")
+        document.getElementById("gh-meta").textContent = `${feed.org} · failed`;
       document.getElementById("gh-timeline").innerHTML =
         `<div class="error-box"><strong>GitHub query failed</strong>${richText(error.message)}</div>`;
     } else {
@@ -411,8 +432,18 @@ function renderActivity({ animate = false } = {}) {
   renderMeta();
 }
 
+// The first day the timeline shows: where the events API's coverage starts,
+// else the oldest event; null when nothing came back.
+function timelineStart(activity) {
+  if (activity.coverage_start) return new Date(activity.coverage_start);
+  const times = activity.events.map((event) => time(event.created_at)).filter(Boolean);
+  return times.length ? new Date(Math.min(...times)) : null;
+}
+
 function renderMeta() {
+  if (mode === "contributors") return renderContributorsMeta();
   const { feed, activity } = view;
+  if (!activity) return;
   const total = activity.events.length;
   const shown = activity.events.filter((event) => matches(event)).length;
   const fresh = activity.unseen;
@@ -431,6 +462,61 @@ function renderMeta() {
     parts.push(`quota ${activity.rate_remaining}/${activity.rate_limit}`);
   }
   document.getElementById("gh-meta").textContent = parts.join(" · ");
+}
+
+function renderContributorsMeta() {
+  const feed = view.feed;
+  if (!feed) return;
+  const meta = contributors.meta();
+  const parts = [feed.org, feed.repos.length ? plural(feed.repos.length, "repo") : "whole org"];
+  if (!meta) {
+    parts.push(contributors.busy ? "querying…" : "failed");
+  } else {
+    parts.push(`${plural(meta.total, "contribution")} in ${contributors.days} days`);
+    parts.push(
+      `updated ${new Date(meta.fetched_at).toLocaleTimeString(LOCALE, { hourCycle: "h23" })}`
+    );
+    if (meta.rate_remaining != null) parts.push(`quota ${meta.rate_remaining}/${meta.rate_limit}`);
+  }
+  document.getElementById("gh-meta").textContent = parts.join(" · ");
+}
+
+// ----- view mode -------------------------------------------------------
+
+function setMode(next) {
+  mode = next;
+  storageSet(MODE_KEY, next);
+  const contributorsMode = next === "contributors";
+  document.querySelectorAll("#gh-mode [data-mode]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.mode === next));
+  });
+  document.getElementById("gh-timeline-view").hidden = contributorsMode;
+  document.getElementById("gh-contributors").hidden = !contributorsMode;
+  document.getElementById("gh-range").hidden = !contributorsMode;
+  document.getElementById("gh-auto-btn").hidden = contributorsMode;
+  document.getElementById("gh-seen-btn").hidden = contributorsMode;
+  renderRange();
+  hideTooltip();
+  if (contributorsMode && view.feed) contributors.open(view.feed);
+  if (view.feed) renderMeta();
+}
+
+function renderRange() {
+  document.querySelectorAll("#gh-range [data-days]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(Number(button.dataset.days) === contributors.days));
+  });
+}
+
+// A contributors cell opened in the timeline: that person on that day.
+function openPersonDay({ login, day }) {
+  view.refinements = [
+    ...view.refinements.filter((r) => isFeedField(r.field)),
+    { field: "actor", value: login },
+    { field: "day", value: day },
+  ];
+  setMode("timeline");
+  renderActivity();
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function renderKinds() {
@@ -472,9 +558,8 @@ function renderRefineBar() {
       renderActivity();
     });
   });
-  // only repo and kind map onto feed fields
-  document.getElementById("gh-refine-save-btn").hidden = !view.refinements.some(
-    (r) => r.field !== "actor"
+  document.getElementById("gh-refine-save-btn").hidden = !view.refinements.some((r) =>
+    isFeedField(r.field)
   );
 }
 
@@ -1111,14 +1196,16 @@ function showTooltip(target) {
   tooltip.classList.add("is-visible");
 }
 
-function setupTooltips(container) {
+const TOOLTIP_TARGETS =
+  "[data-tip], [data-bin], [data-live], [data-person], [data-cell], [data-mix], [data-team], [data-tooltip]";
+
+function setupTooltips(...containers) {
   tooltip = document.createElement("div");
   tooltip.className = "gh-tooltip";
   tooltip.setAttribute("role", "tooltip");
   document.body.appendChild(tooltip);
 
-  container.addEventListener("mouseover", (event) => {
-    const target = event.target.closest("[data-tip], [data-bin], [data-live], [data-person]");
+  const arm = (target) => {
     if (target === tooltipTarget) return;
     hideTooltip();
     if (!target) return;
@@ -1127,8 +1214,14 @@ function setupTooltips(container) {
     tooltipTimer = setTimeout(() => {
       if (tooltipTarget === target && target.isConnected) showTooltip(target);
     }, TOOLTIP_DELAY_MS);
-  });
-  container.addEventListener("mouseleave", hideTooltip);
+  };
+  for (const container of containers) {
+    container.addEventListener("mouseover", (event) => arm(event.target.closest(TOOLTIP_TARGETS)));
+    container.addEventListener("mouseleave", hideTooltip);
+    // keyboard users get the same tooltips (the mix bar of each person is focusable)
+    container.addEventListener("focusin", (event) => arm(event.target.closest(TOOLTIP_TARGETS)));
+    container.addEventListener("focusout", hideTooltip);
+  }
   // the anchor moves or disappears: drop the tooltip instead of chasing it
   window.addEventListener("scroll", hideTooltip, { passive: true, capture: true });
   window.addEventListener("resize", hideTooltip);
@@ -1401,7 +1494,7 @@ function saveRefinementsAsFeed() {
   const repos = pick("repo").map(shortRepo);
   const kinds = pick("kind");
   const label = view.refinements
-    .filter((r) => r.field !== "actor")
+    .filter((r) => isFeedField(r.field))
     .map(refinementLabel)
     .join(", ");
   openFeedModal(null, {
@@ -1411,7 +1504,9 @@ function saveRefinementsAsFeed() {
     event_kinds: kinds.length ? kinds : feed.event_kinds,
     description: "",
   });
-  if (pick("actor").length) toast("The author refinement is not saved in the feed", "info");
+  if (view.refinements.some((r) => !isFeedField(r.field))) {
+    toast("The author and day refinements are not saved in the feed", "info");
+  }
 }
 
 // ----- lifecycle -------------------------------------------------------
@@ -1465,7 +1560,28 @@ async function checkToken() {
 }
 
 export async function initGithub() {
-  setupTooltips(document.getElementById("gh-timeline"));
+  const contributorsBox = document.getElementById("gh-contributors");
+  setupTooltips(document.getElementById("gh-timeline"), contributorsBox);
+  contributors = createContributorsView({
+    container: contributorsBox,
+    tooltips: tooltipContent,
+    avatarUrl,
+    onTimeline: openPersonDay,
+    onLoaded: () => {
+      hideTooltip();
+      if (mode === "contributors") renderMeta();
+    },
+  });
+  document.querySelectorAll("#gh-mode [data-mode]").forEach((button) => {
+    button.addEventListener("click", () => setMode(button.dataset.mode));
+  });
+  document.querySelectorAll("#gh-range [data-days]").forEach((button) => {
+    button.addEventListener("click", () => {
+      contributors.setDays(Number(button.dataset.days));
+      renderRange();
+    });
+  });
+  setMode(storageGet(MODE_KEY) === "contributors" ? "contributors" : "timeline");
   drawer = createContextDrawer({
     labels: { kind: KIND_LABELS, state: STATE_LABELS },
     avatarUrl,
@@ -1513,7 +1629,10 @@ export async function initGithub() {
     }
   });
 
-  document.getElementById("gh-refresh-btn").addEventListener("click", () => loadActivity());
+  document.getElementById("gh-refresh-btn").addEventListener("click", () => {
+    if (mode === "contributors") contributors.refresh();
+    loadActivity();
+  });
   document.getElementById("gh-seen-btn").addEventListener("click", () => {
     markActiveSeen();
     if (view.activity) {

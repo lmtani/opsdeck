@@ -14,6 +14,14 @@
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* kind colors, also used by the contributors grid when one kind is picked */
+:root {
+  --kind-commit: var(--accent);
+  --kind-pr: var(--ok);
+  --kind-review: color-mix(in srgb, #8b5cf6 65%, var(--text));
+  --kind-issue: var(--danger);
+}
+
 /* ----------------------------- themes ----------------------------- */
 
 [data-theme="midnight"] {
@@ -1233,10 +1241,11 @@ body {
 /* event kinds share one hue variable (--k); fixed hues are blended with the
    theme text color so they stay legible on dark and on paper */
 .kind-push { --k: var(--accent); }
-.kind-pr { --k: var(--ok); }
-.kind-review { --k: color-mix(in srgb, #8b5cf6 65%, var(--text)); }
+.kind-commit { --k: var(--kind-commit); }
+.kind-pr { --k: var(--kind-pr); }
+.kind-review { --k: var(--kind-review); }
 .kind-comment { --k: var(--text-dim); }
-.kind-issue { --k: var(--danger); }
+.kind-issue { --k: var(--kind-issue); }
 .kind-branch { --k: var(--warn); }
 .kind-release { --k: color-mix(in srgb, #ec4899 65%, var(--text)); }
 .kind-other { --k: var(--text-dim); }
@@ -1997,6 +2006,128 @@ body {
   .search input { width: 150px; }
   .search input:focus { width: 190px; }
 }
+
+/* ----- contributors mode (github-contributors.js) ---------------------- */
+
+.gh-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; }
+.gh-seg button { font: 500 11.5px var(--font-mono); padding: 5px 11px; background: transparent; color: var(--text-dim); border: 0; cursor: pointer; transition: background var(--speed) ease, color var(--speed) ease; }
+.gh-seg button + button { border-left: 1px solid var(--border-strong); }
+.gh-seg button:hover { color: var(--text); }
+.gh-seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.gh-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.gh-contributors { --cell-empty: color-mix(in srgb, var(--border) 55%, var(--bg-panel)); }
+.gh-cg-loading { margin: 14px 0 10px; font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); }
+.gh-cg-source { margin: 12px 0 4px; max-width: 90ch; font-size: 12.5px; color: var(--text-dim); }
+.gh-cg-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; margin: 12px 0 4px; }
+.gh-cg-label { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-dim); }
+.gh-cg-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.gh-cg-group .gh-cg-label { margin-right: 2px; }
+.gh-cg-repo { --k: var(--text-dim); }
+.gh-cg-group .gh-people-more { height: 23px; }
+.gh-cg-summary { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 12px 0 8px; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); }
+.gh-cg-summary b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+.gh-cg-jump {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 6px 0 10px;
+  padding: 9px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  animation: detail-open 220ms var(--ease);
+}
+.gh-cg-jump-text { flex: 1; min-width: 240px; font-size: 13px; }
+.gh-cg-jump-text span { display: block; font-size: 12px; color: var(--text-dim); }
+
+/* one grid row per line: name column, one column per day, total column */
+.gh-cg-wrap { overflow-x: auto; padding-bottom: 6px; }
+.gh-cg { min-width: 640px; }
+.gh-cg-row { display: grid; grid-template-columns: 168px repeat(var(--days), minmax(0, 1fr)) 132px; align-items: center; column-gap: 2px; }
+.gh-cg-row > .is-week { margin-left: 5px; }
+
+.gh-cg-covers { height: 16px; }
+.gh-cg-cover {
+  align-self: end;
+  height: 13px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 11px;
+  color: var(--accent);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: help;
+}
+.gh-cg-dates { height: 30px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-align: center; }
+.gh-cg-date { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.gh-cg-date i { font-style: normal; font-size: 9px; opacity: 0.75; height: 11px; overflow: visible; white-space: nowrap; }
+.gh-cg-date.is-month i { color: var(--text); opacity: 1; }
+.gh-cg-date.is-weekend { opacity: 0.55; }
+.gh-cg-date.is-today { color: var(--accent); }
+
+.gh-cg-strip { height: 66px; align-items: end; padding-bottom: 4px; margin-bottom: 6px; border-bottom: 1px solid var(--border); }
+.gh-cg-strip-label { align-self: center; font-family: var(--font-display); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-dim); }
+.gh-cg-strip-total { align-self: center; padding-left: 10px; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); }
+.gh-cg-bar { position: relative; height: 58px; display: flex; flex-direction: column-reverse; border-radius: 2px; }
+.gh-cg-bar:hover { background: color-mix(in srgb, var(--text-dim) 14%, transparent); }
+.gh-cg-seg { flex-shrink: 0; background: var(--k); opacity: 0.85; transition: opacity var(--speed) ease; }
+.gh-cg-seg:first-child { border-radius: 0 0 2px 2px; }
+.gh-cg-seg:nth-last-child(2) { border-radius: 2px 2px 0 0; }
+.gh-cg-mine { position: absolute; left: 15%; right: 15%; bottom: 0; border-radius: 2px 2px 0 0; background: var(--text); opacity: 0; transition: opacity var(--speed) ease; }
+.gh-cg.is-focus .gh-cg-seg { opacity: 0.18; }
+.gh-cg.is-focus .gh-cg-mine { opacity: 0.9; }
+
+.gh-cg-person { height: 28px; border-radius: var(--radius-sm); transition: opacity var(--speed) ease, background var(--speed) ease; }
+.gh-cg-person:hover { background: color-mix(in srgb, var(--bg-elev) 70%, transparent); }
+.gh-cg.is-focus .gh-cg-person:not(.is-focused) { opacity: 0.4; }
+.gh-cg-person.is-focused { background: var(--accent-soft); }
+.gh-cg-who { display: flex; align-items: center; gap: 8px; min-width: 0; height: 100%; padding: 0 6px 0 3px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--text); font: 600 12.5px var(--font-body); text-align: left; cursor: pointer; }
+.gh-cg-who:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.gh-cg-who .gh-person-avatar { flex-shrink: 0; border: 1px solid var(--border-strong); }
+.gh-cg-who.is-you .gh-person-avatar { box-shadow: 0 0 0 1.5px var(--accent); }
+.gh-cg-who.is-you .gh-cg-login { color: var(--accent); }
+.gh-cg-login { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.gh-cg-cell { height: 18px; padding: 0; border: 0; border-radius: 3px; background: var(--cell-empty); cursor: pointer; transition: transform 120ms ease; }
+.gh-cg-cell.is-weekend { background: color-mix(in srgb, var(--cell-empty) 55%, transparent); }
+.gh-cg-cell.lv1 { background: color-mix(in srgb, var(--k) 28%, var(--cell-empty)); }
+.gh-cg-cell.lv2 { background: color-mix(in srgb, var(--k) 52%, var(--cell-empty)); }
+.gh-cg-cell.lv3 { background: color-mix(in srgb, var(--k) 76%, var(--cell-empty)); }
+.gh-cg-cell.lv4 { background: var(--k); }
+.gh-cg-cell.is-today { outline: 1px dashed color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: 1px; }
+.gh-cg-cell:hover { transform: scale(1.25); }
+.gh-cg-cell:focus-visible, .gh-cg-cell.is-selected { outline: 2px solid var(--text); outline-offset: 1px; }
+
+/* the whole total cell is the hover target of the kind mix, not just the thin bar */
+.gh-cg-total { display: flex; align-items: center; gap: 8px; height: 100%; padding: 0 4px 0 10px; border-radius: var(--radius-sm); cursor: help; }
+.gh-cg-total:hover, .gh-cg-total:focus-visible { background: color-mix(in srgb, var(--bg-elev) 80%, transparent); outline: none; }
+.gh-cg-total b { width: 34px; text-align: right; font-family: var(--font-mono); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.gh-cg-mix { flex: 1; display: flex; height: 7px; border-radius: 4px; overflow: hidden; background: var(--cell-empty); }
+.gh-cg-mix i { background: var(--k); }
+
+.gh-cg-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 12px; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); }
+.gh-cg-scale { display: inline-flex; align-items: center; gap: 3px; }
+.gh-cg-scale .gh-cg-cell { width: 12px; height: 12px; cursor: default; }
+.gh-cg-scale .gh-cg-cell:hover { transform: none; }
+.gh-cg-cover-swatch { display: inline-block; width: 18px; height: 8px; margin-right: 4px; border: 1px dashed var(--accent); border-bottom: 0; border-radius: 3px 3px 0 0; vertical-align: -1px; }
+
+/* rich tooltips of the grid */
+.gh-cg-tip-rows { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 14px; margin-top: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+.gh-cg-tip-rows span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-cg-tip-rows b { color: var(--text); font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
+.gh-cg-tip-mix { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 3px 12px; margin-top: 8px; font-family: var(--font-mono); font-size: 11px; }
+.gh-cg-tip-mix b { font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
+.gh-cg-tip-mix em { font-style: normal; color: var(--text-dim); text-align: right; font-variant-numeric: tabular-nums; }
+.gh-cg-tip-kind { display: inline-flex; align-items: center; gap: 6px; color: var(--k); }
+.gh-cg-tip-kind i { width: 8px; height: 8px; border-radius: 2px; background: var(--k); }
+
 
 @media (prefers-reduced-motion: reduce) {
   /* reduced motion must override every animation and transition */
