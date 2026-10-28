@@ -299,3 +299,21 @@ def test_feed_contributions_reject_bad_periods_and_zones(feeds, days, zone):
 def test_feed_contributions_of_an_unknown_feed(feeds):
     with pytest.raises(NotFoundError):
         GithubActivityService(FakeGithubProvider(), feeds).feed_contributions("ghost", 28, "UTC")
+
+
+def test_contribution_day_lists_one_cell_from_the_same_read(feeds):
+    provider = FakeGithubProvider()
+    feed = GithubFeedService(feeds).create_feed(name="Org", org="acme")
+    now = utc_now()
+    provider.contributed = [
+        Contribution("bob", ContributionKind.COMMIT, "acme/core", now, title="fix: it"),
+        Contribution("ana", ContributionKind.COMMIT, "acme/core", now),
+    ]
+    service = GithubActivityService(provider, feeds)
+    grid = service.feed_contributions(feed.id, 7, "UTC")
+
+    items = service.contribution_day(feed.id, 7, "UTC", "bob", grid.until)
+    assert [(c.login, c.title) for c in items] == [("bob", "fix: it")]
+    assert provider.contribution_calls[0] == provider.contribution_calls[1]  # same window, same cache key
+    with pytest.raises(ValidationError):
+        service.contribution_day(feed.id, 7, "UTC", "bob", grid.since - timedelta(days=1))

@@ -55,6 +55,8 @@ export const api = {
   runFeed: (id) => request(`/api/github/feeds/${id}/query`, { method: "POST" }),
   feedContributions: (id, data) =>
     request(`/api/github/feeds/${id}/contributions`, json("POST", data)),
+  feedContributionDay: (id, data) =>
+    request(`/api/github/feeds/${id}/contributions/day`, json("POST", data)),
   githubEventContext: (subject) => request("/api/github/events/context", json("POST", subject)),
   queryGithub: (data) => request("/api/github/events/query", json("POST", data)),
   githubOrgRepos: (org) => request(`/api/github/orgs/${encodeURIComponent(org)}/repos`),

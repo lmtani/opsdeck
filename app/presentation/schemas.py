@@ -324,6 +324,26 @@ class GithubContributionsIn(BaseModel):
     tz: str = "UTC"  # IANA name of the browser's time zone: days are local days
 
 
+class ContributionDayIn(GithubContributionsIn):
+    """One cell of the grid: send the same days and tz as the grid's query."""
+
+    login: str = Field(min_length=1)
+    day: date
+
+
+class ContributionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    login: str
+    kind: ContributionKind
+    repo: str
+    at: datetime
+    number: int = 0
+    title: str = ""
+    url: str = ""
+    review_state: ReviewState | None = None
+
+
 class DailyContributionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

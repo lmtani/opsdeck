@@ -2,8 +2,8 @@
 // (commits on default branches, PRs and issues opened, reviews) as a grid of
 // one row per person and one column per day, under the team's daily volume.
 // Unlike the timeline it is not capped by the events API, so it reaches weeks
-// back. Kind and repo chips are client-side facets; clicking a cell drills
-// into that person's day.
+// back. Kind and repo chips are client-side facets; clicking a cell lists
+// what that person did that day and links it to the timeline.
 
 import { api } from "./api.js";
 import { escapeHtml, LOCALE } from "./ui.js";
@@ -15,6 +15,12 @@ const RANGES = [14, 28, 56];
 const RANGE_KEY = "opsdeck.github.range";
 const REPOS_SHOWN = 8;
 const TIP_MAX_ROWS = 6;
+const REVIEW_STATE_LABELS = {
+  approved: "approved",
+  changes_requested: "changes requested",
+  commented: "commented",
+  dismissed: "dismissed",
+};
 
 const DAY_FORMAT = new Intl.DateTimeFormat(LOCALE, {
   weekday: "short",
@@ -63,6 +69,15 @@ function daysBetween(since, until) {
   }
   return days;
 }
+
+const hhmm = (value) =>
+  new Date(value).toLocaleTimeString(LOCALE, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+// only github.com links are rendered as hrefs
+const safeUrl = (url) => (String(url || "").startsWith("https://github.com/") ? url : "");
 
 const isWeekend = (date) => date.getDay() === 0 || date.getDay() === 6;
 
@@ -114,6 +129,7 @@ export function createContributorsView({ container, tooltips, avatarUrl, onTimel
   const savedRange = Number(storageGet(RANGE_KEY));
   let days = RANGES.includes(savedRange) ? savedRange : 28;
   let state = freshState();
+  const dayItems = new Map(); // "login|day" -> { items, error, loading } for the current data
 
   function freshState() {
     return {
@@ -145,6 +161,7 @@ export function createContributorsView({ container, tooltips, avatarUrl, onTimel
       if (current !== seq) return;
       data = result;
       error = null;
+      dayItems.clear();
     } catch (failure) {
       if (current !== seq) return;
       error = failure;
@@ -350,7 +367,89 @@ export function createContributorsView({ container, tooltips, avatarUrl, onTimel
         <a class="btn btn-ghost btn-sm" href="${escapeHtml(search(`author:${login} created:${day}`, "pullrequests"))}" target="_blank" rel="noopener">↗ PRs</a>
         <a class="btn btn-ghost btn-sm" href="${escapeHtml(search(`author:${login} committer-date:${day}`, "commits"))}" target="_blank" rel="noopener">↗ Commits</a>
         <button type="button" class="btn btn-ghost btn-sm" data-drill="close" aria-label="Close">✕</button>
+        ${dayListHtml(login, day)}
       </div>`;
+  }
+
+  // ----- the items behind a cell -------------------------------------------
+
+  async function loadDay(login, day) {
+    const key = `${login}|${day}`;
+    if (dayItems.has(key)) return;
+    const current = seq;
+    dayItems.set(key, { loading: true });
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      const items = await api.feedContributionDay(feed.id, { days, tz, login, day });
+      if (current !== seq) return;
+      dayItems.set(key, { items });
+    } catch (failure) {
+      if (current !== seq) return;
+      dayItems.set(key, { error: failure.message });
+    }
+    if (state.selected?.login === login && state.selected?.day === day) render();
+  }
+
+  // Reviews of one PR fold into one row: replying in review threads makes
+  // a "commented" review per reply, so a busy day reads as dozens of them.
+  function groupedItems(items) {
+    const rows = [];
+    const reviews = new Map();
+    for (const item of items) {
+      if (item.kind !== "review") {
+        rows.push({ ...item, first: item.at, states: null, count: 1 });
+        continue;
+      }
+      const key = `${item.repo}#${item.number}`;
+      let row = reviews.get(key);
+      if (!row) {
+        row = { ...item, url: item.url.split("#")[0], first: item.at, states: new Map(), count: 0 };
+        reviews.set(key, row);
+        rows.push(row);
+      }
+      row.count += 1;
+      row.first = item.at; // items come newest first
+      const state = item.review_state || "commented";
+      row.states.set(state, (row.states.get(state) || 0) + 1);
+    }
+    return rows;
+  }
+
+  function itemText(row) {
+    const ref = row.number ? `#${row.number} ` : "";
+    if (row.kind === "commit") return escapeHtml(row.title || "commit");
+    if (row.kind !== "review") return `opened ${escapeHtml(ref + row.title)}`;
+    const states = [...row.states.entries()]
+      .map(
+        ([state, count]) => `${count > 1 ? `${count}× ` : ""}${REVIEW_STATE_LABELS[state] || state}`
+      )
+      .join(" · ");
+    return `reviewed ${escapeHtml(ref + row.title)} <em>${escapeHtml(states)}</em>`;
+  }
+
+  function dayListHtml(login, day) {
+    const entry = dayItems.get(`${login}|${day}`);
+    if (!entry || entry.loading) return '<p class="gh-cg-items-note">Loading what they did…</p>';
+    if (entry.error) {
+      return `<p class="gh-cg-items-note is-error">Could not list the contributions: ${escapeHtml(entry.error)}</p>`;
+    }
+    const items = entry.items.filter((item) => passes(item));
+    if (!items.length) return "";
+    const rows = groupedItems(items)
+      .map((row) => {
+        const when = row.first === row.at ? hhmm(row.at) : `${hhmm(row.first)}–${hhmm(row.at)}`;
+        const url = safeUrl(row.url);
+        return `
+          <li class="gh-cg-item">
+            <span class="gh-cg-item-time">${when}</span>
+            <span class="gh-cg-item-kind kind-${row.kind}">${escapeHtml(CONTRIBUTION_LABELS[row.kind])}</span>
+            <span class="gh-cg-item-text">${itemText(row)}</span>
+            <span class="gh-cg-item-repo">${escapeHtml(shortRepo(row.repo))}</span>
+            ${url ? `<a class="gh-cg-item-link" href="${escapeHtml(url)}" target="_blank" rel="noopener" aria-label="Open on GitHub">↗</a>` : "<span></span>"}
+          </li>`;
+      })
+      .join("");
+    return `<ul class="gh-cg-items">${rows}</ul>`;
   }
 
   const weekClass = (column, index) => (index > 0 && column.date.getDay() === 1 ? " is-week" : "");
@@ -586,7 +685,9 @@ export function createContributorsView({ container, tooltips, avatarUrl, onTimel
       const day = daysBetween(data.since, data.until)[Number(cell.dataset.cell)].key;
       const same = state.selected?.login === row.dataset.login && state.selected?.day === day;
       state.selected = same ? null : { login: row.dataset.login, day };
-      return render();
+      render();
+      if (state.selected) loadDay(state.selected.login, day);
+      return;
     }
     const drill = target.closest("[data-drill]");
     if (drill) {

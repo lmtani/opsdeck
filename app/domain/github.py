@@ -517,6 +517,10 @@ class Contribution:
     repo: str  # "org/name"
     at: datetime
     avatar: str = ""
+    number: int = 0  # the PR or issue (also the PR a review is about)
+    title: str = ""  # commit headline, or the PR / issue title
+    url: str = ""  # the commit, PR, issue or review on github.com
+    review_state: ReviewState | None = None
 
 
 @dataclass

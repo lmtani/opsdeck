@@ -369,3 +369,31 @@ def test_github_feed_contributions_route(world):
     assert client.post("/api/github/feeds/ghost/contributions", json={}).status_code == 404
     world.github.contributed = GithubError("GitHub GraphQL failed: boom")
     assert client.post(url, json={}).status_code == 502
+
+
+def test_github_feed_contribution_day_route(world):
+    client = world.client
+    feed = client.post("/api/github/feeds", json={"name": "Org", "org": "acme"}).json()
+    review = Contribution(
+        "ana",
+        ContributionKind.REVIEW,
+        "acme/core",
+        utc_now(),
+        number=7,
+        title="Add it",
+        url="https://github.com/acme/core/pull/7#pullrequestreview-1",
+        review_state=ReviewState.APPROVED,
+    )
+    world.github.contributed = [review]
+    url = f"/api/github/feeds/{feed['id']}/contributions/day"
+    today = client.post(f"/api/github/feeds/{feed['id']}/contributions", json={"days": 7}).json()["until"]
+
+    (item,) = client.post(url, json={"days": 7, "login": "ana", "day": today}).json()
+    assert (item["kind"], item["number"], item["title"], item["review_state"]) == (
+        "review",
+        7,
+        "Add it",
+        "approved",
+    )
+    assert client.post(url, json={"days": 7, "login": "ana", "day": "2000-01-01"}).status_code == 422
+    assert client.post(url, json={"days": 7, "day": today}).status_code == 422  # login is required

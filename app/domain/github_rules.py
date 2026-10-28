@@ -211,22 +211,39 @@ def contribution_kinds(spec: FeedSpec) -> set[ContributionKind]:
     return {_CONTRIBUTION_KINDS[kind] for kind in spec.event_kinds if kind in _CONTRIBUTION_KINDS}
 
 
+def _kept_contributions(contributions: list[Contribution], spec: FeedSpec):
+    """The contributions the feed's kinds and bot filter let through.
+    hide_own is ignored: the view is about everyone's volume."""
+    kinds = contribution_kinds(spec)
+    return (
+        item for item in contributions if item.kind in kinds and not (spec.hide_bots and is_bot(item.login))
+    )
+
+
 def daily_contributions(
     contributions: list[Contribution], spec: FeedSpec, zone: tzinfo, since: date, until: date
 ) -> list[DailyContribution]:
     """Contributions counted per person, local day, kind and repo, keeping
-    the days in [since, until] and what the feed's kinds and bot filter let
-    through. hide_own is ignored: the view is about everyone's volume."""
-    kinds = contribution_kinds(spec)
+    the days in [since, until] that the feed lets through."""
     counts: Counter[tuple[str, date, ContributionKind, str]] = Counter()
-    for item in contributions:
+    for item in _kept_contributions(contributions, spec):
         day = item.at.astimezone(zone).date()
-        if item.kind not in kinds or not since <= day <= until:
-            continue
-        if spec.hide_bots and is_bot(item.login):
-            continue
-        counts[(item.login, day, item.kind, item.repo)] += 1
+        if since <= day <= until:
+            counts[(item.login, day, item.kind, item.repo)] += 1
     return [
         DailyContribution(login=login, day=day, kind=kind, repo=repo, count=count)
         for (login, day, kind, repo), count in sorted(counts.items(), key=lambda pair: pair[0][:2])
     ]
+
+
+def contributions_on(
+    contributions: list[Contribution], spec: FeedSpec, zone: tzinfo, login: str, day: date
+) -> list[Contribution]:
+    """What one person contributed on one local day, newest first: the items
+    behind a cell of the contributors grid."""
+    picked = [
+        item
+        for item in _kept_contributions(contributions, spec)
+        if item.login.lower() == login.lower() and item.at.astimezone(zone).date() == day
+    ]
+    return sorted(picked, key=lambda item: item.at, reverse=True)
