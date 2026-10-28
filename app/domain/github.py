@@ -7,7 +7,7 @@ live in github_rules.py so this module stays entities and ports only.
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -501,6 +501,62 @@ class GithubActivity:
     unseen: int = 0  # events flagged is_new (saved feeds only)
 
 
+class ContributionKind(StrEnum):
+    """What counts as a contribution, as on GitHub's contribution graph."""
+
+    COMMIT = "commit"  # a commit on the default branch (merge commits excluded)
+    PR = "pr"  # a pull request opened
+    REVIEW = "review"  # a review of someone else's pull request
+    ISSUE = "issue"  # an issue opened
+
+
+@dataclass(frozen=True)
+class Contribution:
+    login: str
+    kind: ContributionKind
+    repo: str  # "org/name"
+    at: datetime
+    avatar: str = ""
+
+
+@dataclass
+class ContributionsSnapshot:
+    """One read of a feed spec's contributions since an instant, before the
+    rules bucket them by day."""
+
+    viewer: str
+    contributions: list[Contribution]
+    warnings: list[str] = field(default_factory=list)
+    quota: Quota | None = None
+    fetched_at: datetime = field(default_factory=utc_now)  # a cached snapshot keeps its read time
+
+
+@dataclass(frozen=True)
+class DailyContribution:
+    """How many contributions of one kind a person made to one repo on one
+    (local) day."""
+
+    login: str
+    day: date
+    kind: ContributionKind
+    repo: str
+    count: int
+
+
+@dataclass
+class GithubContributions:
+    """Daily contributions per person over [since, until], local days."""
+
+    since: date
+    until: date
+    counts: list[DailyContribution]
+    avatars: dict[str, str] = field(default_factory=dict)  # login -> avatar URL
+    viewer: str = ""
+    fetched_at: datetime = field(default_factory=utc_now)
+    warnings: list[str] = field(default_factory=list)
+    quota: Quota | None = None
+
+
 class GithubFeedRepository(Repository[GithubFeed]):
     """Saved feeds, by id."""
 
@@ -530,6 +586,13 @@ class GithubProvider(ABC):
     def pull_requests(self, refs: list[tuple[str, int]]) -> dict[tuple[str, int], PullRequestInfo]:
         """Current title and state of PRs given as ("org/repo", number);
         unknown refs are omitted."""
+
+    @abstractmethod
+    def contributions(self, spec: FeedSpec, since: datetime) -> ContributionsSnapshot:
+        """Contributions made since `since` to the spec's repos (or to the
+        org's repos pushed since then): commits on each default branch, PRs
+        and issues opened, reviews submitted. A repo that cannot be read
+        becomes a warning."""
 
     @abstractmethod
     def event_context(self, subject: EventSubject) -> EventContext:

@@ -9,6 +9,7 @@ from app.domain.errors import GithubNotFoundError
 from app.domain.github import (
     ActivitySnapshot,
     CodeCommentDetails,
+    ContributionsSnapshot,
     EventKind,
     EventSource,
     EventSubject,
@@ -242,6 +243,9 @@ class FakeGithubProvider(GithubProvider):
         self.prs = {}
         self.pr_calls = []
         self.contexts = {}  # EventSubject -> EventContext | Exception
+        self.contributed = []  # Contribution list, or an Exception
+        self.contribution_warnings = []
+        self.contribution_calls = []  # (spec, since)
 
     def activity(self, spec, realtime_since):
         self.activity_calls.append((spec, realtime_since))
@@ -275,6 +279,17 @@ class FakeGithubProvider(GithubProvider):
             realtime = [GithubEvent(**vars(e)) for e in self.searched]
         return ActivitySnapshot(
             viewer="alice", batches=batches, realtime=realtime, warnings=warnings, quota=self.quota
+        )
+
+    def contributions(self, spec, since):
+        self.contribution_calls.append((spec, since))
+        if isinstance(self.contributed, Exception):
+            raise self.contributed
+        return ContributionsSnapshot(
+            viewer="alice",
+            contributions=list(self.contributed),
+            warnings=list(self.contribution_warnings),
+            quota=self.quota,
         )
 
     def org_repos(self, org):

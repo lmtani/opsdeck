@@ -3,15 +3,20 @@
 Conventions shared by the event parser and the use cases (URLs, wording,
 bot logins), plus the timeline logic the use cases orchestrate: the feed's
 filters, "new since last seen", burst folding, coverage of the events API
-and the merge of real-time search results.
+and the merge of real-time search results; and the daily buckets of the
+contributors view.
 """
 
+from collections import Counter
 from dataclasses import replace
-from datetime import datetime
+from datetime import date, datetime, tzinfo
 
 from app.domain.github import (
     CodeComment,
     CodeCommentDetails,
+    Contribution,
+    ContributionKind,
+    DailyContribution,
     EventKind,
     FeedSpec,
     GithubEvent,
@@ -184,3 +189,44 @@ def merge_realtime(published: list[GithubEvent], searched: list[GithubEvent]) ->
             continue
         missing.append(event)
     return missing
+
+
+# ----- contributors view -------------------------------------------------
+
+# the feed kinds that have a contribution counterpart; the others (comments,
+# branches, releases) are not contributions on GitHub's graph
+_CONTRIBUTION_KINDS = {
+    EventKind.PUSH: ContributionKind.COMMIT,
+    EventKind.PR: ContributionKind.PR,
+    EventKind.REVIEW: ContributionKind.REVIEW,
+    EventKind.ISSUE: ContributionKind.ISSUE,
+}
+
+
+def contribution_kinds(spec: FeedSpec) -> set[ContributionKind]:
+    """The contribution kinds a feed's event kinds stand for (all when the
+    feed is not narrowed)."""
+    if not spec.event_kinds:
+        return set(ContributionKind)
+    return {_CONTRIBUTION_KINDS[kind] for kind in spec.event_kinds if kind in _CONTRIBUTION_KINDS}
+
+
+def daily_contributions(
+    contributions: list[Contribution], spec: FeedSpec, zone: tzinfo, since: date, until: date
+) -> list[DailyContribution]:
+    """Contributions counted per person, local day, kind and repo, keeping
+    the days in [since, until] and what the feed's kinds and bot filter let
+    through. hide_own is ignored: the view is about everyone's volume."""
+    kinds = contribution_kinds(spec)
+    counts: Counter[tuple[str, date, ContributionKind, str]] = Counter()
+    for item in contributions:
+        day = item.at.astimezone(zone).date()
+        if item.kind not in kinds or not since <= day <= until:
+            continue
+        if spec.hide_bots and is_bot(item.login):
+            continue
+        counts[(item.login, day, item.kind, item.repo)] += 1
+    return [
+        DailyContribution(login=login, day=day, kind=kind, repo=repo, count=count)
+        for (login, day, kind, repo), count in sorted(counts.items(), key=lambda pair: pair[0][:2])
+    ]

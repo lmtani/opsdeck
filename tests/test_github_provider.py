@@ -1,6 +1,7 @@
 """GithubApiProvider over httpx.MockTransport — no real network."""
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -509,3 +510,102 @@ def test_a_review_brings_its_line_comments_and_a_pull_its_stats():
     ]
     pages = [c.url.params["page"] for c in calls if c.url.path.endswith("/12/reviews")]
     assert pages == ["1", "2"]  # follows the Link header
+
+
+# ----- contributors view -----------------------------------------------------
+
+
+def _history_page(nodes, cursor=None):
+    page = {"hasNextPage": cursor is not None, "endCursor": cursor}
+    return {"defaultBranchRef": {"target": {"history": {"pageInfo": page, "nodes": nodes}}}}
+
+
+def _commit_node(at, login="bob"):
+    return {"committedDate": at, "parents": {"totalCount": 1}, "author": {"user": {"login": login}}}
+
+
+def test_contributions_read_histories_and_sliced_searches_once():
+    since = datetime.now(UTC) - timedelta(days=10)
+    recent = (since + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    pull = {
+        "__typename": "PullRequest",
+        "id": "PR_1",
+        "createdAt": recent,
+        "repository": {"nameWithOwner": "acme/core"},
+        "author": {"__typename": "User", "login": "bob"},
+        "reviews": {"nodes": [{"submittedAt": recent, "author": {"__typename": "User", "login": "ana"}}]},
+    }
+    queries, graphql_calls = [], []
+
+    def handler(request):
+        if request.url.path == "/user":
+            return httpx.Response(200, json=USER)
+        body = json.loads(request.content)
+        graphql_calls.append(body)
+        if "history(" in body["query"]:
+            core_page = (
+                _history_page([_commit_node(recent)])
+                if 'after: "c1"' in body["query"]
+                else _history_page([_commit_node(recent), _commit_node(recent, login="ana")], cursor="c1")
+            )
+            data = {"r0": core_page} if 'after: "c1"' in body["query"] else {"r0": core_page, "r1": None}
+            return httpx.Response(200, json={"data": data})
+        query = body["variables"]["q"]
+        queries.append(query)
+        # the PR was updated on a slice boundary: both slices return it
+        nodes = [pull] if query.startswith("is:pr") else []
+        search = {"issueCount": len(nodes), "pageInfo": {"hasNextPage": False}, "nodes": nodes}
+        return httpx.Response(200, json={"data": {"search": search}})
+
+    provider = _provider(handler)
+    spec = FeedSpec("acme", repos=("core", "gone"))
+    snapshot = provider.contributions(spec, since)
+
+    found = sorted((c.login, c.kind.value) for c in snapshot.contributions)
+    assert found == [
+        ("ana", "commit"),
+        ("ana", "review"),
+        ("bob", "commit"),
+        ("bob", "commit"),
+        ("bob", "pr"),
+    ]
+    assert snapshot.viewer == "alice"
+    assert snapshot.warnings == [
+        "Could not read the history of acme/gone: missing, empty or not visible to the token."
+    ]
+    pr_queries = [q for q in queries if q.startswith("is:pr")]
+    assert len(pr_queries) == 2 and ".." in pr_queries[0] and "updated:>=" in pr_queries[1]
+    assert all(q.endswith("repo:acme/core repo:acme/gone") for q in queries)
+    assert sum(q.startswith("is:issue created:>=") for q in queries) == 1
+
+    calls = len(graphql_calls)
+    assert provider.contributions(spec, since) is snapshot  # cached
+    assert len(graphql_calls) == calls
+
+
+def test_contributions_of_a_whole_org_read_only_repos_pushed_in_the_window():
+    since = datetime(2026, 10, 1, tzinfo=UTC)
+    history_queries = []
+
+    def handler(request):
+        if request.url.path == "/user":
+            return httpx.Response(200, json=USER)
+        if request.url.path == "/orgs/acme/repos":
+            return httpx.Response(
+                200,
+                json=[
+                    {"name": "core", "full_name": "acme/core", "pushed_at": "2026-10-20T00:00:00Z"},
+                    {"name": "old", "full_name": "acme/old", "pushed_at": "2026-09-01T00:00:00Z"},
+                ],
+            )
+        body = json.loads(request.content)
+        if "history(" in body["query"]:
+            history_queries.append(body["query"])
+            return httpx.Response(200, json={"data": {"r0": _history_page([])}})
+        search = {"issueCount": 1500, "pageInfo": {"hasNextPage": False}, "nodes": []}
+        return httpx.Response(200, json={"data": {"search": search}})
+
+    snapshot = _provider(handler).contributions(FeedSpec("acme"), since)
+    assert len(history_queries) == 1 and '"core"' in history_queries[0] and '"old"' not in history_queries[0]
+    # a search over GitHub's 1000-result cap says what is missing
+    assert snapshot.warnings and "returned 0 of 1500 items" in snapshot.warnings[0]

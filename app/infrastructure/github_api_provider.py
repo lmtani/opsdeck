@@ -1,5 +1,6 @@
 """GithubProvider backed by the GitHub REST events API, the search API
-(near real time, for recent PR activity) and GraphQL (PR titles/states).
+(near real time, for recent PR activity) and GraphQL (PR titles/states, and
+the contributors view: default-branch histories plus a PR/issue search).
 
 Authentication: a token from GITHUB_TOKEN / GH_TOKEN or,
 locally, the user's `gh auth token`. Classic PAT scopes needed:
@@ -19,7 +20,8 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 
@@ -27,6 +29,8 @@ from app.domain.common import EPOCH, parse_timestamp
 from app.domain.errors import GithubError, GithubNotFoundError
 from app.domain.github import (
     ActivitySnapshot,
+    Contribution,
+    ContributionsSnapshot,
     EventContext,
     EventSubject,
     FeedSpec,
@@ -43,12 +47,14 @@ from app.domain.github import (
 )
 from app.domain.github_rules import pull_url
 from app.infrastructure.github_event_parsing import (
+    commit_contributions,
     context_from_api,
     events_from_search_pull,
     parse_event,
     pull_number,
     pull_stats_from_api,
     review_thread,
+    search_contributions,
     thread_comment_from_api,
 )
 
@@ -81,7 +87,8 @@ CLASSIC_HINT = "A classic token with the `repo` and `read:org` scopes is the sim
 FINE_GRAINED_HINT = (
     "A fine-grained token only works for one owner: set Resource owner to the organization,"
     " give it access to the repositories you follow and grant Organization permissions →"
-    " Events (read) and Repository permissions → Metadata (read) and Pull requests (read)."
+    " Events (read) and Repository permissions → Metadata, Pull requests and, for the contributors"
+    " view, Contents (read)."
     " The organization may have to approve it, or may not allow fine-grained tokens at all."
 )
 _ORG_SCOPES = {"read:org", "write:org", "admin:org"}
@@ -136,6 +143,52 @@ query($q: String!, $after: String) {
 """.replace("PAGE_SIZE", str(SEARCH_PAGE_SIZE))  # a placeholder keeps the GraphQL braces unescaped
 
 
+# Contributors view. GitHub's own contribution graph (contributionsCollection)
+# hides other people's private-repo work, so contributions are read from the
+# repositories: each default branch's history (a few repos per query) and a
+# search for PRs updated and issues created in the window.
+HISTORY_REPOS_PER_QUERY = 10
+HISTORY_MAX_PAGES = 10  # per repo, 100 commits each
+CONTRIBUTION_WORKERS = 6
+HISTORY_PART = """
+r{index}: repository(owner: {owner}, name: {name}) {{
+  defaultBranchRef {{ target {{ ... on Commit {{
+    history(first: 100, since: {since}{after}) {{
+      pageInfo {{ hasNextPage endCursor }}
+      nodes {{ committedDate parents {{ totalCount }} author {{ user {{ login avatarUrl }} }} }}
+    }}
+  }} }} }}
+}}"""
+# GitHub serves at most 1000 results per search, page after page; the PR
+# search is cut into slices of `updated` time, read in parallel
+CONTRIBUTION_SEARCH_MAX_PAGES = 10
+CONTRIBUTION_SEARCH_SLICE = timedelta(days=7)
+CONTRIBUTION_SEARCH_QUERY = """
+query($q: String!, $after: String) {
+  search(query: $q, type: ISSUE, first: 100, after: $after) {
+    issueCount
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      __typename
+      ... on PullRequest {
+        id
+        createdAt
+        repository { nameWithOwner }
+        author { __typename login avatarUrl }
+        reviews(first: 50) { nodes { submittedAt author { __typename login avatarUrl } } }
+      }
+      ... on Issue {
+        id
+        createdAt
+        repository { nameWithOwner }
+        author { __typename login avatarUrl }
+      }
+    }
+  }
+}
+"""
+
+
 def resolve_github_token(configured: str = "") -> str:
     """The configured token, else the token of the local `gh` login, else ""."""
     if configured:
@@ -163,6 +216,7 @@ class GithubApiProvider(GithubProvider):
         repo_pages: int = 2,
         pr_cache_seconds: float = 300.0,
         search_cache_seconds: float = 60.0,
+        contributions_cache_seconds: float = 600.0,
         clock: Callable[[], float] = time.monotonic,
     ):
         self._token_source = token_source
@@ -182,6 +236,8 @@ class GithubApiProvider(GithubProvider):
         self._pr_cache_seconds = pr_cache_seconds
         self._search_cache_seconds = search_cache_seconds
         self._search_cache: dict[str, tuple[float, list[dict]]] = {}
+        self._contributions_cache_seconds = contributions_cache_seconds
+        self._contributions_cache: dict[tuple, tuple[float, ContributionsSnapshot]] = {}
         self._clock = clock
         self._lock = threading.Lock()
         self._etags: dict[str, tuple[str, object, bool]] = {}
@@ -349,6 +405,124 @@ class GithubApiProvider(GithubProvider):
             errors = "; ".join(e.get("message", "") for e in body.get("errors", []))
             raise GithubError(f"GitHub GraphQL failed: {errors or 'no data'}")
         return data
+
+    def contributions(self, spec: FeedSpec, since: datetime) -> ContributionsSnapshot:
+        key = (spec.org, spec.repos, since.astimezone(UTC).isoformat())
+        cached = self._contributions_cache.get(key)
+        if cached and cached[0] > self._clock():
+            return cached[1]
+        viewer = self.viewer()
+        if spec.repos:
+            repos = list(spec.repos)
+        else:  # only repos pushed in the window can have new commits
+            repos = [
+                repo.name for repo in self.org_repos(spec.org) if repo.pushed_at and repo.pushed_at >= since
+            ]
+        chunks = [
+            repos[i : i + HISTORY_REPOS_PER_QUERY] for i in range(0, len(repos), HISTORY_REPOS_PER_QUERY)
+        ]
+        queries = contribution_search_queries(spec.org, list(spec.repos), since, self._clock_now())
+        with ThreadPoolExecutor(max_workers=CONTRIBUTION_WORKERS) as pool:
+            histories = [pool.submit(self._history_contributions, spec.org, chunk, since) for chunk in chunks]
+            searches = [pool.submit(self._search_nodes, query) for query in queries]
+            history_results = [future.result() for future in histories]
+            search_results = [future.result() for future in searches]
+
+        contributions: list[Contribution] = []
+        missing: list[str] = []
+        unlinked = 0
+        for found, chunk_missing, chunk_unlinked in history_results:
+            contributions += found
+            missing += chunk_missing
+            unlinked += chunk_unlinked
+        nodes: dict[str, dict] = {}  # by node id: a PR updated on a slice boundary is found twice
+        warnings: list[str] = []
+        for query, (found_nodes, total) in zip(queries, search_results, strict=True):
+            nodes.update((node.get("id") or str(id(node)), node) for node in found_nodes)
+            if total > len(found_nodes):
+                warnings.append(
+                    f"Search returned {len(found_nodes)} of {total} items for `{query}`: some PRs, reviews"
+                    " or issues are missing. Pick a shorter period or fewer repositories."
+                )
+        for node in nodes.values():
+            contributions += search_contributions(node, since)
+        if missing and spec.repos:
+            warnings.insert(
+                0,
+                f"Could not read the history of {', '.join(missing)}:"
+                " missing, empty or not visible to the token.",
+            )
+        if unlinked:
+            warnings.append(
+                f"{unlinked} commit{'s' if unlinked > 1 else ''} left out:"
+                " the author email is not linked to a GitHub account."
+            )
+        snapshot = ContributionsSnapshot(viewer, contributions, warnings, self.quota())
+        with self._lock:
+            self._contributions_cache[key] = (self._clock() + self._contributions_cache_seconds, snapshot)
+        return snapshot
+
+    def _clock_now(self) -> datetime:
+        return datetime.now(UTC)
+
+    def _history_contributions(
+        self, org: str, repos: list[str], since: datetime
+    ) -> tuple[list[Contribution], list[str], int]:
+        """Commits on the default branch of a few repos, one query per page
+        round; returns them, the repos that could not be read and how many
+        commits had no linked account."""
+        contributions: list[Contribution] = []
+        missing: list[str] = []
+        unlinked = 0
+        cursors: dict[str, str | None] = dict.fromkeys(repos)
+        pages = 0
+        while cursors and pages < HISTORY_MAX_PAGES:
+            pages += 1
+            names = list(cursors)
+            parts = [
+                HISTORY_PART.format(
+                    index=index,
+                    owner=json.dumps(org),
+                    name=json.dumps(name),
+                    since=json.dumps(_search_stamp(since)),
+                    after=f", after: {json.dumps(cursors[name])}" if cursors[name] else "",
+                )
+                for index, name in enumerate(names)
+            ]
+            data = self._graphql("query { " + " ".join(parts) + " }", {})
+            for index, name in enumerate(names):
+                history = _history(data.get(f"r{index}"))
+                if history is None:
+                    missing.append(f"{org}/{name}")
+                    cursors.pop(name)
+                    continue
+                found, no_account = commit_contributions(f"{org}/{name}", history.get("nodes") or [])
+                contributions += found
+                unlinked += no_account
+                page = history.get("pageInfo") or {}
+                if page.get("hasNextPage"):
+                    cursors[name] = page.get("endCursor")
+                else:
+                    cursors.pop(name)
+        return contributions, missing, unlinked
+
+    def _search_nodes(self, query: str) -> tuple[list[dict], int]:
+        """The PRs or issues one search finds (up to GitHub's 1000), and how
+        many it says there are."""
+        nodes: list[dict] = []
+        after = None
+        total = 0
+        for _ in range(CONTRIBUTION_SEARCH_MAX_PAGES):
+            search = (
+                self._graphql(CONTRIBUTION_SEARCH_QUERY, {"q": query, "after": after}).get("search") or {}
+            )
+            total = int(search.get("issueCount") or 0)
+            nodes.extend(node for node in search.get("nodes") or [] if node)
+            page = search.get("pageInfo") or {}
+            if not page.get("hasNextPage"):
+                break
+            after = page.get("endCursor")
+        return nodes, total
 
     def org_repos(self, org: str) -> list[GithubRepo]:
         try:
@@ -604,10 +778,11 @@ def _message(response: httpx.Response) -> str:
     return (body.get("message") if isinstance(body, dict) else "") or response.reason_phrase
 
 
-def search_queries(org: str, repos: list[str], since: str) -> list[str]:
-    """Search queries for PRs updated since `since`: one for the whole org,
-    or repo qualifiers (OR-ed by GitHub) packed under SEARCH_QUERY_MAX."""
-    base = f"is:pr updated:>={since}"
+def search_queries(org: str, repos: list[str], since: str, base: str = "") -> list[str]:
+    """Search queries for PRs updated since `since` (or for `base`): one for
+    the whole org, or repo qualifiers (OR-ed by GitHub) packed under
+    SEARCH_QUERY_MAX."""
+    base = base or f"is:pr updated:>={since}"
     if not repos:
         return [f"org:{org} {base}"]
     queries, current = [], base
@@ -619,3 +794,32 @@ def search_queries(org: str, repos: list[str], since: str) -> list[str]:
         current += qualifier
     queries.append(current)
     return queries
+
+
+def _search_stamp(at: datetime) -> str:
+    return at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def contribution_search_queries(org: str, repos: list[str], since: datetime, now: datetime) -> list[str]:
+    """The searches of the contributors view: PRs updated since `since` (a
+    review updates its PR), in CONTRIBUTION_SEARCH_SLICE slices of update
+    time so they can run in parallel and each stays under the 1000-result
+    cap, plus issues created since `since`."""
+    queries = []
+    start = since
+    while True:
+        end = start + CONTRIBUTION_SEARCH_SLICE
+        span = f">={_search_stamp(start)}" if end >= now else f"{_search_stamp(start)}..{_search_stamp(end)}"
+        queries += search_queries(org, repos, "", base=f"is:pr updated:{span}")
+        if end >= now:
+            break
+        start = end
+    return queries + search_queries(org, repos, "", base=f"is:issue created:>={_search_stamp(since)}")
+
+
+def _history(repository: Any) -> dict | None:
+    """The default branch's history of a GraphQL repository node; None when
+    the repo is missing, invisible or empty."""
+    branch = (repository or {}).get("defaultBranchRef") if isinstance(repository, dict) else None
+    target = (branch or {}).get("target") or {}
+    return target.get("history")

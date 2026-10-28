@@ -1,7 +1,17 @@
-"""Pure GitHub rules: feed spec, burst folding, coverage, real-time merge."""
+"""Pure GitHub rules: feed spec, burst folding, coverage, real-time merge,
+daily contributions."""
 
-from app.domain.github import FeedSpec
-from app.domain.github_rules import collapse_bursts, coverage_start, merge_realtime
+from datetime import UTC, date
+from zoneinfo import ZoneInfo
+
+from app.domain.github import Contribution, ContributionKind, FeedSpec
+from app.domain.github_rules import (
+    collapse_bursts,
+    contribution_kinds,
+    coverage_start,
+    daily_contributions,
+    merge_realtime,
+)
 from tests.fakes import (
     make_batch,
     make_code_comment,
@@ -99,3 +109,51 @@ def test_searched_events_fill_the_gap_until_the_published_ones_arrive():
         make_review("p3", "approved", at="2026-10-22T10:00:00Z"),
     ]
     assert [e.id for e in merge_realtime(other, searched)] == ["s1", "s2", "s3"]
+
+
+# ----- contributors view -----------------------------------------------------
+
+
+def _contribution(login, kind, at, repo="acme/core"):
+    return Contribution(login, ContributionKind(kind), repo, ts(at))
+
+
+def test_daily_contributions_count_per_local_day_kind_and_repo():
+    zone = ZoneInfo("America/Sao_Paulo")  # UTC-3
+    items = [
+        _contribution("bob", "commit", "2026-10-22T02:00:00Z"),  # still Oct 21 in São Paulo
+        _contribution("bob", "commit", "2026-10-22T12:00:00Z"),
+        _contribution("bob", "commit", "2026-10-22T13:00:00Z"),
+        _contribution("bob", "commit", "2026-10-22T14:00:00Z", repo="acme/api"),
+        _contribution("ana", "review", "2026-10-22T15:00:00Z"),
+        _contribution("ana", "review", "2026-10-30T15:00:00Z"),  # after `until`
+    ]
+    counts = daily_contributions(items, FeedSpec("acme"), zone, date(2026, 10, 21), date(2026, 10, 22))
+    assert [(c.login, str(c.day), c.kind.value, c.repo, c.count) for c in counts] == [
+        ("ana", "2026-10-22", "review", "acme/core", 1),
+        ("bob", "2026-10-21", "commit", "acme/core", 1),
+        ("bob", "2026-10-22", "commit", "acme/core", 2),
+        ("bob", "2026-10-22", "commit", "acme/api", 1),
+    ]
+
+
+def test_daily_contributions_follow_the_feed_kinds_and_bot_filter():
+    items = [
+        _contribution("bob", "commit", "2026-10-22T12:00:00Z"),
+        _contribution("bob", "pr", "2026-10-22T12:00:00Z"),
+        _contribution("bob", "review", "2026-10-22T12:00:00Z"),
+        _contribution("dependabot[bot]", "pr", "2026-10-22T12:00:00Z"),
+    ]
+    day = date(2026, 10, 22)
+    narrowed = FeedSpec("acme", event_kinds=("push", "pr", "comment"))
+    assert {(c.login, c.kind.value) for c in daily_contributions(items, narrowed, UTC, day, day)} == {
+        ("bob", "commit"),
+        ("bob", "pr"),
+    }
+    with_bots = FeedSpec("acme", hide_bots=False)
+    assert len(daily_contributions(items, with_bots, UTC, day, day)) == 4
+
+
+def test_feed_kinds_without_a_contribution_counterpart_leave_nothing():
+    assert contribution_kinds(FeedSpec("acme", event_kinds=("comment", "release"))) == set()
+    assert contribution_kinds(FeedSpec("acme")) == set(ContributionKind)

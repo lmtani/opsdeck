@@ -1,10 +1,16 @@
 """GitHub feed use cases with in-memory fakes — no network."""
 
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
 import pytest
 
 from app.application.github import GithubActivityService, GithubFeedService
+from app.domain.common import utc_now
 from app.domain.errors import GithubError, GithubNotFoundError, NotFoundError, ValidationError
 from app.domain.github import (
+    Contribution,
+    ContributionKind,
     EventContext,
     EventSubject,
     FeedSpec,
@@ -251,3 +257,45 @@ def test_event_context_comes_from_the_provider_and_a_missing_item_is_not_found(f
     provider.contexts[subject] = GithubError("GitHub rate limit exhausted")
     with pytest.raises(GithubError):
         service.event_context(subject)
+
+
+# ----- contributors view -----------------------------------------------------
+
+
+def test_feed_contributions_read_local_days_since_midnight(feeds):
+    provider = FakeGithubProvider()
+    feed = GithubFeedService(feeds).create_feed(name="Org", org="acme", hide_bots=True)
+    now = utc_now()
+    provider.contributed = [
+        Contribution("bob", ContributionKind.COMMIT, "acme/core", now, "https://a/bob"),
+        Contribution("bob", ContributionKind.REVIEW, "acme/core", now),
+        Contribution("renovate[bot]", ContributionKind.PR, "acme/core", now),
+    ]
+    provider.contribution_warnings = ["3 commits left out"]
+
+    result = GithubActivityService(provider, feeds).feed_contributions(feed.id, 14, "America/Sao_Paulo")
+
+    zone = ZoneInfo("America/Sao_Paulo")
+    assert result.until == now.astimezone(zone).date()
+    assert result.since == result.until - timedelta(days=13)
+    ((spec, since),) = provider.contribution_calls
+    assert spec == feed.spec
+    assert since == datetime.combine(result.since, time.min, tzinfo=zone)  # local midnight
+    assert [(c.login, c.kind.value, c.count) for c in result.counts] == [
+        ("bob", "commit", 1),
+        ("bob", "review", 1),
+    ]
+    assert result.avatars == {"bob": "https://a/bob"}
+    assert result.warnings == ["3 commits left out"] and result.viewer == "alice"
+
+
+@pytest.mark.parametrize(("days", "zone"), [(0, "UTC"), (93, "UTC"), (28, "Mars/Olympus"), (28, "../etc")])
+def test_feed_contributions_reject_bad_periods_and_zones(feeds, days, zone):
+    feed = GithubFeedService(feeds).create_feed(name="Org", org="acme")
+    with pytest.raises(ValidationError):
+        GithubActivityService(FakeGithubProvider(), feeds).feed_contributions(feed.id, days, zone)
+
+
+def test_feed_contributions_of_an_unknown_feed(feeds):
+    with pytest.raises(NotFoundError):
+        GithubActivityService(FakeGithubProvider(), feeds).feed_contributions("ghost", 28, "UTC")
