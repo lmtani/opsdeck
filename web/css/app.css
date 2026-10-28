@@ -2007,6 +2007,42 @@ body {
   .search input:focus { width: 190px; }
 }
 
+/* ----- loading (github.js) ------------------------------------------------ */
+
+/* a thin indeterminate bar along the top of the results panel */
+.results { position: relative; }
+.gh-progress { position: absolute; top: 0; left: 0; right: 0; height: 3px; overflow: hidden; border-radius: var(--radius) var(--radius) 0 0; }
+.gh-progress::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 35%; background: linear-gradient(90deg, transparent, var(--accent), transparent); box-shadow: 0 0 10px var(--glow); animation: progress-slide 1.1s var(--ease) infinite; }
+@keyframes progress-slide { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+.btn-spin { display: inline-block; }
+.btn.is-busy .btn-spin { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* skeleton shaped like the timeline; one fixed gradient sweeps every block */
+.gh-skel {
+  display: block;
+  border-radius: 4px;
+  background: linear-gradient(100deg, var(--bg-elev) 40%, color-mix(in srgb, var(--bg-elev) 45%, var(--border-strong)) 50%, var(--bg-elev) 60%) fixed;
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+.gh-skeleton { padding-top: 6px; }
+.gh-skel-day { width: 170px; height: 14px; margin: 12px 0 10px; }
+.gh-skel-hist { display: flex; align-items: flex-end; gap: 2px; height: 34px; padding-bottom: 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.gh-skel-hist i { flex: 1; height: var(--h); border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--bg-elev) 70%, var(--border-strong)); animation: skel-breathe 1.6s ease-in-out infinite; animation-delay: calc(var(--i) * 30ms); }
+.gh-skel-row { display: flex; align-items: center; gap: 10px; height: 37px; border-bottom: 1px solid var(--border); animation: fade-in 260ms ease both; animation-delay: calc(var(--i) * 45ms); }
+.gh-skel-time { width: 38px; height: 10px; }
+.gh-skel-avatar { width: 22px; height: 22px; border-radius: 50%; }
+.gh-skel-chip { width: 64px; height: 16px; border-radius: 5px; }
+.gh-skel-line { width: var(--w); height: 11px; }
+@keyframes skel-breathe { 50% { opacity: 0.45; } }
+
+/* an event a refresh brought: slides in with a short accent glow */
+.gh-event.is-arrived { animation: arrive 900ms var(--ease) both; }
+.gh-event.is-arrived .gh-row { animation: arrive-glow 2.4s ease-out both; }
+@keyframes arrive { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@keyframes arrive-glow { from { background: color-mix(in srgb, var(--accent) 22%, transparent); } }
+
 /* ----- contributors mode (github-contributors.js) ---------------------- */
 
 .gh-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; }
@@ -2018,6 +2054,13 @@ body {
 
 .gh-contributors { --cell-empty: color-mix(in srgb, var(--border) 55%, var(--bg-panel)); }
 .gh-cg-loading { margin: 14px 0 10px; font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); }
+.gh-cg-loading b { margin-left: 8px; font-weight: 500; color: var(--accent); font-variant-numeric: tabular-nums; }
+.gh-cg-skeleton .gh-cg-strip { margin-top: 22px; }
+.gh-cg-skel-row { height: 28px; }
+.gh-cg-skel-name { width: var(--w, 60%); height: 12px; margin-left: 6px; }
+.gh-cg-skel-cell { height: 18px; border-radius: 3px; background: var(--cell-empty); animation: cell-wave 1.8s ease-in-out infinite; animation-delay: calc(var(--d) * 45ms); }
+.gh-cg-skel-bar { align-self: end; height: var(--h); border-radius: 2px 2px 0 0; background: var(--cell-empty); animation: cell-wave 1.8s ease-in-out infinite; animation-delay: calc(var(--d) * 45ms); }
+@keyframes cell-wave { 0%, 100% { background: var(--cell-empty); } 50% { background: color-mix(in srgb, var(--accent) 30%, var(--cell-empty)); } }
 .gh-cg-source { margin: 12px 0 4px; max-width: 90ch; font-size: 12.5px; color: var(--text-dim); }
 .gh-cg-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; margin: 12px 0 4px; }
 .gh-cg-label { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-dim); }
