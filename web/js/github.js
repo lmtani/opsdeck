@@ -12,6 +12,7 @@ import { api } from "./api.js";
 import { makeSortable } from "./dnd.js";
 import { createContextDrawer, hasContext } from "./github-context.js";
 import { createContributorsView, dayKey } from "./github-contributors.js";
+import { createNetworkView } from "./github-network.js";
 import {
   announce,
   anyNotifying,
@@ -62,7 +63,13 @@ let autoTimer = null;
 let polling = true; // the "live" switch, saved in the backend settings
 let drawer = null; // side panel with an event's full context (github-context.js)
 let contributors = null; // the contributors mode (github-contributors.js)
-let mode = "timeline"; // or "contributors"
+let network = null; // the network mode (github-network.js)
+let mode = "timeline"; // or "contributors" | "network"
+
+// The mode showing a feed's daily contributions, if any: both read the same
+// data, so the period switch drives both and only the visible one reloads.
+const activeGrid = () =>
+  mode === "contributors" ? contributors : mode === "network" ? network : null;
 
 // ----- small helpers ---------------------------------------------------
 
@@ -427,7 +434,7 @@ function openFeed(feed) {
   showSkeleton();
   loadActivity({ initial: true });
   contributors.setTimelineStart(null);
-  if (mode === "contributors") contributors.open(feed);
+  activeGrid()?.open(feed);
 }
 
 async function loadActivity({ initial = false } = {}) {
@@ -487,7 +494,7 @@ function timelineStart(activity) {
 }
 
 function renderMeta() {
-  if (mode === "contributors") return renderContributorsMeta();
+  if (mode !== "timeline") return renderGridMeta();
   const { feed, activity } = view;
   if (!activity) return;
   const total = activity.events.length;
@@ -510,15 +517,16 @@ function renderMeta() {
   document.getElementById("gh-meta").textContent = parts.join(" · ");
 }
 
-function renderContributorsMeta() {
+function renderGridMeta() {
   const feed = view.feed;
-  if (!feed) return;
-  const meta = contributors.meta();
+  const grid = activeGrid();
+  if (!feed || !grid) return;
+  const meta = grid.meta();
   const parts = [feed.org, feed.repos.length ? plural(feed.repos.length, "repo") : "whole org"];
   if (!meta) {
-    parts.push(contributors.busy ? "querying…" : "failed");
+    parts.push(grid.busy ? "querying…" : "failed");
   } else {
-    parts.push(`${plural(meta.total, "contribution")} in ${contributors.days} days`);
+    parts.push(`${plural(meta.total, "contribution")} in ${grid.days} days`);
     parts.push(
       `updated ${new Date(meta.fetched_at).toLocaleTimeString(LOCALE, { hourCycle: "h23" })}`
     );
@@ -532,18 +540,19 @@ function renderContributorsMeta() {
 function setMode(next) {
   mode = next;
   storageSet(MODE_KEY, next);
-  const contributorsMode = next === "contributors";
+  const timelineMode = next === "timeline";
   document.querySelectorAll("#gh-mode [data-mode]").forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.mode === next));
   });
-  document.getElementById("gh-timeline-view").hidden = contributorsMode;
-  document.getElementById("gh-contributors").hidden = !contributorsMode;
-  document.getElementById("gh-range").hidden = !contributorsMode;
-  document.getElementById("gh-auto-btn").hidden = contributorsMode;
-  document.getElementById("gh-seen-btn").hidden = contributorsMode;
+  document.getElementById("gh-timeline-view").hidden = !timelineMode;
+  document.getElementById("gh-contributors").hidden = next !== "contributors";
+  document.getElementById("gh-network").hidden = next !== "network";
+  document.getElementById("gh-range").hidden = timelineMode;
+  document.getElementById("gh-auto-btn").hidden = !timelineMode;
+  document.getElementById("gh-seen-btn").hidden = !timelineMode;
   renderRange();
   hideTooltip();
-  if (contributorsMode && view.feed) contributors.open(view.feed);
+  if (view.feed) activeGrid()?.open(view.feed);
   if (view.feed) renderMeta();
 }
 
@@ -553,16 +562,21 @@ function renderRange() {
   });
 }
 
-// A contributors cell opened in the timeline: that person on that day.
-function openPersonDay({ login, day }) {
-  view.refinements = [
-    ...view.refinements.filter((r) => isFeedField(r.field)),
-    { field: "actor", value: login },
-    { field: "day", value: day },
-  ];
+// The timeline refined by what another mode points at (a person, a repo, a
+// person's day); the feed's own repo and kind refinements stay.
+function openRefined(refinements) {
+  view.refinements = [...view.refinements.filter((r) => isFeedField(r.field)), ...refinements];
   setMode("timeline");
   renderActivity();
   window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// A contributors cell opened in the timeline: that person on that day.
+function openPersonDay({ login, day }) {
+  openRefined([
+    { field: "actor", value: login },
+    { field: "day", value: day },
+  ]);
 }
 
 function renderKinds() {
@@ -1607,7 +1621,8 @@ async function checkToken() {
 
 export async function initGithub() {
   const contributorsBox = document.getElementById("gh-contributors");
-  setupTooltips(document.getElementById("gh-timeline"), contributorsBox);
+  const networkBox = document.getElementById("gh-network");
+  setupTooltips(document.getElementById("gh-timeline"), contributorsBox, networkBox);
   contributors = createContributorsView({
     container: contributorsBox,
     tooltips: tooltipContent,
@@ -1619,16 +1634,36 @@ export async function initGithub() {
       if (mode === "contributors") renderMeta();
     },
   });
+  network = createNetworkView({
+    container: networkBox,
+    tooltips: tooltipContent,
+    avatarUrl,
+    onTimeline: openRefined,
+    onContributors: (login) => {
+      setMode("contributors");
+      contributors.focus(login);
+    },
+    onBusy: (on) => setBusy("network", on),
+    onLoaded: () => {
+      hideTooltip();
+      if (mode === "network") renderMeta();
+    },
+    hideTooltip,
+  });
   document.querySelectorAll("#gh-mode [data-mode]").forEach((button) => {
     button.addEventListener("click", () => setMode(button.dataset.mode));
   });
   document.querySelectorAll("#gh-range [data-days]").forEach((button) => {
     button.addEventListener("click", () => {
-      contributors.setDays(Number(button.dataset.days));
+      const next = Number(button.dataset.days);
+      for (const grid of [contributors, network]) {
+        grid.setDays(next, { reload: grid === activeGrid() });
+      }
       renderRange();
     });
   });
-  setMode(storageGet(MODE_KEY) === "contributors" ? "contributors" : "timeline");
+  const savedMode = storageGet(MODE_KEY);
+  setMode(["contributors", "network"].includes(savedMode) ? savedMode : "timeline");
   drawer = createContextDrawer({
     labels: { kind: KIND_LABELS, state: STATE_LABELS },
     avatarUrl,
@@ -1677,7 +1712,7 @@ export async function initGithub() {
   });
 
   document.getElementById("gh-refresh-btn").addEventListener("click", () => {
-    if (mode === "contributors") contributors.refresh();
+    activeGrid()?.refresh();
     loadActivity();
   });
   document.getElementById("gh-seen-btn").addEventListener("click", () => {

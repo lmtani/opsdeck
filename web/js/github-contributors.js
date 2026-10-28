@@ -191,6 +191,17 @@ export function createContributorsView({
     }
   }
 
+  // Drop the data (and a read in flight) without rendering: the next open reads again.
+  function forget() {
+    data = null;
+    seq++;
+    if (loading) {
+      loading = false;
+      clearInterval(elapsedTimer);
+      onBusy?.(false);
+    }
+  }
+
   // ----- rendering -----------------------------------------------------
 
   function render() {
@@ -778,18 +789,24 @@ export function createContributorsView({
     refresh: () => load({ quiet: true }),
     close() {
       feed = null;
-      data = null;
-      seq++;
+      forget();
     },
     get days() {
       return days;
     },
-    setDays(next) {
+    /** Change the period; `reload` false (the grid is hidden) just forgets the data. */
+    setDays(next, { reload = true } = {}) {
       if (!RANGES.includes(next) || next === days) return;
       days = next;
       storageSet(RANGE_KEY, String(next));
       state.selected = null;
-      load();
+      if (reload) load();
+      else forget();
+    },
+    /** Highlight one person's row (their share of the team's volume). */
+    focus(login) {
+      state.focus = login;
+      if (feed && data) render();
     },
     /** The first day the timeline has events for (null: unknown). */
     setTimelineStart(date) {
