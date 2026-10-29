@@ -4,6 +4,7 @@
 
 import { api } from "./api.js";
 import { makeSortable } from "./dnd.js";
+import { registerShare } from "./share.js";
 import { hideTooltip, setupTooltips, tooltipContent } from "./tooltip.js";
 import {
   closeModal,
@@ -1148,6 +1149,14 @@ export async function initLogs() {
     itemSelector: ".filter-item",
     axis: "list",
     onReorder: persistFilterOrder,
+  });
+
+  registerShare({
+    type: "filter",
+    button: document.getElementById("filter-share-btn"),
+    list: document.getElementById("filter-list"),
+    itemSelector: ".filter-item",
+    reload: loadFilters,
   });
 
   document.getElementById("filter-new-btn").addEventListener("click", () => openFilterModal());

@@ -8,9 +8,11 @@ contributions) are built explicitly.
 
 from dataclasses import asdict
 from datetime import date, datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.application.sharing import Bundle, ImportAction, ImportStatus, ItemType
 from app.domain.github import (
     ContributionKind,
     EventKind,
@@ -390,3 +392,77 @@ class GithubRepoOut(BaseModel):
     description: str = ""
     pushed_at: datetime | None = None
     url: str = ""
+
+
+# ----- Sharing ----------------------------------------------------------------
+
+MAX_BUNDLE_ITEMS = 500
+
+
+class BundleModel(BaseModel):
+    """The export file. Items stay plain objects: each one is checked on its
+    own (POST /api/share/check), so one bad item does not reject the file."""
+
+    opsdeck: int = 0  # format version; 0 = not an OpsDeck export
+    exported_at: datetime | None = None
+    links: list[dict[str, Any]] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
+    log_filters: list[dict[str, Any]] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
+    github_feeds: list[dict[str, Any]] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
+
+    def to_bundle(self) -> Bundle:
+        return Bundle(
+            links=self.links,
+            log_filters=self.log_filters,
+            github_feeds=self.github_feeds,
+            version=self.opsdeck,
+            exported_at=self.exported_at,
+        )
+
+    @classmethod
+    def from_bundle(cls, bundle: Bundle) -> "BundleModel":
+        return cls(
+            opsdeck=bundle.version,
+            exported_at=bundle.exported_at,
+            links=bundle.links,
+            log_filters=bundle.log_filters,
+            github_feeds=bundle.github_feeds,
+        )
+
+
+class ShareExportIn(BaseModel):
+    links: list[str] = Field(default_factory=list)
+    filters: list[str] = Field(default_factory=list)
+    feeds: list[str] = Field(default_factory=list)
+
+
+class ImportCheckOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    type: ItemType
+    index: int
+    name: str
+    detail: str
+    status: ImportStatus
+    error: str = ""
+    command: str = ""
+
+
+class ImportChoiceIn(BaseModel):
+    type: ItemType
+    index: int = Field(ge=0)
+    action: ImportAction
+
+
+class ShareImportIn(BaseModel):
+    bundle: BundleModel
+    choices: list[ImportChoiceIn]
+
+
+class ImportedItemOut(BaseModel):
+    type: ItemType
+    id: str
+
+
+class ImportResultOut(BaseModel):
+    created: list[ImportedItemOut]
+    replaced: list[ImportedItemOut]

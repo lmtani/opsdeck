@@ -21,6 +21,7 @@ from app.application.github import GithubActivityService, GithubFeedService
 from app.application.links import CommandService, ImageService, LinkService
 from app.application.logs import LogFilterService, LogQueryService
 from app.application.settings import SettingsService
+from app.application.sharing import SharingService
 from app.config import Settings
 from app.domain.github import GithubFeedRepository
 from app.domain.links import CommandRunner, LinkRepository
@@ -98,15 +99,17 @@ def build_services(data_dir: Path = DATA_DIR, settings: Settings | None = None) 
         github_feed_repository,
     ) = _build_repositories(data_dir, settings)
     github_provider = GithubApiProvider(token_source=lambda: resolve_github_token(settings.github_token))
+    images = ImageService(LocalImageStore(data_dir / "images"))
     return Services(
         links=LinkService(link_repository),
         commands=CommandService(_build_command_runner(settings), link_repository),
         filters=LogFilterService(filter_repository),
         logs=LogQueryService(_build_log_provider(settings), filter_repository),
         settings=SettingsService(settings_repository),
-        images=ImageService(LocalImageStore(data_dir / "images")),
+        images=images,
         github_feeds=GithubFeedService(github_feed_repository),
         github=GithubActivityService(github_provider, github_feed_repository),
+        sharing=SharingService(link_repository, filter_repository, github_feed_repository, images),
     )
 
 

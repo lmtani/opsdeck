@@ -2358,6 +2358,73 @@ body {
 
 
 
+/* ----- sharing: export / import (share.js) ---------------------------- */
+
+.share-pop { position: fixed; z-index: 95; min-width: 250px; padding: 6px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--bg-elev); box-shadow: var(--shadow); animation: pop-in 200ms var(--ease); }
+.share-pop button { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 9px 12px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text); font: 500 13px var(--font-body); text-align: left; cursor: pointer; }
+.share-pop button:hover, .share-pop button:focus-visible { background: var(--accent-soft); color: var(--accent); outline: none; }
+.share-pop button > span { display: flex; flex-direction: column; gap: 2px; }
+.share-pop small { font-size: 11px; font-weight: 400; color: var(--text-dim); }
+.share-pop .share-icon { width: 16px; height: 16px; margin-top: 1px; flex-shrink: 0; }
+
+/* picking items to export: the list's own items, a ring on the picked ones */
+.is-picking [data-id] { cursor: copy; }
+.is-picking [data-id]:not(.is-picked) { filter: opacity(0.5) saturate(0.6); }
+.is-picking .is-picked { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 4px 18px var(--glow); }
+.is-picking .card-actions, .is-picking .filter-edit { display: none; }
+.is-picking .is-picked .filter-name::before, .is-picking .is-picked .card-title::before { content: "✓ "; color: var(--accent); }
+
+.share-bar { position: fixed; z-index: 90; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; width: max-content; max-width: calc(100vw - 32px); padding: 10px 12px 10px 16px; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--bg-elev); box-shadow: var(--shadow), 0 0 0 4px var(--accent-soft); animation: share-bar-in 260ms var(--ease); }
+.share-bar[hidden] { display: none; }
+.share-bar-count { font: 500 12.5px var(--font-mono); color: var(--text); min-width: 150px; }
+.share-bar-gap { width: 12px; }
+@keyframes share-bar-in { from { opacity: 0; transform: translate(-50%, 12px); } }
+@media (max-width: 640px) {
+  .share-bar { flex-wrap: wrap; justify-content: flex-end; }
+  .share-bar-count { flex-basis: 100%; }
+  .share-bar-gap { display: none; }
+}
+
+/* an item an import just created or replaced: rises in again with a glow */
+.is-imported { animation: card-rise 460ms var(--ease) both, share-imported 2.4s ease-out; animation-delay: 0s; }
+@keyframes share-imported { from { box-shadow: 0 0 0 2px var(--ok), 0 0 24px color-mix(in srgb, var(--ok) 45%, transparent); } }
+
+.share-modal { max-width: 640px; }
+.share-drop { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 30px 16px; margin-bottom: 10px; border: 1.5px dashed var(--border-strong); border-radius: var(--radius); color: var(--text-dim); font-size: 13px; text-align: center; transition: border-color var(--speed) ease, background var(--speed) ease; }
+.share-drop strong { color: var(--text); font-size: 14px; }
+.share-drop.is-over { border-color: var(--accent); background: var(--accent-soft); }
+.share-drop-mark { color: var(--accent); }
+.share-drop-mark .share-icon { width: 26px; height: 26px; display: block; }
+.share-drop kbd { padding: 1px 5px; border: 1px solid var(--border-strong); border-radius: 4px; font: 11px var(--font-mono); }
+.share-link-btn { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
+.share-summary { margin: -8px 0 12px; font: 12px var(--font-mono); color: var(--text-dim); }
+.share-review { display: flex; flex-direction: column; gap: 14px; max-height: 56vh; overflow-y: auto; margin-bottom: 14px; padding-right: 4px; }
+.share-group-title { margin: 0 0 6px; font: 600 12px var(--font-display); letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-dim); }
+.share-group-title span { color: var(--accent); }
+.share-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-elev); transition: opacity var(--speed) ease; }
+.share-row + .share-row { margin-top: 6px; }
+.share-row.is-off { opacity: 0.55; }
+.share-row.is-invalid { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+.share-pick { display: flex; align-items: flex-start; gap: 10px; flex: 1; min-width: 0; cursor: pointer; }
+.share-pick input { margin-top: 3px; accent-color: var(--accent); }
+.share-row.is-invalid .share-pick { cursor: default; }
+.share-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.share-name { font-weight: 600; font-size: 13.5px; }
+.share-detail { font: 11px var(--font-mono); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-warn { font-size: 12px; color: var(--warn); }
+.share-warn code { font: 11.5px var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
+.share-error { font-size: 12px; color: var(--danger); }
+.share-side { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.share-badge { padding: 2px 8px; border: 1px solid var(--accent-soft); border-radius: 999px; font: 10.5px var(--font-mono); color: var(--accent); }
+.share-badge.is-invalid { border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); }
+.share-conflict { font: 10.5px var(--font-mono); color: var(--warn); }
+.share-seg button { padding: 3px 9px; font-size: 11px; }
+.share-back { margin-right: auto; }
+@media (max-width: 640px) {
+  .share-row { flex-direction: column; }
+  .share-side { padding-left: 24px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* reduced motion must override every animation and transition */
   *, *::before, *::after {

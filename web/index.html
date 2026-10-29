@@ -68,6 +68,7 @@
             <span class="search-icon">⌕</span>
             <input type="search" id="link-search" placeholder="Search shortcuts…" autocomplete="off" />
           </div>
+          <button type="button" class="btn btn-ghost" id="link-share-btn" title="Export or import shortcuts">⇅ Share</button>
           <button type="button" class="btn btn-primary" id="link-new-btn">+ New link</button>
         </div>
       </div>
@@ -89,7 +90,10 @@
         <aside class="filters-panel">
           <div class="panel-head">
             <h2 class="panel-title">Saved filters</h2>
-            <button type="button" class="btn btn-ghost btn-sm" id="filter-new-btn">+ New</button>
+            <span class="panel-head-actions">
+              <button type="button" class="btn btn-ghost btn-sm" id="filter-share-btn" title="Export or import filters" aria-label="Export or import filters">⇅</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="filter-new-btn">+ New</button>
+            </span>
           </div>
           <div class="filter-list" id="filter-list"></div>
           <div class="empty empty-sm" id="filters-empty" hidden>
@@ -152,6 +156,7 @@
             <h2 class="panel-title">Feeds</h2>
             <span class="panel-head-actions">
               <button type="button" class="btn btn-ghost btn-sm gh-poll is-on" id="gh-poll-btn" aria-pressed="true">● live</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="gh-feed-share-btn" title="Export or import feeds" aria-label="Export or import feeds">⇅</button>
               <button type="button" class="btn btn-ghost btn-sm" id="gh-feed-new-btn">+ New</button>
             </span>
           </div>
@@ -389,6 +394,24 @@
         <button type="button" class="btn btn-danger" id="confirm-yes">Remove</button>
       </div>
     </div>
+  </div>
+
+  <div class="modal-backdrop" id="share-modal" hidden>
+    <div class="modal share-modal" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
+      <h2 class="modal-title" id="share-modal-title">Import</h2>
+      <div id="share-body"></div>
+      <input type="file" id="share-file" accept=".json,application/json" hidden />
+    </div>
+  </div>
+
+  <div class="share-bar" id="share-bar" role="toolbar" aria-label="Export" hidden>
+    <span class="share-bar-count" id="share-bar-count"></span>
+    <button type="button" class="btn btn-ghost btn-sm" id="share-all-btn">all</button>
+    <button type="button" class="btn btn-ghost btn-sm" id="share-none-btn">none</button>
+    <span class="share-bar-gap"></span>
+    <button type="button" class="btn btn-ghost btn-sm" id="share-cancel-btn" title="Esc">Cancel</button>
+    <button type="button" class="btn btn-ghost btn-sm" id="share-copy-btn" title="Copy the export to paste it elsewhere">⧉ Copy</button>
+    <button type="button" class="btn btn-primary btn-sm" id="share-save-btn">↓ Save file</button>
   </div>
 
   <aside class="ctx-drawer" id="gh-drawer" aria-label="Event context" hidden>

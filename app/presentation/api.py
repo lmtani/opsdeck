@@ -11,6 +11,7 @@ from app.application.github import GithubActivityService, GithubFeedService
 from app.application.links import CommandService, ImageService, LinkService
 from app.application.logs import LogFilterService, LogQueryService
 from app.application.settings import SettingsService
+from app.application.sharing import ImportChoice, SharingService
 from app.domain.errors import ExternalServiceError, NotFoundError, ValidationError
 from app.domain.github import EventSubject, FeedSpec
 from app.domain.logs import LogQuery
@@ -30,6 +31,7 @@ class Services:
         images: ImageService,
         github_feeds: GithubFeedService,
         github: GithubActivityService,
+        sharing: SharingService,
     ):
         self.links = links
         self.commands = commands
@@ -39,6 +41,7 @@ class Services:
         self.images = images
         self.github_feeds = github_feeds
         self.github = github
+        self.sharing = sharing
 
 
 def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
@@ -248,6 +251,27 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
         content = await file.read()
         url = services.images.save_image(content, file.filename or "")
         return schemas.ImageOut(url=url)
+
+    # ----- Sharing (export / import of cards, filters and feeds) ----------
+
+    @app.post("/api/share/export", response_model=schemas.BundleModel)
+    def export_bundle(body: schemas.ShareExportIn):
+        bundle = services.sharing.export(body.links, body.filters, body.feeds)
+        return schemas.BundleModel.from_bundle(bundle)
+
+    @app.post("/api/share/check", response_model=list[schemas.ImportCheckOut])
+    def check_bundle(body: schemas.BundleModel):
+        checks = services.sharing.check(body.to_bundle())
+        return [schemas.ImportCheckOut.model_validate(check) for check in checks]
+
+    @app.post("/api/share/import", response_model=schemas.ImportResultOut)
+    def import_bundle(body: schemas.ShareImportIn):
+        choices = [ImportChoice(c.type, c.index, c.action) for c in body.choices]
+        result = services.sharing.import_bundle(body.bundle.to_bundle(), choices)
+        return schemas.ImportResultOut(
+            created=[schemas.ImportedItemOut(type=t, id=i) for t, i in result.created],
+            replaced=[schemas.ImportedItemOut(type=t, id=i) for t, i in result.replaced],
+        )
 
     # ----- Static frontend (mounted last so /api keeps precedence) ------
 
