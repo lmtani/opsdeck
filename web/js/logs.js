@@ -5,6 +5,7 @@
 import { api } from "./api.js";
 import { makeSortable } from "./dnd.js";
 import { registerShare } from "./share.js";
+import { hideTooltip, setupTooltips, tooltipContent } from "./tooltip.js";
 import {
   closeModal,
   confirmDanger,
@@ -53,6 +54,15 @@ const FRESHNESS_LABELS = {
   "1d": "24 h",
   "3d": "3 days",
   "7d": "7 days",
+};
+
+const FRESHNESS_MS = {
+  "15m": 15 * 60_000,
+  "1h": 60 * 60_000,
+  "6h": 6 * 60 * 60_000,
+  "1d": 24 * 60 * 60_000,
+  "3d": 3 * 24 * 60 * 60_000,
+  "7d": 7 * 24 * 60 * 60_000,
 };
 
 // freshness → ISO-8601 duration accepted by the Logs Explorer timeRange param
@@ -494,11 +504,13 @@ function showResultsPanel() {
 }
 
 function showSkeleton() {
+  showHistogramSkeleton();
   const entries = document.getElementById("entries");
   entries.innerHTML = Array.from({ length: 7 }, () => '<div class="skeleton"></div>').join("");
 }
 
 function showError(error) {
+  clearHistogram();
   document.getElementById("entries").innerHTML =
     `<div class="error-box"><strong>Query failed</strong>${messageHtml(error.message)}</div>`;
 }
@@ -536,8 +548,9 @@ async function loadFilter() {
   try {
     const result = await query;
     if (view !== current) return; // the user moved on while this ran
+    view.queriedAt = Date.now();
     lastEntries = result.entries;
-    paintEntries();
+    paintEntries({ rise: true });
     renderFieldChips();
     const refined = refinements.length ? ` · ${plural(refinements.length, "refinement")}` : "";
     setHeader(
@@ -617,7 +630,7 @@ async function loadTrace() {
   }
 
   lastEntries = sortAscending(entries);
-  paintEntries();
+  paintEntries({ rise: true });
   renderFieldChips();
   const hits = [...new Set(lastEntries.map((item) => item.project))];
   const resources = new Set(lastEntries.map((item) => item.resource_type)).size;
@@ -682,9 +695,208 @@ function openInGcp() {
   }
 }
 
+// ----- severity histogram ------------------------------------------------
+
+const HIST_BINS = 60;
+const HIST_MIN_SPAN_MS = 1000;
+// severities folded into the four bands the bars are stacked by, from the
+// bottom up; the tooltip still lists each severity on its own
+const SEVERITY_BANDS = [
+  { band: "error", label: "error", severities: ["EMERGENCY", "ALERT", "CRITICAL", "ERROR"] },
+  { band: "warning", label: "warning", severities: ["WARNING"] },
+  { band: "info", label: "info", severities: ["NOTICE", "INFO"] },
+  { band: "other", label: "debug / default", severities: ["DEBUG", "DEFAULT"] },
+];
+const SEVERITY_ORDER = SEVERITY_BANDS.flatMap((item) => item.severities);
+const BAND_OF = Object.fromEntries(
+  SEVERITY_BANDS.flatMap((item) => item.severities.map((severity) => [severity, item.band]))
+);
+const bandOf = (severity) => BAND_OF[severity] || "other";
+
+// Placeholder in the histogram's place while a query runs: breathing bars
+// with a made-up profile, plus the axis and legend lines so nothing jumps.
+function showHistogramSkeleton() {
+  hideTooltip();
+  const node = document.getElementById("log-hist");
+  const bars = Array.from(
+    { length: HIST_BINS },
+    (_, index) =>
+      `<i style="--i:${index};--h:${Math.round(18 + 70 * Math.abs(Math.sin(index * 0.37) * Math.cos(index * 0.11)))}%"></i>`
+  ).join("");
+  node.innerHTML = `
+    <div class="log-hist-skel" role="status" aria-label="Loading entries">${bars}</div>
+    <div class="log-hist-axis"><span class="gh-skel log-hist-skel-line"></span></div>
+    <div class="log-hist-legend"><span class="gh-skel log-hist-skel-line"></span></div>`;
+  node.hidden = false;
+}
+
+function clearHistogram() {
+  hideTooltip();
+  const node = document.getElementById("log-hist");
+  node.hidden = true;
+  node.innerHTML = "";
+}
+
+// The span the bars cover. A filter covers its freshness window up to the
+// query time (stretched when an explicit timestamp clause reaches outside it);
+// a trace covers its own entries, which usually sit within seconds. The
+// provider returns the newest `limit` entries, so a query that hits its limit
+// read nothing before its oldest entry: the bars start there (`clipped`)
+// instead of drawing that gap as silence.
+function histogramRange(times) {
+  const oldest = Math.min(...times);
+  const newest = Math.max(...times);
+  let start = oldest;
+  let end = newest;
+  let clipped = false;
+  if (view.mode === "filter") {
+    const queriedAt = view.queriedAt || Date.now();
+    const freshness = FRESHNESS_MS[view.filter.freshness];
+    end = Math.max(queriedAt, newest);
+    clipped = times.length >= view.filter.limit;
+    if (freshness && !clipped) start = Math.min(queriedAt - freshness, oldest);
+  }
+  if (end - start < HIST_MIN_SPAN_MS) {
+    const middle = (start + end) / 2;
+    start = middle - HIST_MIN_SPAN_MS / 2;
+    end = middle + HIST_MIN_SPAN_MS / 2;
+  }
+  return { start, end, clipped };
+}
+
+function histTimeLabel(ms, span) {
+  const date = new Date(ms);
+  if (span <= 2 * 60_000) {
+    return date.toLocaleTimeString(LOCALE, {
+      hourCycle: "h23",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  }
+  if (span <= 24 * 60 * 60_000) {
+    return date.toLocaleTimeString(LOCALE, {
+      hourCycle: "h23",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+  return date.toLocaleString(LOCALE, {
+    hourCycle: "h23",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function histBinTooltip(bin, label) {
+  const severities = SEVERITY_ORDER.filter((severity) => bin.severities.has(severity))
+    .concat([...bin.severities.keys()].filter((severity) => !SEVERITY_ORDER.includes(severity)))
+    .map(
+      (severity) =>
+        `<span class="gh-tip-kind lsev-${bandOf(severity)}">${escapeHtml(severity)} ${bin.severities.get(severity)}</span>`
+    )
+    .join("");
+  return (
+    `<div class="gh-tooltip-main">${escapeHtml(label)} · ${plural(bin.count, "entry", "entries")}</div>` +
+    (severities ? `<div class="gh-tip-kinds">${severities}</div>` : "") +
+    (bin.count ? '<div class="gh-tooltip-sub">click to jump to these entries</div>' : "")
+  );
+}
+
+// Entries per slice of the queried window, stacked by severity band, so the
+// errors and warnings stand out against the volume. `rise` grows the columns
+// in, for the result of a fresh query (not for a re-render of the same one).
+function renderHistogram(entries, { rise = false } = {}) {
+  const node = document.getElementById("log-hist");
+  const dated = entries
+    .map((entry, index) => ({ entry, index, time: Date.parse(entry.timestamp) }))
+    .filter((item) => Number.isFinite(item.time));
+  if (!dated.length) {
+    clearHistogram();
+    return;
+  }
+
+  const { start, end, clipped } = histogramRange(dated.map((item) => item.time));
+  const span = end - start;
+  const width = span / HIST_BINS;
+  const bins = Array.from({ length: HIST_BINS }, () => ({
+    count: 0,
+    bands: new Map(),
+    severities: new Map(),
+    first: null,
+  }));
+  const totals = new Map();
+  for (const { entry, index, time } of dated) {
+    const bin = bins[Math.min(HIST_BINS - 1, Math.floor((time - start) / width))];
+    const band = bandOf(entry.severity);
+    bin.count += 1;
+    bin.bands.set(band, (bin.bands.get(band) || 0) + 1);
+    bin.severities.set(entry.severity, (bin.severities.get(entry.severity) || 0) + 1);
+    if (bin.first === null || index < bin.first) bin.first = index;
+    totals.set(band, (totals.get(band) || 0) + 1);
+  }
+  const peak = Math.max(...bins.map((bin) => bin.count));
+
+  const columns = bins
+    .map((bin, index) => {
+      const segments = SEVERITY_BANDS.filter(({ band }) => bin.bands.has(band))
+        .map(({ band }) => {
+          const height = (bin.bands.get(band) / peak) * 100;
+          return `<span class="log-hist-seg lsev-${band}" style="height:${height.toFixed(2)}%"></span>`;
+        })
+        .join("");
+      return (
+        `<div class="log-hist-col${bin.count ? " has-entries" : ""}" style="--i:${index}" data-tooltip data-hist="${index}">` +
+        `<span class="log-hist-stack">${segments}</span></div>`
+      );
+    })
+    .join("");
+
+  const ticks = [0, 0.25, 0.5, 0.75, 1]
+    .map((fraction) => `<span>${escapeHtml(histTimeLabel(start + fraction * span, span))}</span>`)
+    .join("");
+  const legend = SEVERITY_BANDS.filter(({ band }) => totals.has(band))
+    .map(
+      ({ band, label }) =>
+        `<span class="log-hist-key lsev-${band}"><i></i>${totals.get(band)} ${escapeHtml(label)}</span>`
+    )
+    .join("");
+  const clip = clipped
+    ? `<span class="log-hist-clip">limit of ${view.filter.limit} entries reached: ` +
+      `only since ${escapeHtml(absoluteTime(new Date(start).toISOString()))}</span>`
+    : "";
+
+  node.innerHTML = `
+    <div class="log-hist-bars${rise ? " is-rising" : ""}">${columns}</div>
+    <div class="log-hist-axis">${ticks}</div>
+    <div class="log-hist-legend">${legend}${clip}</div>`;
+  node.hidden = false;
+
+  node.querySelectorAll("[data-hist]").forEach((column) => {
+    const index = Number(column.dataset.hist);
+    const from = start + index * width;
+    const label = `${histTimeLabel(from, span)}–${histTimeLabel(from + width, span)}`;
+    tooltipContent.set(column, () => histBinTooltip(bins[index], label));
+    if (bins[index].first !== null) {
+      column.addEventListener("click", () => jumpToEntry(bins[index].first));
+    }
+  });
+}
+
+function jumpToEntry(index) {
+  const row = document.getElementById("entries").children[index];
+  if (!row) return;
+  row.scrollIntoView({ block: "center", behavior: "smooth" });
+  row.classList.remove("is-flash");
+  void row.offsetWidth; // restart the animation when the same row is picked again
+  row.classList.add("is-flash");
+}
+
 // ----- entry rendering ---------------------------------------------------
 
-function paintEntries() {
+function paintEntries({ rise = false } = {}) {
+  renderHistogram(lastEntries, { rise });
   if (view.mode === "trace") {
     renderEntries(lastEntries, {
       relative: true,
@@ -932,6 +1144,7 @@ async function persistFilterOrder(ids) {
 }
 
 export async function initLogs() {
+  setupTooltips(document.getElementById("log-hist"));
   makeSortable(document.getElementById("filter-list"), {
     itemSelector: ".filter-item",
     axis: "list",
