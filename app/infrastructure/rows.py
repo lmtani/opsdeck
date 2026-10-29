@@ -2,8 +2,8 @@
 
 Rows hold only plain values (str, int, bool, list of str): enums become
 their values and datetimes ISO-8601 UTC text on the way out, and both are
-rebuilt on the way in. The feed's lists stay lists here; the MySQL
-repository joins them with commas itself. Settings are name/value pairs,
+rebuilt on the way in. The feed's lists and a source's config stay a list
+and a dict here; the MySQL repository turns them into text itself. Settings are name/value pairs,
 text in MySQL, so their booleans are read back from either form.
 """
 
@@ -12,7 +12,7 @@ from dataclasses import asdict, fields
 from app.domain.common import EPOCH, format_timestamp, parse_timestamp
 from app.domain.github import EventKind, GithubFeed
 from app.domain.links import Link, LinkKind
-from app.domain.logs import Freshness, LogFilter
+from app.domain.logs import Freshness, LogFilter, LogSource, LogSourceKind
 from app.domain.settings import AppSettings
 
 
@@ -51,6 +51,21 @@ def row_to_filter(row: dict) -> LogFilter:
     values["freshness"] = Freshness(values.get("freshness") or Freshness.H1)
     values["created_at"] = _created_at(row)
     return LogFilter(**values)
+
+
+def source_to_row(source: LogSource) -> dict:
+    row = asdict(source)
+    row["kind"] = source.kind.value
+    row["created_at"] = _text(source.created_at)
+    return row
+
+
+def row_to_source(row: dict) -> LogSource:
+    values = dict(row)
+    values["kind"] = LogSourceKind(values["kind"])
+    values["config"] = dict(values.get("config") or {})
+    values["created_at"] = _created_at(row)
+    return LogSource(**values)
 
 
 def feed_to_row(feed: GithubFeed) -> dict:

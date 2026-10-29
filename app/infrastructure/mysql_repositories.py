@@ -1,10 +1,11 @@
 """MySQL implementations of the repository interfaces."""
 
+import json
 from dataclasses import asdict
 
 from app.domain.github import GithubFeed, GithubFeedRepository
 from app.domain.links import Link, LinkRepository
-from app.domain.logs import LogFilter, LogFilterRepository
+from app.domain.logs import LogFilter, LogFilterRepository, LogSource, LogSourceRepository
 from app.domain.settings import AppSettings, SettingsRepository
 from app.infrastructure.mysql_connection import MySqlConnectionFactory
 from app.infrastructure.rows import (
@@ -14,6 +15,8 @@ from app.infrastructure.rows import (
     row_to_feed,
     row_to_filter,
     row_to_link,
+    row_to_source,
+    source_to_row,
     values_to_settings,
 )
 
@@ -84,7 +87,7 @@ class MySqlLinkRepository(LinkRepository):
 
 class MySqlLogFilterRepository(LogFilterRepository):
     _COLUMNS = (
-        "id, name, project, expression, freshness, `limit`, description, line_format, position, created_at"
+        "id, name, source_id, expression, freshness, `limit`, description, line_format, position, created_at"
     )
 
     def __init__(self, factory: MySqlConnectionFactory):
@@ -108,13 +111,13 @@ class MySqlLogFilterRepository(LogFilterRepository):
         with self._factory.connect() as connection, connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO log_filters"
-                " (id, name, project, expression, freshness, `limit`,"
+                " (id, name, source_id, expression, freshness, `limit`,"
                 "  description, line_format, position, created_at)"
-                " VALUES (%(id)s, %(name)s, %(project)s, %(expression)s,"
+                " VALUES (%(id)s, %(name)s, %(source_id)s, %(expression)s,"
                 "         %(freshness)s, %(limit)s, %(description)s,"
                 "         %(line_format)s, %(position)s, %(created_at)s)"
                 " ON DUPLICATE KEY UPDATE"
-                "  name = VALUES(name), project = VALUES(project),"
+                "  name = VALUES(name), source_id = VALUES(source_id),"
                 "  expression = VALUES(expression), freshness = VALUES(freshness),"
                 "  `limit` = VALUES(`limit`), description = VALUES(description),"
                 "  line_format = VALUES(line_format), position = VALUES(position)",
@@ -124,6 +127,47 @@ class MySqlLogFilterRepository(LogFilterRepository):
     def delete(self, filter_id: str) -> bool:
         with self._factory.connect() as connection, connection.cursor() as cursor:
             cursor.execute("DELETE FROM log_filters WHERE id = %s", (filter_id,))
+            return cursor.rowcount > 0
+
+
+class MySqlLogSourceRepository(LogSourceRepository):
+    """config is a JSON object in a text column."""
+
+    _COLUMNS = "id, name, kind, config, created_at"
+
+    def __init__(self, factory: MySqlConnectionFactory):
+        self._factory = factory
+
+    @staticmethod
+    def _from_sql(row: dict) -> LogSource:
+        return row_to_source({**row, "config": json.loads(row["config"] or "{}")})
+
+    def list_all(self) -> list[LogSource]:
+        with self._factory.connect() as connection, connection.cursor() as cursor:
+            cursor.execute(f"SELECT {self._COLUMNS} FROM log_sources ORDER BY created_at, id")
+            return [self._from_sql(row) for row in cursor.fetchall()]
+
+    def get(self, source_id: str) -> LogSource | None:
+        with self._factory.connect() as connection, connection.cursor() as cursor:
+            cursor.execute(f"SELECT {self._COLUMNS} FROM log_sources WHERE id = %s", (source_id,))
+            row = cursor.fetchone()
+            return self._from_sql(row) if row else None
+
+    def save(self, source: LogSource) -> None:
+        row = source_to_row(source)
+        row["config"] = json.dumps(row["config"], ensure_ascii=False, sort_keys=True)
+        with self._factory.connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO log_sources (id, name, kind, config, created_at)"
+                " VALUES (%(id)s, %(name)s, %(kind)s, %(config)s, %(created_at)s)"
+                " ON DUPLICATE KEY UPDATE"
+                "  name = VALUES(name), kind = VALUES(kind), config = VALUES(config)",
+                row,
+            )
+
+    def delete(self, source_id: str) -> bool:
+        with self._factory.connect() as connection, connection.cursor() as cursor:
+            cursor.execute("DELETE FROM log_sources WHERE id = %s", (source_id,))
             return cursor.rowcount > 0
 
 

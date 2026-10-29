@@ -1,4 +1,4 @@
-"""LogProvider backed by the Cloud Logging API client.
+"""LogProvider for GCP log sources, backed by the Cloud Logging API client.
 
 Authenticates with Application Default Credentials (the file at
 GOOGLE_APPLICATION_CREDENTIALS, else the well-known location), which need
@@ -7,19 +7,23 @@ client is created per queried project, so no GOOGLE_CLOUD_PROJECT is needed: use
 credentials from `gcloud auth application-default login` carry none.
 Credentials are refreshed before the first query, so expired or revoked ones
 fail at once with instructions instead of after a minute of gRPC retries.
-`describe` returns the equivalent gcloud command for the UI copy button.
+`describe` returns the equivalent gcloud command for the UI copy button and
+`console_url` the query in the Logs Explorer. Refinements become Cloud
+Logging clauses here (`expression`), so the frontend never writes the syntax.
 """
 
 import re
+import shlex
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from itertools import islice
 from pathlib import Path
+from urllib.parse import quote
 
 from app.domain.errors import LogProviderError
-from app.domain.logs import LogEntry, LogProvider, LogQuery
-from app.infrastructure.log_entry_parsing import describe_gcloud_command, parse_entry
+from app.domain.logs import Freshness, LogEntry, LogProvider, LogQuery, LogSource, Refinement, RefinementValue
+from app.infrastructure.log_entry_parsing import parse_entry
 
 SCOPES = ("https://www.googleapis.com/auth/logging.read",)
 LOGIN_HINT = (
@@ -33,6 +37,74 @@ LOGIN_HINT = (
 _DURATION_TOKEN = re.compile(r"(\d+)([smhdw])", re.IGNORECASE)
 _DURATION_FULL = re.compile(r"^(?:\d+[smhdw])+$", re.IGNORECASE)
 _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+
+# a path segment that needs no quotes in the filter language
+_PLAIN_SEGMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+# freshness -> ISO-8601 duration of the Logs Explorer's timeRange parameter
+_TIME_RANGE = {
+    Freshness.M15: "PT15M",
+    Freshness.H1: "PT1H",
+    Freshness.H6: "PT6H",
+    Freshness.D1: "P1D",
+    Freshness.D3: "P3D",
+    Freshness.D7: "P7D",
+}
+
+
+def _quote(text: str) -> str:
+    """A filter-language string literal: quotes and backslashes escaped."""
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _field(path: tuple[str, ...]) -> str:
+    """labels."k8s-pod/app": segments that are not identifiers are quoted."""
+    return ".".join(part if _PLAIN_SEGMENT.match(part) else _quote(part) for part in path)
+
+
+def _literal(value: RefinementValue) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int | float):
+        return str(value)
+    return _quote(value)
+
+
+def refinement_clause(refinement: Refinement) -> str:
+    operator = "!=" if refinement.negate else "="
+    return f"{_field(refinement.path)}{operator}{_literal(refinement.value)}"
+
+
+def refined_expression(query: LogQuery) -> str:
+    """The saved expression, parenthesized, ANDed with each refinement."""
+    clauses = " AND ".join(refinement_clause(item) for item in query.refinements)
+    if not clauses:
+        return query.expression
+    return f"({query.expression}) AND {clauses}" if query.expression else clauses
+
+
+def gcloud_args(project: str, query: LogQuery) -> list[str]:
+    args = ["gcloud", "logging", "read"]
+    expression = refined_expression(query)
+    if expression:
+        args.append(expression)
+    args += [
+        f"--project={project}",
+        f"--limit={query.limit}",
+        f"--freshness={query.freshness}",
+        "--order=desc",
+    ]
+    return args
+
+
+def logs_explorer_url(project: str, query: LogQuery) -> str:
+    return (
+        "https://console.cloud.google.com/logs/query"
+        f";query={quote(refined_expression(query), safe='')}"
+        f";timeRange={_TIME_RANGE[query.freshness]}"
+        f"?project={quote(project, safe='')}"
+    )
 
 
 def _freshness_to_timedelta(freshness: str) -> timedelta:
@@ -92,17 +164,24 @@ class CloudLoggingApiProvider(LogProvider):
         except OSError:
             return False
 
-    def describe(self, query: LogQuery) -> str:
-        return describe_gcloud_command(query)
+    def expression(self, query: LogQuery) -> str:
+        return refined_expression(query)
 
-    def query(self, query: LogQuery) -> list[LogEntry]:
+    def describe(self, source: LogSource, query: LogQuery) -> str:
+        return shlex.join(gcloud_args(source.config["project"], query))
+
+    def console_url(self, source: LogSource, query: LogQuery) -> str:
+        return logs_explorer_url(source.config["project"], query)
+
+    def query(self, source: LogSource, query: LogQuery) -> list[LogEntry]:
         from google.api_core import exceptions as api_exceptions
 
-        client = self._client(query.project)
+        project = source.config["project"]
+        client = self._client(project)
         filter_ = self._build_filter(query)
         try:
             iterator = client.list_entries(
-                resource_names=[f"projects/{query.project}"],
+                resource_names=[f"projects/{project}"],
                 filter_=filter_,
                 order_by="timestamp desc",
                 page_size=min(query.limit, 1000),
@@ -110,13 +189,13 @@ class CloudLoggingApiProvider(LogProvider):
             return [parse_entry(entry.to_api_repr()) for entry in islice(iterator, query.limit)]
         except api_exceptions.PermissionDenied as error:
             raise LogProviderError(
-                f"No permission to read the logs of project '{query.project}'. Grant"
+                f"No permission to read the logs of project '{project}'. Grant"
                 " roles/logging.viewer on it to the account behind the credentials, and"
                 f" check that the Cloud Logging API is enabled there. ({_first_line(error)})"
             ) from None
         except api_exceptions.NotFound:
             raise LogProviderError(
-                f"Project '{query.project}' was not found, or the credentials cannot see it."
+                f"Project '{project}' was not found, or the credentials cannot see it."
             ) from None
         except api_exceptions.InvalidArgument as error:
             raise LogProviderError(
@@ -182,7 +261,7 @@ class CloudLoggingApiProvider(LogProvider):
 
     @staticmethod
     def _build_filter(query: LogQuery) -> str:
-        expression = query.expression.strip()
+        expression = refined_expression(query)
         # gcloud only applies --freshness when the filter has no timestamp
         # clause of its own; mirror that so saved filters behave the same.
         if "timestamp" in expression:

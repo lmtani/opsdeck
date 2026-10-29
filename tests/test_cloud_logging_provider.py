@@ -10,10 +10,12 @@ from google.api_core import exceptions as api_exceptions
 from google.auth import exceptions as auth_exceptions
 
 from app.domain.errors import LogProviderError
-from app.domain.logs import LogQuery
+from app.domain.logs import LogQuery, Refinement
 from app.infrastructure.cloud_logging_provider import CloudLoggingApiProvider
+from tests.fakes import gcp_source
 
-QUERY = LogQuery(project="proj-x", expression='severity>="ERROR"', limit=2)
+SOURCE = gcp_source("proj-x")
+QUERY = LogQuery(expression='severity>="ERROR"', limit=2)
 
 
 class _Entry:
@@ -56,11 +58,11 @@ def _provider(client=None, credentials_error=None):
 def test_the_client_gets_the_queried_project_so_no_env_project_is_needed():
     client = FakeClient([_Entry("a"), _Entry("b"), _Entry("c")])
     provider, made = _provider(client)
-    entries = provider.query(QUERY)
+    entries = provider.query(SOURCE, QUERY)
     assert [e.summary for e in entries] == ["a", "b"]  # limit applied
     assert made == [("proj-x", "creds")]
     assert client.calls[0]["resource_names"] == ["projects/proj-x"]
-    provider.query(QUERY)
+    provider.query(SOURCE, QUERY)
     assert len(made) == 1  # one client per project, reused
 
 
@@ -90,7 +92,7 @@ def test_the_client_gets_the_queried_project_so_no_env_project_is_needed():
 def test_credential_problems_fail_fast_with_instructions(error, expected):
     provider, made = _provider(credentials_error=error)
     with pytest.raises(LogProviderError, match=expected) as raised:
-        provider.query(QUERY)
+        provider.query(SOURCE, QUERY)
     assert made == []  # failed before any API call
     if not isinstance(error, (auth_exceptions.TransportError, PermissionError)):
         assert "gcloud auth application-default login" in str(raised.value)
@@ -117,7 +119,7 @@ def test_credential_problems_fail_fast_with_instructions(error, expected):
 def test_api_errors_become_readable(error, expected):
     provider, _ = _provider(FakeClient(error=error))
     with pytest.raises(LogProviderError, match=expected):
-        provider.query(QUERY)
+        provider.query(SOURCE, QUERY)
 
 
 def test_client_creation_errors_are_reported():
@@ -126,7 +128,7 @@ def test_client_creation_errors_are_reported():
 
     provider = CloudLoggingApiProvider(load_credentials=lambda: "creds", make_client=make)
     with pytest.raises(LogProviderError, match="Could not create the Cloud Logging client"):
-        provider.query(QUERY)
+        provider.query(SOURCE, QUERY)
 
 
 def test_availability_follows_the_credentials_file(tmp_path):
@@ -135,3 +137,56 @@ def test_availability_follows_the_credentials_file(tmp_path):
     present = tmp_path / "adc.json"
     present.write_text("{}")
     assert CloudLoggingApiProvider(credentials_file=str(present)).is_available() is True
+
+
+# ----- the Cloud Logging query language -----------------------------------------
+
+
+def test_refinements_become_clauses_with_quoted_paths_and_literals():
+    provider = CloudLoggingApiProvider()
+    query = LogQuery(
+        expression="severity>=ERROR",
+        refinements=(
+            Refinement(path=("resource", "type"), value="gae_app"),
+            Refinement(path=("labels", "k8s-pod/app"), value='say "hi" \\ bye', negate=True),
+            Refinement(path=("httpRequest", "status"), value=500),
+            Refinement(path=("jsonPayload", "ok"), value=False),
+        ),
+    )
+    assert provider.expression(query) == (
+        '(severity>=ERROR) AND resource.type="gae_app"'
+        ' AND labels."k8s-pod/app"!="say \\"hi\\" \\\\ bye"'
+        " AND httpRequest.status=500 AND jsonPayload.ok=false"
+    )
+    assert provider.expression(LogQuery(expression="x")) == "x"
+    only_refined = LogQuery(refinements=(Refinement(path=("severity",), value="ERROR"),))
+    assert provider.expression(only_refined) == 'severity="ERROR"'
+
+
+def test_the_query_sent_carries_refinements_and_the_freshness_cutoff():
+    client = FakeClient()
+    provider, _ = _provider(client)
+    provider.query(SOURCE, QUERY.refined([Refinement(path=("severity",), value="ERROR")]))
+    sent = client.calls[0]["filter_"]
+    assert sent.startswith('((severity>="ERROR") AND severity="ERROR") AND timestamp>="')
+
+
+def test_describe_and_console_url_use_the_source_project_and_the_refined_expression():
+    provider = CloudLoggingApiProvider()
+    query = LogQuery(
+        expression="severity>=ERROR",
+        freshness="6h",
+        limit=25,
+        refinements=(Refinement(path=("resource", "type"), value="gae_app"),),
+    )
+    command = provider.describe(SOURCE, query)
+    assert command.startswith("gcloud logging read ")
+    assert "'(severity>=ERROR) AND resource.type=\"gae_app\"'" in command
+    assert command.endswith("--project=proj-x --limit=25 --freshness=6h --order=desc")
+
+    url = provider.console_url(SOURCE, query)
+    assert url == (
+        "https://console.cloud.google.com/logs/query"
+        ";query=%28severity%3E%3DERROR%29%20AND%20resource.type%3D%22gae_app%22"
+        ";timeRange=PT6H?project=proj-x"
+    )

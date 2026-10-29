@@ -3,7 +3,9 @@ bundle and imported from one, with a review step in between.
 
 A bundle carries only the editable fields of each item (no id, position,
 creation time or reading mark), so it means the same on any OpsDeck.
-Uploaded card images travel inside it as data URIs. Every item is checked
+Uploaded card images travel inside it as data URIs, and a filter carries its
+log source (name, kind and config) instead of the source's id: an import
+reuses the source that reads the same place, or creates it. Every item is checked
 by building its entity, so the rules stay in the domain; an import builds
 all the chosen items before it writes any of them.
 """
@@ -22,11 +24,11 @@ from app.domain.common import utc_now
 from app.domain.errors import NotFoundError, ValidationError
 from app.domain.github import GithubFeed, GithubFeedRepository
 from app.domain.links import Link, LinkKind, LinkRepository
-from app.domain.logs import LogFilter, LogFilterRepository
+from app.domain.logs import LogFilter, LogFilterRepository, LogSource, LogSourceKind, LogSourceRepository
 from app.domain.ordering import next_position, ordered
 from app.domain.repository import Repository
 
-BUNDLE_VERSION = 1
+BUNDLE_VERSION = 2  # 2: filters carry their log source; 1 had a GCP `project`
 
 _IMAGE_MIME = {"png": "png", "jpg": "jpeg", "jpeg": "jpeg", "gif": "gif", "webp": "webp", "svg": "svg+xml"}
 _MIME_IMAGE = {"png": "png", "jpeg": "jpg", "gif": "gif", "webp": "webp", "svg+xml": "svg"}
@@ -67,7 +69,7 @@ class ImportCheck:
     type: ItemType
     index: int  # position in its bundle list
     name: str
-    detail: str  # URL or command, GCP project, org and repos
+    detail: str  # URL or command, log source, org and repos
     status: ImportStatus
     error: str = ""
     command: str = ""  # a command card's command line, shown before it is imported
@@ -108,6 +110,8 @@ class _Prepared:
     image: tuple[bytes, str] | None = None
     entity: Any = None
     error: str = ""
+    detail: str = ""  # overrides the section's detail
+    new_source: LogSource | None = None  # a filter's source, missing here
 
 
 def _link_detail(link: Link) -> str:
@@ -118,6 +122,21 @@ def _feed_detail(feed: GithubFeed) -> str:
     if not feed.repos:
         return f"{feed.org} · whole org"
     return f"{feed.org} · {', '.join(feed.repos)}"
+
+
+def _source_of(raw: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
+    """(name, kind, config) of a bundled filter's source; version 1 bundles
+    only had the GCP project."""
+    source = raw.get("source")
+    if source is None and isinstance(raw.get("project"), str):
+        project = raw["project"].strip()
+        return project, LogSourceKind.GCP.value, {"project": project}
+    if not isinstance(source, dict):
+        raise ValidationError("The filter has no log source")
+    name, kind, config = source.get("name"), source.get("kind"), source.get("config")
+    if not isinstance(name, str) or not isinstance(kind, str) or not isinstance(config, dict):
+        raise ValidationError("The filter's log source needs a name, a kind and a config")
+    return name, kind, config
 
 
 def _check_type(name: str, value: Any, expected: type) -> None:
@@ -171,10 +190,12 @@ class SharingService:
         self,
         links: LinkRepository,
         filters: LogFilterRepository,
+        sources: LogSourceRepository,
         feeds: GithubFeedRepository,
         images: ImageService,
     ):
         self._images = images
+        self._sources = sources
         self._sections = {
             ItemType.LINK: _Section(
                 type=ItemType.LINK,
@@ -199,7 +220,6 @@ class SharingService:
                 key="log_filters",
                 fields=dict(
                     name=str,
-                    project=str,
                     expression=str,
                     freshness=str,
                     limit=int,
@@ -209,7 +229,7 @@ class SharingService:
                 name_field="name",
                 repository=filters,
                 build=LogFilter.new,
-                detail=lambda log_filter: log_filter.project,
+                detail=self._source_name,
             ),
             ItemType.FEED: _Section(
                 type=ItemType.FEED,
@@ -253,6 +273,10 @@ class SharingService:
             if image is not None:  # an upload: the URL means nothing elsewhere
                 values["image_url"] = ""
                 values["image"] = _encode_image(*image)
+        if section.type is ItemType.FILTER:
+            source = self._sources.get(entity.source_id)
+            if source is not None:
+                values["source"] = {"name": source.name, "kind": source.kind.value, "config": source.config}
         return values
 
     # ----- import ---------------------------------------------------------
@@ -277,7 +301,7 @@ class SharingService:
                     type=section.type,
                     index=prepared.index,
                     name=prepared.name,
-                    detail=section.detail(entity) if entity is not None else "",
+                    detail=prepared.detail or (section.detail(entity) if entity is not None else ""),
                     status=status,
                     error=prepared.error,
                     command=entity.command if is_command else "",
@@ -314,6 +338,8 @@ class SharingService:
         }
         for item, target in plan:
             section, values = item.section, dict(item.fields)
+            if item.new_source is not None:
+                values["source_id"] = self._create_source(item.new_source)
             if item.image is not None:
                 values["image_url"] = self._images.save_image(item.image[0], f"image.{item.image[1]}")
             if target is not None:
@@ -329,8 +355,23 @@ class SharingService:
             result.created.append((section.type, entity.id))
         return result
 
+    def _source_name(self, log_filter: LogFilter) -> str:
+        source = self._sources.get(log_filter.source_id)
+        return source.name if source is not None else ""
+
+    def _create_source(self, wanted: LogSource) -> str:
+        """The id of a source reading what `wanted` reads: one created by an
+        earlier item of this import, or `wanted` itself, saved under a free name."""
+        for source in self._sources.list_all():
+            if source.same_place(wanted.kind, wanted.config):
+                return source.id
+        taken = {source.name.casefold() for source in self._sources.list_all()}
+        source = LogSource.new(name=_free_name(wanted.name, taken), kind=wanted.kind, config=wanted.config)
+        self._sources.save(source)
+        return source.id
+
     def _prepare(self, bundle: Bundle) -> list[_Prepared]:
-        if bundle.version != BUNDLE_VERSION:
+        if not 1 <= bundle.version <= BUNDLE_VERSION:
             if bundle.version > BUNDLE_VERSION:
                 raise ValidationError("This file comes from a newer OpsDeck; update this one to import it")
             raise ValidationError("Not an OpsDeck export")
@@ -347,10 +388,25 @@ class SharingService:
             prepared.fields = _portable_fields(section, raw)
             if section.type is ItemType.LINK:
                 prepared.image = self._prepare_image(prepared.fields, raw)
+            if section.type is ItemType.FILTER:
+                self._prepare_source(prepared, raw)
             prepared.entity = section.build(**prepared.fields)
         except ValidationError as error:
             prepared.error = str(error)
         return prepared
+
+    def _prepare_source(self, prepared: _Prepared, raw: dict[str, Any]) -> None:
+        """Point the filter at the source that reads the same place, or plan
+        to create that source (validated now, saved on import)."""
+        name, kind, config = _source_of(raw)
+        for source in self._sources.list_all():
+            if source.same_place(kind, config):
+                prepared.fields["source_id"] = source.id
+                prepared.detail = source.name
+                return
+        prepared.new_source = LogSource.new(name=name, kind=kind, config=config)
+        prepared.fields["source_id"] = prepared.new_source.id  # stands in until the import
+        prepared.detail = f"{prepared.new_source.name} · new log source"
 
     def _prepare_image(self, values: dict[str, Any], raw: dict[str, Any]) -> tuple[bytes, str] | None:
         if raw.get("image"):

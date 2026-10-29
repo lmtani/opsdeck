@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.application.github import GithubActivityService, GithubFeedService
 from app.application.links import CommandService, ImageService, LinkService
-from app.application.logs import LogFilterService, LogQueryService
+from app.application.logs import LogFilterService, LogQueryService, LogResult, LogSourceService
 from app.application.settings import SettingsService
 from app.application.sharing import ImportChoice, SharingService
 from app.domain.errors import ExternalServiceError, NotFoundError, ValidationError
@@ -25,6 +25,7 @@ class Services:
         self,
         links: LinkService,
         commands: CommandService,
+        sources: LogSourceService,
         filters: LogFilterService,
         logs: LogQueryService,
         settings: SettingsService,
@@ -35,6 +36,7 @@ class Services:
     ):
         self.links = links
         self.commands = commands
+        self.sources = sources
         self.filters = filters
         self.logs = logs
         self.settings = settings
@@ -81,7 +83,7 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
     @app.get("/api/health", response_model=schemas.HealthOut)
     def health():
         return schemas.HealthOut(
-            logs=services.logs.provider_available(),
+            logs=services.logs.providers_available(),
             github=services.github.provider_available(),
         )
 
@@ -113,6 +115,26 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
     def delete_link(link_id: str):
         services.links.delete_link(link_id)
 
+    # ----- Log sources ---------------------------------------------------
+
+    @app.get("/api/log-sources", response_model=list[schemas.LogSourceOut])
+    def list_sources():
+        return [schemas.LogSourceOut.model_validate(item) for item in services.sources.list_sources()]
+
+    @app.post("/api/log-sources", response_model=schemas.LogSourceOut, status_code=201)
+    def create_source(body: schemas.LogSourceIn):
+        created = services.sources.create_source(body.name, body.kind, body.config)
+        return schemas.LogSourceOut.model_validate(created)
+
+    @app.put("/api/log-sources/{source_id}", response_model=schemas.LogSourceOut)
+    def update_source(source_id: str, body: schemas.LogSourceUpdate):
+        updated = services.sources.update_source(source_id, body.name, body.config)
+        return schemas.LogSourceOut.model_validate(updated)
+
+    @app.delete("/api/log-sources/{source_id}", status_code=204)
+    def delete_source(source_id: str):
+        services.sources.delete_source(source_id)
+
     # ----- Saved log filters -------------------------------------------
 
     @app.get("/api/filters", response_model=list[schemas.LogFilterOut])
@@ -139,20 +161,29 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
 
     # ----- Log queries --------------------------------------------------
 
-    def _log_result(command: str, entries) -> schemas.LogQueryOut:
+    def _log_result(result: LogResult) -> schemas.LogQueryOut:
         return schemas.LogQueryOut(
-            command=command,
-            entries=[schemas.LogEntryOut.model_validate(entry) for entry in entries],
+            source_id=result.source.id,
+            expression=result.expression,
+            command=result.command,
+            console_url=result.console_url,
+            entries=[schemas.LogEntryOut.model_validate(entry) for entry in result.entries],
         )
 
     @app.post("/api/filters/{filter_id}/query", response_model=schemas.LogQueryOut)
-    def run_saved_filter(filter_id: str):
-        return _log_result(*services.logs.run_saved_filter(filter_id))
+    def run_saved_filter(filter_id: str, body: schemas.SavedQueryIn | None = None):
+        refinements = [item.to_refinement() for item in body.refinements] if body else []
+        return _log_result(services.logs.run_saved_filter(filter_id, refinements))
 
     @app.post("/api/logs/query", response_model=schemas.LogQueryOut)
     def query_logs(body: schemas.LogQueryIn):
-        query = LogQuery(**body.model_dump())
-        return _log_result(*services.logs.run_query(query))
+        query = LogQuery(
+            expression=body.expression,
+            freshness=body.freshness,
+            limit=body.limit,
+            refinements=tuple(item.to_refinement() for item in body.refinements),
+        )
+        return _log_result(services.logs.run_query(body.source_id, query))
 
     # ----- GitHub feeds -------------------------------------------------
 

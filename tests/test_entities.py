@@ -8,7 +8,7 @@ from app.domain.common import utc_now
 from app.domain.errors import ValidationError
 from app.domain.github import EventKind, EventSubject, FeedSpec, GithubFeed, SubjectType
 from app.domain.links import Link, LinkKind
-from app.domain.logs import Freshness, LogFilter, LogQuery
+from app.domain.logs import Freshness, LogFilter, LogQuery, LogSource, LogSourceKind, Refinement
 from tests.fakes import ts
 
 # ----- links -----------------------------------------------------------------
@@ -50,25 +50,58 @@ def test_link_update_keeps_identity_and_rejects_invalid_changes_untouched():
 
 
 def test_log_filter_invariants_and_query():
-    log_filter = LogFilter.new(name=" Erros ", project=" p ", expression=" e ", freshness="6h", limit=25)
-    assert (log_filter.name, log_filter.project, log_filter.freshness) == ("Erros", "p", Freshness.H6)
-    assert log_filter.query() == LogQuery(project="p", expression="e", freshness=Freshness.H6, limit=25)
+    log_filter = LogFilter.new(name=" Erros ", source_id=" s1 ", expression=" e ", freshness="6h", limit=25)
+    assert (log_filter.name, log_filter.source_id, log_filter.freshness) == ("Erros", "s1", Freshness.H6)
+    assert log_filter.query() == LogQuery(expression="e", freshness=Freshness.H6, limit=25)
 
     for fields in [
-        dict(name=" ", project="p"),
-        dict(name="n", project=" "),
-        dict(name="n", project="p", freshness="2h"),
-        dict(name="n", project="p", limit=0),
+        dict(name=" ", source_id="s1"),
+        dict(name="n", source_id=" "),
+        dict(name="n", source_id="s1", freshness="2h"),
+        dict(name="n", source_id="s1", limit=0),
+        dict(name="n" * 81, source_id="s1"),
     ]:
         with pytest.raises(ValidationError):
             LogFilter.new(**fields)
 
 
-def test_log_query_normalizes_and_validates():
-    query = LogQuery(project=" proj ", expression=" x ", freshness="1d")
-    assert (query.project, query.expression, query.freshness) == ("proj", "x", Freshness.D1)
+def test_log_query_normalizes_validates_and_stacks_refinements():
+    query = LogQuery(expression=" x ", freshness="1d")
+    assert (query.expression, query.freshness, query.refinements) == ("x", Freshness.D1, ())
     with pytest.raises(ValidationError):
-        LogQuery(project="p", limit=501)
+        LogQuery(limit=501)
+
+    first = Refinement(path=["severity"], value="ERROR")
+    second = Refinement(path=("labels", "k8s-pod/app"), value="api", negate=True)
+    refined = query.refined([first]).refined([second])
+    assert refined.refinements == (first, second) and query.refinements == ()
+    assert first.path == ("severity",)  # lists become tuples, so refinements compare by value
+
+
+@pytest.mark.parametrize(("path", "value"), [((), "x"), (("a", " "), "x"), (("a",), None), (("a",), [1])])
+def test_refinement_needs_a_field_and_a_scalar_value(path, value):
+    with pytest.raises(ValidationError):
+        Refinement(path=path, value=value)
+
+
+def test_log_source_invariants():
+    source = LogSource.new(name=" Prod ", kind="gcp", config={"project": " p ", "extra": "dropped"})
+    assert (source.name, source.kind, source.config) == ("Prod", LogSourceKind.GCP, {"project": "p"})
+    assert source.same_place("gcp", {"project": "p "}) and not source.same_place("gcp", {"project": "q"})
+    assert not source.same_place("splunk", {"project": "p"})
+
+    with pytest.raises(ValidationError, match="Unknown setting"):
+        LogSource(id="x", name="n", kind=LogSourceKind.GCP, config={"project": "p", "zone": "z"})
+    with pytest.raises(ValidationError, match="Project is required"):
+        LogSource.new(name="n", kind="gcp", config={"project": 42})
+    with pytest.raises(ValidationError, match="Unknown kind"):
+        LogSource.new(name="n", kind="aws", config={})
+
+    source.update(name=" Production ", config={"project": "p2"})
+    assert (source.name, source.config, source.kind) == ("Production", {"project": "p2"}, LogSourceKind.GCP)
+    with pytest.raises(ValidationError):
+        source.update(name=" ", config={"project": "p3"})
+    assert (source.name, source.config) == ("Production", {"project": "p2"})
 
 
 # ----- github ----------------------------------------------------------------

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.application.github import GithubActivityService, GithubFeedService
 from app.application.links import CommandService, ImageService, LinkService
-from app.application.logs import LogFilterService, LogQueryService
+from app.application.logs import LogFilterService, LogQueryService, LogSourceService
 from app.application.settings import SettingsService
 from app.application.sharing import SharingService
 from app.domain.common import utc_now
@@ -26,6 +26,7 @@ from app.domain.github import (
     SubjectType,
     ThreadComment,
 )
+from app.domain.logs import LogSourceKind
 from app.presentation.api import Services, create_app
 from tests.fakes import (
     FakeCommandRunner,
@@ -36,6 +37,7 @@ from tests.fakes import (
     InMemoryFilterRepository,
     InMemoryLinkRepository,
     InMemorySettingsRepository,
+    InMemorySourceRepository,
     make_code_comment,
     make_event,
     make_push,
@@ -47,6 +49,7 @@ def world(tmp_path):
     fakes = SimpleNamespace(
         links=InMemoryLinkRepository(),
         filters=InMemoryFilterRepository(),
+        sources=InMemorySourceRepository(),
         feeds=InMemoryFeedRepository(),
         settings=InMemorySettingsRepository(),
         runner=FakeCommandRunner(),
@@ -57,13 +60,16 @@ def world(tmp_path):
     services = Services(
         links=LinkService(fakes.links),
         commands=CommandService(fakes.runner, fakes.links),
-        filters=LogFilterService(fakes.filters),
-        logs=LogQueryService(fakes.logs, fakes.filters),
+        sources=LogSourceService(fakes.sources, fakes.filters),
+        filters=LogFilterService(fakes.filters, fakes.sources),
+        logs=LogQueryService({LogSourceKind.GCP: fakes.logs}, fakes.sources, fakes.filters),
         settings=SettingsService(fakes.settings),
         images=ImageService(fakes.images),
         github_feeds=GithubFeedService(fakes.feeds),
         github=GithubActivityService(fakes.github, fakes.feeds),
-        sharing=SharingService(fakes.links, fakes.filters, fakes.feeds, ImageService(fakes.images)),
+        sharing=SharingService(
+            fakes.links, fakes.filters, fakes.sources, fakes.feeds, ImageService(fakes.images)
+        ),
     )
     web = tmp_path / "web"
     web.mkdir()
@@ -73,10 +79,17 @@ def world(tmp_path):
     return fakes
 
 
+def add_source(world, project="p"):
+    return world.client.post(
+        "/api/log-sources", json={"name": project, "config": {"project": project}}
+    ).json()
+
+
 # ----- app shell -------------------------------------------------------------
 
 
 def test_health_reports_each_provider(world):
+    add_source(world)
     assert world.client.get("/api/health").json() == {"status": "ok", "logs": True, "github": True}
     world.logs.available = False
     assert world.client.get("/api/health").json()["logs"] is False
@@ -135,36 +148,84 @@ def test_run_command_link(world):
 # ----- logs ------------------------------------------------------------------
 
 
+def test_log_sources_crud(world):
+    client = world.client
+    assert client.get("/api/health").json()["logs"] is None  # no sources yet: nothing to check
+    created = client.post("/api/log-sources", json={"name": "prod", "config": {"project": "p-prod"}})
+    assert created.status_code == 201
+    source = created.json()
+    assert (source["kind"], source["config"]) == ("gcp", {"project": "p-prod"})
+    assert client.get("/api/health").json()["logs"] is True
+
+    assert client.post("/api/log-sources", json={"name": "x", "config": {}}).status_code == 422
+    assert client.post("/api/log-sources", json={"name": "x", "kind": "aws", "config": {}}).status_code == 422
+    assert (
+        client.post("/api/log-sources", json={"name": "PROD", "config": {"project": "q"}}).status_code == 422
+    )
+
+    renamed = client.put(
+        f"/api/log-sources/{source['id']}", json={"name": "live", "config": {"project": "q"}}
+    )
+    assert renamed.json()["name"] == "live" and renamed.json()["config"] == {"project": "q"}
+    assert (
+        client.put("/api/log-sources/ghost", json={"name": "a", "config": {"project": "q"}}).status_code
+        == 404
+    )
+
+    client.post("/api/filters", json={"name": "a", "source_id": source["id"]})
+    in_use = client.delete(f"/api/log-sources/{source['id']}")
+    assert in_use.status_code == 422 and "1 filter still use 'live'" in in_use.json()["detail"]
+    other = add_source(world, "other")
+    assert client.delete(f"/api/log-sources/{other['id']}").status_code == 204
+    assert [item["name"] for item in client.get("/api/log-sources").json()] == ["live"]
+
+
 def test_filters_crud_and_order_route(world):
     client = world.client
-    first = client.post("/api/filters", json={"name": "a", "project": "p", "expression": "e"}).json()
-    second = client.post("/api/filters", json={"name": "b", "project": "p"}).json()
-    assert client.post("/api/filters", json={"name": "x", "project": "", "expression": ""}).status_code == 422
+    source = add_source(world)["id"]
+    first = client.post("/api/filters", json={"name": "a", "source_id": source, "expression": "e"}).json()
+    second = client.post("/api/filters", json={"name": "b", "source_id": source}).json()
+    assert client.post("/api/filters", json={"name": "x", "source_id": ""}).status_code == 422
+    assert client.post("/api/filters", json={"name": "x", "source_id": "ghost"}).status_code == 422
     assert client.put("/api/filters/order", json={"ids": [second["id"], first["id"]]}).status_code == 204
     assert [f["name"] for f in client.get("/api/filters").json()] == ["b", "a"]
-    assert client.put(f"/api/filters/{first['id']}", json={"name": "c", "project": "p"}).json()["name"] == "c"
+    updated = client.put(f"/api/filters/{first['id']}", json={"name": "c", "source_id": source}).json()
+    assert updated["name"] == "c" and updated["source_id"] == source
     assert client.delete(f"/api/filters/{first['id']}").status_code == 204
-    assert client.put("/api/filters/ghost", json={"name": "c", "project": "p"}).status_code == 404
+    assert client.put("/api/filters/ghost", json={"name": "c", "source_id": source}).status_code == 404
 
 
-def test_log_query_saved_ad_hoc_and_failures(world):
+def test_log_query_saved_refined_ad_hoc_and_failures(world):
     client = world.client
+    source = add_source(world, "proj-x")["id"]
     saved = client.post(
         "/api/filters",
-        json={"name": "a", "project": "proj-x", "expression": "e", "freshness": "6h", "limit": 25},
+        json={"name": "a", "source_id": source, "expression": "e", "freshness": "6h", "limit": 25},
     ).json()
     result = client.post(f"/api/filters/{saved['id']}/query").json()
     assert result["command"] == "fake --project=proj-x"
+    assert result["console_url"] == "https://console.example/proj-x"
+    assert (result["source_id"], result["expression"]) == (source, "e")
     assert [e["summary"] for e in result["entries"]] == ["boom"]
     assert (world.logs.last_query.freshness, world.logs.last_query.limit) == ("6h", 25)
 
+    refined = client.post(
+        f"/api/filters/{saved['id']}/query",
+        json={"refinements": [{"path": ["httpRequest", "status"], "value": 500, "negate": True}]},
+    ).json()
+    assert refined["expression"] == "e AND httpRequest.status!=500"
+    [refinement] = world.logs.last_query.refinements
+    assert (refinement.path, refinement.value, refinement.negate) == (("httpRequest", "status"), 500, True)
+    bad = client.post(f"/api/filters/{saved['id']}/query", json={"refinements": [{"path": [], "value": "x"}]})
+    assert bad.status_code == 422
+
     assert client.post("/api/filters/ghost/query").status_code == 404
-    ad_hoc = client.post("/api/logs/query", json={"project": "p", "expression": "x"})
+    ad_hoc = client.post("/api/logs/query", json={"source_id": source, "expression": "x"})
     assert ad_hoc.status_code == 200 and world.logs.last_query.expression == "x"
-    assert client.post("/api/logs/query", json={"project": " ", "expression": "x"}).status_code == 422
+    assert client.post("/api/logs/query", json={"source_id": "ghost", "expression": "x"}).status_code == 404
 
     world.logs.error = LogProviderError("gcloud fora")
-    failed = client.post("/api/logs/query", json={"project": "p", "expression": ""})
+    failed = client.post("/api/logs/query", json={"source_id": source, "expression": ""})
     assert failed.status_code == 502 and failed.json()["detail"] == "gcloud fora"
 
 
@@ -283,7 +344,8 @@ def test_image_upload(world):
 
 def test_unexpected_errors_return_a_readable_reason(world):
     world.logs.error = OSError("Project was not passed and could not be determined")
-    saved = world.client.post("/api/filters", json={"name": "a", "project": "p"}).json()
+    source = add_source(world)["id"]
+    saved = world.client.post("/api/filters", json={"name": "a", "source_id": source}).json()
     response = TestClient(world.client.app, raise_server_exceptions=False).post(
         f"/api/filters/{saved['id']}/query"
     )
@@ -406,9 +468,11 @@ def test_github_feed_contribution_day_route(world):
 
 def test_share_export_check_and_import_round_trip(world):
     client = world.client
-    created = client.post("/api/filters", json={"name": "errors", "project": "p"}).json()
+    source = add_source(world)["id"]
+    created = client.post("/api/filters", json={"name": "errors", "source_id": source}).json()
     bundle = client.post("/api/share/export", json={"filters": [created["id"]]}).json()
-    assert bundle["opsdeck"] == 1
+    assert bundle["opsdeck"] == 2
+    assert bundle["log_filters"][0]["source"] == {"name": "p", "kind": "gcp", "config": {"project": "p"}}
     assert bundle["log_filters"][0]["name"] == "errors"
     assert "id" not in bundle["log_filters"][0]
 

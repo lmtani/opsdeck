@@ -1,7 +1,6 @@
 """Parsing tests for the Cloud Logging entry normalization."""
 
-from app.domain.logs import LogQuery
-from app.infrastructure.log_entry_parsing import describe_gcloud_command, format_latency, parse_entry
+from app.infrastructure.log_entry_parsing import format_latency, parse_entry
 
 
 def test_parse_text_payload():
@@ -121,14 +120,3 @@ def test_format_latency_variants():
     assert format_latency({"seconds": 1, "nanos": 500000000}) == "1.5 s"
     assert format_latency(None) == ""
     assert format_latency("weird") == "weird"
-
-
-def test_describe_includes_expression_and_flags():
-    command = describe_gcloud_command(
-        LogQuery(project="proj-x", expression="severity>=ERROR", freshness="6h", limit=25)
-    )
-    assert "gcloud logging read" in command
-    assert "severity>=ERROR" in command
-    assert "--project=proj-x" in command
-    assert "--freshness=6h" in command
-    assert "--limit=25" in command

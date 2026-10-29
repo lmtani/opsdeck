@@ -1,34 +1,16 @@
-"""Shared parsing of Cloud Logging entries in their JSON wire format.
+"""Parsing of Cloud Logging entries in their JSON wire format.
 
 The API client's `entry.to_api_repr()` returns the same shape that
-`gcloud logging read --format=json` prints, so `describe_gcloud_command`
-gives the user a command whose output matches what the UI shows.
+`gcloud logging read --format=json` prints, so the command the UI offers
+for copy/paste prints what the UI shows.
 """
 
 import json
-import shlex
 
-from app.domain.logs import LogEntry, LogQuery
+from app.domain.logs import LogEntry
 
 _SUMMARY_KEYS = ("message", "msg", "event", "error", "description")
 _MAX_SUMMARY_LENGTH = 300
-
-
-def build_gcloud_args(query: LogQuery) -> list[str]:
-    args = ["gcloud", "logging", "read"]
-    if query.expression.strip():
-        args.append(query.expression.strip())
-    args += [
-        f"--project={query.project}",
-        f"--limit={query.limit}",
-        f"--freshness={query.freshness}",
-        "--order=desc",
-    ]
-    return args
-
-
-def describe_gcloud_command(query: LogQuery) -> str:
-    return shlex.join(build_gcloud_args(query))
 
 
 def parse_entry(item: dict) -> LogEntry:
