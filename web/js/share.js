@@ -14,6 +14,15 @@ const TYPES = {
 };
 const ORDER = ["link", "filter", "feed"];
 
+// a tray with an arrow leaving it (export) or entering it (import): plain
+// arrows read as download/upload and point the "wrong" way to some people
+const tray = (arrow) =>
+  `<svg class="share-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>${arrow}</svg>`;
+const EXPORT_ICON = tray('<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/>');
+const IMPORT_ICON = tray('<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/>');
+
 const views = {}; // type -> { list, itemSelector, reload }
 let picking = null; // { type, ids: Set } while the selection bar is open
 let review = null; // { bundle, checks, choices: Map(key -> { on, action }) }
@@ -39,10 +48,12 @@ function openMenu(button, type) {
   menu = document.createElement("div");
   menu.className = "share-pop";
   menu.innerHTML = `
-    <button type="button" data-act="export">↓ Export ${TYPES[type].many}…
-      <small>pick which ones, then save a file or copy it</small></button>
-    <button type="button" data-act="import">↑ Import…
-      <small>an OpsDeck export: links, filters and feeds</small></button>`;
+    <button type="button" data-act="export">${EXPORT_ICON}
+      <span>Export ${TYPES[type].many}…<small>pick which ones, then save a file or copy it</small></span>
+    </button>
+    <button type="button" data-act="import">${IMPORT_ICON}
+      <span>Import…<small>an OpsDeck export: links, filters and feeds</small></span>
+    </button>`;
   menu.querySelector('[data-act="export"]').addEventListener("click", () => {
     closeMenu();
     startPicking(type);
@@ -158,7 +169,7 @@ function renderSource() {
   document.getElementById("share-modal-title").textContent = "Import";
   modalBody().innerHTML = `
     <div class="share-drop" id="share-drop">
-      <span class="share-drop-mark">↑</span>
+      <span class="share-drop-mark">${IMPORT_ICON}</span>
       <strong>Drop an OpsDeck export here</strong>
       <span>or <button type="button" class="share-link-btn" id="share-pick-file">choose a file</button>,
         or paste it with <kbd>Ctrl</kbd>+<kbd>V</kbd></span>
