@@ -1,6 +1,8 @@
-// Logs view: saved filter sidebar, query execution, entry rendering, the
-// trace drill-down (every entry that shares a trace / operation with one row,
-// optionally across projects) and click-to-refine on field values.
+// Logs view: the log sources and saved filters of the sidebar, query
+// execution, entry rendering, the trace drill-down (every entry that shares a
+// trace / operation with one row, optionally across sources) and
+// click-to-refine on field values. Refinements travel as {path, value, negate}
+// and the backend spells them in the source's query language.
 
 import { api } from "./api.js";
 import { makeSortable } from "./dnd.js";
@@ -17,15 +19,19 @@ import {
 } from "./ui.js";
 
 let filters = [];
+let sources = [];
 let activeFilterId = null;
 let lastEntries = [];
 let liveTemplate = "";
 let editingId = null;
+let editingSourceId = null;
 
 // What the results panel is showing. `mode` is "idle", "filter" (a saved
-// filter, plus ad-hoc `refinements` stacked on top of it) or "trace" (entries
-// correlated with one row, over one or more `projects`). A trace view keeps
-// `parent` — the previous view plus its entries — so "voltar" needs no query.
+// filter on its `source`, plus ad-hoc `refinements` stacked on top of it) or
+// "trace" (entries correlated with one row, over one or more `sources`). A
+// query's result sets `expression` (what ran, refinements included) and
+// `consoleUrl`. A trace view keeps `parent` — the previous view plus its
+// entries — so "back" needs no query.
 let view = { mode: "idle" };
 
 const TRACE_WINDOW_MS = 60 * 60 * 1000; // ±1 h around the origin entry
@@ -65,32 +71,48 @@ const FRESHNESS_MS = {
   "7d": 7 * 24 * 60 * 60_000,
 };
 
-// freshness → ISO-8601 duration accepted by the Logs Explorer timeRange param
-const FRESHNESS_TIMERANGE = {
-  "15m": "PT15M",
-  "1h": "PT1H",
-  "6h": "PT6H",
-  "1d": "P1D",
-  "3d": "P3D",
-  "7d": "P7D",
+// How each kind of log source is presented: its form fields and how its
+// queries read. The backend validates the config and writes the queries.
+const SOURCE_KINDS = {
+  gcp: {
+    label: "Google Cloud Logging",
+    tag: "GCP",
+    fields: [{ key: "project", label: "GCP project", placeholder: "my-project-prod" }],
+    hint:
+      "Read with the Application Default Credentials (gcloud auth application-default login); " +
+      "the account needs roles/logging.viewer on the project.",
+    syntax: "Cloud Logging syntax",
+    placeholder: 'resource.type="cloud_run_revision"\nseverity>=ERROR',
+    console: "GCP",
+    traces: true, // entries carry trace / operation.id, and the trace view queries them
+  },
 };
 
-function gcpLogsUrl(filter) {
-  const query = encodeURIComponent(filter.expression || "");
-  const timeRange = FRESHNESS_TIMERANGE[filter.freshness] || "PT1H";
+function kindOf(source) {
   return (
-    `https://console.cloud.google.com/logs/query;query=${query};timeRange=${timeRange}` +
-    `?project=${encodeURIComponent(filter.project)}`
+    SOURCE_KINDS[source?.kind] || {
+      label: source?.kind || "unknown",
+      tag: String(source?.kind || "?").toUpperCase(),
+      fields: [],
+      hint: "",
+      syntax: "the source's syntax",
+      placeholder: "",
+      console: "console",
+      traces: false,
+    }
   );
 }
 
-function gcpLogsRangeUrl(project, expression, start, end) {
-  const query = encodeURIComponent(expression);
-  const timeRange = encodeURIComponent(`${start}/${end}`);
-  return (
-    `https://console.cloud.google.com/logs/query;query=${query};timeRange=${timeRange}` +
-    `?project=${encodeURIComponent(project)}`
-  );
+function sourceById(id) {
+  return sources.find((source) => source.id === id) || null;
+}
+
+// The place a source reads, from its kind's fields (for GCP, the project).
+function sourcePlace(source) {
+  return kindOf(source)
+    .fields.map((field) => source.config?.[field.key])
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function plural(count, noun, pluralForm = `${noun}s`) {
@@ -107,6 +129,14 @@ function renderFilterList() {
   const container = document.getElementById("filter-list");
   container.innerHTML = "";
   document.getElementById("filters-empty").hidden = filters.length > 0;
+  // without a source there is nothing a filter could read: lead to one first
+  document.getElementById("filters-empty-text").textContent = sources.length
+    ? "Save log queries to run them with one click."
+    : "Add a log source first: where your logs live, such as a Google Cloud project.";
+  document.getElementById("filter-empty-btn").textContent = sources.length
+    ? "Create filter"
+    : "Add a source";
+  document.getElementById("filter-new-btn").disabled = !sources.length;
 
   filters.forEach((filter, index) => {
     const item = document.createElement("div");
@@ -116,10 +146,11 @@ function renderFilterList() {
     item.style.setProperty("--i", index);
     item.setAttribute("role", "button");
     item.tabIndex = 0;
+    const source = sourceById(filter.source_id);
     item.innerHTML = `
       <span class="filter-name">${escapeHtml(filter.name)}</span>
       <span class="filter-meta">
-        <span>${escapeHtml(filter.project)}</span>
+        <span title="${escapeHtml(source ? `${kindOf(source).label}: ${sourcePlace(source)}` : "")}">${escapeHtml(source?.name || "no source")}</span>
         <span>· ${FRESHNESS_LABELS[filter.freshness] || filter.freshness}</span>
         <span>· ${filter.limit}</span>
       </span>
@@ -158,6 +189,42 @@ function renderFilterList() {
 
     container.appendChild(item);
   });
+}
+
+function renderSourceList() {
+  const container = document.getElementById("source-list");
+  container.innerHTML = sources.length
+    ? ""
+    : '<p class="sources-empty">None yet. A source is where logs are read from.</p>';
+  for (const source of sources) {
+    const kind = kindOf(source);
+    const place = sourcePlace(source);
+    const item = document.createElement("div");
+    item.className = "source-item";
+    item.title = `${source.name}\n${kind.label}: ${place}`;
+    // a source named after its project (as migrated ones are) shows it once
+    item.innerHTML = `
+      <span class="source-kind">${escapeHtml(kind.tag)}</span>
+      <span class="source-name">${escapeHtml(source.name)}</span>
+      ${place === source.name ? "" : `<span class="source-place">${escapeHtml(place)}</span>`}
+      <span class="filter-edit">
+        <button class="card-action" data-edit title="Edit" aria-label="Edit ${escapeHtml(source.name)}">✎</button>
+        <button class="card-action danger" data-delete title="Remove" aria-label="Remove ${escapeHtml(source.name)}">✕</button>
+      </span>`;
+    item.querySelector("[data-edit]").addEventListener("click", () => openSourceModal(source));
+    item.querySelector("[data-delete]").addEventListener("click", () => {
+      confirmDanger(`Remove the log source “${source.name}”?`, async () => {
+        try {
+          await api.deleteSource(source.id);
+          toast("Source removed", "success");
+          await loadSources();
+        } catch (error) {
+          toast(error.message, "error");
+        }
+      });
+    });
+    container.appendChild(item);
+  }
 }
 
 // ----- line formatting -------------------------------------------------
@@ -275,20 +342,14 @@ function rerenderWithTemplate() {
   if (lastEntries.length) paintEntries();
 }
 
-// ----- Cloud Logging filter helpers --------------------------------------
+// ----- correlation: trace / operation -----------------------------------
+// Only for kinds with `traces` (GCP): the entries carry trace / operation.id,
+// and the correlated query is written in Cloud Logging syntax here.
 
 // Filter string literal: quotes and backslashes escaped.
 function quoteFilterValue(value) {
   return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
-
-function filterLiteral(value) {
-  return typeof value === "number" || typeof value === "boolean"
-    ? String(value)
-    : quoteFilterValue(value);
-}
-
-// ----- correlation: trace / operation -----------------------------------
 
 function shortId(id) {
   return id.length > 8 ? id.slice(-7) : id;
@@ -376,34 +437,32 @@ function formatDelta(ms) {
   return `${sign}${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }
 
-// Projects known from the saved filters that the trace view has not searched.
-function otherProjects() {
+// Sources of the trace's kind that it has not searched yet, one per place.
+function otherSources() {
   if (view.mode !== "trace") return [];
-  const known = new Set(filters.map((filter) => filter.project).filter(Boolean));
-  return [...known].filter((project) => !view.projects.includes(project)).sort();
+  const places = new Set(view.sources.map(sourcePlace));
+  return sources.filter((source) => {
+    if (source.kind !== view.source.kind || places.has(sourcePlace(source))) return false;
+    places.add(sourcePlace(source));
+    return true;
+  });
 }
 
 // ----- refinements (filter mode) -----------------------------------------
 
-function refinementClause(field, value, negate) {
-  return `${field}${negate ? "!=" : "="}${filterLiteral(value)}`;
-}
+const fieldLabel = (path) => path.join(".");
+const refinementKey = (item) => JSON.stringify([item.path, item.value, item.negate]);
+const refinementText = (item) =>
+  `${fieldLabel(item.path)} ${item.negate ? "≠" : "="} ${String(item.value)}`;
 
-function effectiveExpression(filter, refinements) {
-  const base = (filter.expression || "").trim();
-  if (!refinements.length) return base;
-  const clauses = refinements.map((item) => item.clause).join(" AND ");
-  return base ? `(${base}) AND ${clauses}` : clauses;
-}
-
-function addRefinement(field, value, negate) {
+function addRefinement(path, value, negate) {
   if (view.mode !== "filter") return;
-  const clause = refinementClause(field, value, negate);
-  if (view.refinements.some((item) => item.clause === clause)) {
+  const refinement = { path, value, negate };
+  if (view.refinements.some((item) => refinementKey(item) === refinementKey(refinement))) {
     toast("That refinement is already applied");
     return;
   }
-  view.refinements = [...view.refinements, { field, value, negate, clause }];
+  view.refinements = [...view.refinements, refinement];
   loadFilter();
 }
 
@@ -423,9 +482,9 @@ function renderRefineBar() {
     const chip = document.createElement("button");
     chip.type = "button";
     chip.className = `refine-chip${item.negate ? " is-negated" : ""}`;
-    chip.title = `${item.clause}\nClick to remove`;
+    chip.title = `${refinementText(item)}\nClick to remove`;
     chip.innerHTML =
-      `<span class="refine-field">${escapeHtml(item.field)}</span>` +
+      `<span class="refine-field">${escapeHtml(fieldLabel(item.path))}</span>` +
       `<span class="refine-op">${item.negate ? "≠" : "="}</span>` +
       `<span class="refine-value">${escapeHtml(truncate(String(item.value), 48))}</span>` +
       `<span class="refine-x">✕</span>`;
@@ -434,38 +493,39 @@ function renderRefineBar() {
   });
 }
 
-// Scalar leaves of the raw record that make sense as an equality filter,
-// grouped by the Cloud Logging field they map to.
+// Scalar leaves of the raw record that make sense as an equality filter, as
+// the path of segments to them (a key may hold dots or slashes, so the path
+// is never joined into one string on the way to the backend).
 function refineCandidates(entry) {
   const raw = entry.fields && typeof entry.fields === "object" ? entry.fields : {};
   const out = [];
-  const push = (field, value) => {
+  const push = (path, value) => {
     if (out.length >= MAX_DETAIL_CHIPS) return;
     if (value === null || value === undefined || typeof value === "object") return;
     if (typeof value === "string" && (!value.trim() || value.length > MAX_REFINE_VALUE_LENGTH)) {
       return;
     }
-    out.push({ field, value });
+    out.push({ path, value });
   };
   const walk = (object, prefix, depth) => {
     if (!object || typeof object !== "object" || Array.isArray(object)) return;
     for (const [key, value] of Object.entries(object)) {
       if (NOISY_REFINE_KEYS.has(key)) continue;
-      const field = `${prefix}.${key}`;
+      const path = [...prefix, key];
       if (value && typeof value === "object" && !Array.isArray(value)) {
-        if (depth < 2) walk(value, field, depth + 1);
+        if (depth < 2) walk(value, path, depth + 1);
       } else {
-        push(field, value);
+        push(path, value);
       }
     }
   };
-  push("logName", raw.logName);
-  walk(raw.resource?.labels, "resource.labels", 0);
-  walk(raw.labels, "labels", 0);
-  walk(raw.httpRequest, "httpRequest", 0);
-  walk(raw.operation, "operation", 0);
-  walk(raw.jsonPayload, "jsonPayload", 0);
-  walk(raw.protoPayload, "protoPayload", 0);
+  push(["logName"], raw.logName);
+  walk(raw.resource?.labels, ["resource", "labels"], 0);
+  walk(raw.labels, ["labels"], 0);
+  walk(raw.httpRequest, ["httpRequest"], 0);
+  walk(raw.operation, ["operation"], 0);
+  walk(raw.jsonPayload, ["jsonPayload"], 0);
+  walk(raw.protoPayload, ["protoPayload"], 0);
   return out;
 }
 
@@ -489,12 +549,19 @@ function syncChrome() {
     back.textContent = `← ${view.parent.view.title || "back"}`;
     back.title = "Back (Esc)";
   }
-  const others = otherProjects();
-  const projectsButton = document.getElementById("trace-projects-btn");
-  projectsButton.hidden = others.length === 0;
-  projectsButton.disabled = false;
-  projectsButton.textContent = `⊕ other projects (${others.length})`;
-  projectsButton.title = `Search the same trace in the other projects of the saved filters:\n${others.join(", ")}`;
+  const others = otherSources();
+  const sourcesButton = document.getElementById("trace-sources-btn");
+  sourcesButton.hidden = others.length === 0;
+  sourcesButton.disabled = false;
+  sourcesButton.textContent = `⊕ other sources (${others.length})`;
+  sourcesButton.title = `Search the same trace in the other sources:\n${others.map((source) => source.name).join(", ")}`;
+  const consoleButton = document.getElementById("open-console-btn");
+  consoleButton.hidden = !view.consoleUrl;
+  if (view.consoleUrl) {
+    const kind = kindOf(view.source);
+    consoleButton.textContent = `↗ open in ${kind.console}`;
+    consoleButton.title = `Open this query in ${kind.label}`;
+  }
   renderRefineBar();
 }
 
@@ -522,7 +589,8 @@ async function runFilter(filter) {
   renderFilterList();
   showResultsPanel();
 
-  view = { mode: "filter", filter, project: filter.project, refinements: [], title: filter.name };
+  const source = sourceById(filter.source_id);
+  view = { mode: "filter", filter, source, refinements: [], title: filter.name };
   liveTemplate = filter.line_format || "";
   document.getElementById("format-input").value = liveTemplate;
   await loadFilter();
@@ -530,54 +598,49 @@ async function runFilter(filter) {
 
 async function loadFilter() {
   const current = view;
-  const { filter, project, refinements } = view;
+  const { filter, refinements } = view;
+  const place = view.source?.name || "no source";
   const windowLabel = FRESHNESS_LABELS[filter.freshness] || filter.freshness;
-  setHeader(filter.name, `${project} · window ${windowLabel} · querying…`);
+  view.expression = undefined;
+  view.consoleUrl = "";
+  setHeader(filter.name, `${place} · window ${windowLabel} · querying…`);
   showSkeleton();
 
-  // a refined view is an ad-hoc query; the plain saved filter runs by id
-  const query = refinements.length
-    ? api.queryLogs({
-        project,
-        expression: effectiveExpression(filter, refinements),
-        freshness: filter.freshness,
-        limit: filter.limit,
-      })
-    : api.runFilter(filter.id);
-
   try {
-    const result = await query;
+    const result = await api.runFilter(filter.id, refinements);
     if (view !== current) return; // the user moved on while this ran
     view.queriedAt = Date.now();
+    view.expression = result.expression;
+    view.consoleUrl = result.console_url;
     lastEntries = result.entries;
     paintEntries({ rise: true });
     renderFieldChips();
     const refined = refinements.length ? ` · ${plural(refinements.length, "refinement")}` : "";
     setHeader(
       filter.name,
-      `${project} · window ${windowLabel} · ${plural(lastEntries.length, "entry", "entries")}${refined} · ` +
+      `${place} · window ${windowLabel} · ${plural(lastEntries.length, "entry", "entries")}${refined} · ` +
         new Date().toLocaleTimeString(LOCALE, { hourCycle: "h23" })
     );
   } catch (error) {
     if (view !== current) return;
     lastEntries = [];
-    setHeader(filter.name, `${project} · failed`);
+    setHeader(filter.name, `${place} · failed`);
     showError(error);
   }
 }
 
 // Drill down from one row into everything that shares its trace/operation,
-// starting in the current project within ±1 h of the row.
+// starting in the current source within ±1 h of the row.
 async function openTrace(entry) {
   const key = correlationKey(entry);
-  if (!key || !view.project) return;
-  const project = view.project;
+  if (!key || !view.source || !kindOf(view.source).traces) return;
+  const source = view.source;
   const window = windowAround(entry.timestamp);
 
   view = {
     mode: "trace",
-    project,
-    projects: [project],
+    source,
+    sources: [source],
     key,
     origin: entry,
     window,
@@ -587,24 +650,24 @@ async function openTrace(entry) {
   await loadTrace();
 }
 
-// Queries every project in view.projects in parallel and merges the results
-// into one ascending timeline; each entry is tagged with its project.
+// Queries every source in view.sources in parallel and merges the results
+// into one ascending timeline; each entry is tagged with its source's name.
 async function loadTrace() {
   const current = view;
-  const { projects, key, window, title } = view;
-  setHeader(title, `${projects.join(" + ")} · querying…`);
+  const { sources: searched, key, window, title } = view;
+  const names = searched.map((source) => source.name);
+  view.consoleUrl = "";
+  setHeader(title, `${names.join(" + ")} · querying…`);
   showSkeleton();
 
   const results = await Promise.allSettled(
-    projects.map((project) =>
-      api
-        .queryLogs({
-          project,
-          expression: correlationQuery(key, project, window).expression,
-          freshness: "1d",
-          limit: TRACE_LIMIT,
-        })
-        .then((result) => result.entries.map((item) => ({ ...item, project })))
+    searched.map((source) =>
+      api.queryLogs({
+        source_id: source.id,
+        expression: correlationQuery(key, source.config.project, window).expression,
+        freshness: "1d",
+        limit: TRACE_LIMIT,
+      })
     )
   );
   if (view !== current) return;
@@ -614,17 +677,19 @@ async function loadTrace() {
   const failed = [];
   results.forEach((result, index) => {
     if (result.status === "rejected") {
-      failed.push(`${projects[index]}: ${result.reason.message}`);
-    } else if (result.value.length === 0) {
-      empty.push(projects[index]);
+      failed.push(`${names[index]}: ${result.reason.message}`);
+    } else if (result.value.entries.length === 0) {
+      empty.push(names[index]);
     } else {
-      entries.push(...result.value);
+      entries.push(...result.value.entries.map((item) => ({ ...item, source_name: names[index] })));
     }
   });
+  // the console opens the trace where it started
+  if (results[0].status === "fulfilled") view.consoleUrl = results[0].value.console_url;
 
-  if (failed.length === projects.length) {
+  if (failed.length === searched.length) {
     lastEntries = [];
-    setHeader(title, `${projects.join(" + ")} · failed`);
+    setHeader(title, `${names.join(" + ")} · failed`);
     showError(new Error(failed.join("\n")));
     return;
   }
@@ -632,17 +697,17 @@ async function loadTrace() {
   lastEntries = sortAscending(entries);
   paintEntries({ rise: true });
   renderFieldChips();
-  const hits = [...new Set(lastEntries.map((item) => item.project))];
+  const hits = [...new Set(lastEntries.map((item) => item.source_name))];
   const resources = new Set(lastEntries.map((item) => item.resource_type)).size;
   const missing =
     empty.length === 0
       ? ""
       : empty.length > 2
-        ? ` · no entries in ${empty.length} other projects`
+        ? ` · no entries in ${empty.length} other sources`
         : ` · no entries in ${empty.join(", ")}`;
   setHeader(
     title,
-    `${hits.join(" + ") || projects[0]} · ${plural(lastEntries.length, "entry", "entries")} · ` +
+    `${hits.join(" + ") || names[0]} · ${plural(lastEntries.length, "entry", "entries")} · ` +
       `${plural(resources, "resource")} · ${window ? "window ±1 h" : "window 24 h"}${missing}`
   );
   document.getElementById("results-meta").title = empty.length
@@ -651,13 +716,13 @@ async function loadTrace() {
   for (const message of failed) toast(message, "error");
 }
 
-async function expandTraceProjects() {
-  const targets = otherProjects();
+async function expandTraceSources() {
+  const targets = otherSources();
   if (!targets.length) return;
-  const button = document.getElementById("trace-projects-btn");
+  const button = document.getElementById("trace-sources-btn");
   button.disabled = true;
   button.textContent = "⊕ searching…";
-  view.projects = [...view.projects, ...targets];
+  view.sources = [...view.sources, ...targets];
   await loadTrace();
 }
 
@@ -677,22 +742,13 @@ function rerun() {
   } else if (view.mode === "filter") {
     const filter = filters.find((item) => item.id === view.filter.id) || view.filter;
     view.filter = filter;
-    view.project = filter.project;
+    view.source = sourceById(filter.source_id) || view.source;
     loadFilter();
   }
 }
 
-function openInGcp() {
-  if (view.mode === "trace") {
-    const { base } = correlationQuery(view.key, view.project, view.window);
-    const url = view.window
-      ? gcpLogsRangeUrl(view.project, base, view.window.start, view.window.end)
-      : gcpLogsUrl({ project: view.project, expression: base, freshness: "1d" });
-    window.open(url, "_blank", "noopener");
-  } else if (view.mode === "filter") {
-    const expression = effectiveExpression(view.filter, view.refinements);
-    window.open(gcpLogsUrl({ ...view.filter, expression }), "_blank", "noopener");
-  }
+function openInConsole() {
+  if (view.consoleUrl) window.open(view.consoleUrl, "_blank", "noopener");
 }
 
 // ----- severity histogram ------------------------------------------------
@@ -902,7 +958,7 @@ function paintEntries({ rise = false } = {}) {
       relative: true,
       originId: view.origin.insert_id,
       currentKey: view.key.value,
-      showProject: view.projects.length > 1,
+      showSource: view.sources.length > 1,
     });
   } else {
     renderEntries(lastEntries, { refinable: view.mode === "filter" });
@@ -921,11 +977,11 @@ function absoluteTime(timestamp) {
   });
 }
 
-function refineAttrs(field, value, enabled) {
+function refineAttrs(path, value, enabled) {
   if (!enabled) return "";
   return (
-    ` data-refine-field="${escapeHtml(field)}" data-refine-value="${escapeHtml(value)}"` +
-    ` title="${escapeHtml(`Filter by ${field}=${value}\nshift+click excludes`)}"`
+    ` data-refine-path="${escapeHtml(JSON.stringify(path))}" data-refine-value="${escapeHtml(value)}"` +
+    ` title="${escapeHtml(`Filter by ${fieldLabel(path)} = ${value}\nshift+click excludes`)}"`
   );
 }
 
@@ -934,7 +990,7 @@ function renderEntries(entries, options = {}) {
     relative = false,
     originId = null,
     currentKey = null,
-    showProject = false,
+    showSource = false,
     refinable = false,
   } = options;
   const container = document.getElementById("entries");
@@ -964,9 +1020,9 @@ function renderEntries(entries, options = {}) {
     } else if (key) {
       chip = `<button type="button" class="entry-trace" data-trace title="${escapeHtml(key.title)}">${escapeHtml(key.label)}</button>`;
     }
-    const projectTag =
-      showProject && entry.project
-        ? `<span class="entry-project">${escapeHtml(entry.project)}</span>`
+    const sourceTag =
+      showSource && entry.source_name
+        ? `<span class="entry-project">${escapeHtml(entry.source_name)}</span>`
         : "";
     const refinableClass = refinable ? " is-refinable" : "";
 
@@ -974,11 +1030,11 @@ function renderEntries(entries, options = {}) {
     node.innerHTML = `
       <div class="entry-row">
         <span class="entry-time${relative ? " is-relative" : ""}" title="${escapeHtml(absolute)}">${escapeHtml(time)}</span>
-        <span class="entry-sev sev-${escapeHtml(entry.severity)}${refinableClass}"${refineAttrs("severity", entry.severity, refinable)}>${escapeHtml(entry.severity)}</span>
+        <span class="entry-sev sev-${escapeHtml(entry.severity)}${refinableClass}"${refineAttrs(["severity"], entry.severity, refinable)}>${escapeHtml(entry.severity)}</span>
         <span class="entry-summary" title="${escapeHtml(summary)}">${escapeHtml(summary)}</span>
         ${chip}
-        ${projectTag}
-        <span class="entry-resource${refinableClass}"${refineAttrs("resource.type", entry.resource_type, refinable && entry.resource_type)}>${escapeHtml(entry.resource_type)}</span>
+        ${sourceTag}
+        <span class="entry-resource${refinableClass}"${refineAttrs(["resource", "type"], entry.resource_type, refinable && entry.resource_type)}>${escapeHtml(entry.resource_type)}</span>
       </div>`;
 
     const traceButton = node.querySelector("[data-trace]");
@@ -990,9 +1046,10 @@ function renderEntries(entries, options = {}) {
     }
 
     node.querySelector(".entry-row").addEventListener("click", (event) => {
-      const target = event.target.closest("[data-refine-field]");
+      const target = event.target.closest("[data-refine-path]");
       if (target) {
-        addRefinement(target.dataset.refineField, target.dataset.refineValue, event.shiftKey);
+        const path = JSON.parse(target.dataset.refinePath);
+        addRefinement(path, target.dataset.refineValue, event.shiftKey);
         return;
       }
       const open = node.querySelector(".entry-detail");
@@ -1016,17 +1073,17 @@ function buildDetail(entry, refinable) {
     const strip = document.createElement("div");
     strip.className = "detail-fields";
     strip.innerHTML = '<span class="format-fields-label">filter by</span>';
-    for (const { field, value } of candidates) {
+    for (const { path, value } of candidates) {
       const chip = document.createElement("button");
       chip.type = "button";
       chip.className = "detail-chip";
-      chip.title = `${refinementClause(field, value, false)}\nClick filters · shift+click excludes`;
+      chip.title = `${refinementText({ path, value })}\nClick filters · shift+click excludes`;
       chip.innerHTML =
-        `<span class="detail-chip-field">${escapeHtml(field)}</span>` +
+        `<span class="detail-chip-field">${escapeHtml(fieldLabel(path))}</span>` +
         `<span class="detail-chip-value">${escapeHtml(truncate(String(value), 48))}</span>`;
       chip.addEventListener("click", (event) => {
         event.stopPropagation();
-        addRefinement(field, value, event.shiftKey);
+        addRefinement(path, value, event.shiftKey);
       });
       strip.appendChild(chip);
     }
@@ -1062,15 +1119,27 @@ function buildDetail(entry, refinable) {
 // `asNew` prefills the form from `filter` but saves a new record (used to
 // turn a refined query into its own saved filter).
 function openFilterModal(filter = null, { asNew = false } = {}) {
+  if (!sources.length) {
+    openSourceModal();
+    return;
+  }
   editingId = filter && !asNew ? filter.id : null;
   const form = document.getElementById("filter-form");
   form.reset();
   document.getElementById("filter-modal-title").textContent = editingId
     ? "Edit filter"
     : "New filter";
+  form.source_id.innerHTML = sources
+    .map(
+      (source) =>
+        `<option value="${escapeHtml(source.id)}">${escapeHtml(source.name)} · ${escapeHtml(sourcePlace(source))}</option>`
+    )
+    .join("");
+  // a new filter starts on the source being looked at
+  form.source_id.value = filter?.source_id || view.source?.id || sources[0].id;
+  syncExpressionField();
   if (filter) {
     form.name.value = filter.name;
-    form.project.value = filter.project;
     form.expression.value = filter.expression;
     form.freshness.value = filter.freshness;
     form.limit.value = filter.limit;
@@ -1080,15 +1149,23 @@ function openFilterModal(filter = null, { asNew = false } = {}) {
   openModal("filter-modal");
 }
 
+// The expression field speaks the chosen source's language.
+function syncExpressionField() {
+  const form = document.getElementById("filter-form");
+  const kind = kindOf(sourceById(form.source_id.value));
+  document.getElementById("filter-expression-label").textContent = `Expression (${kind.syntax})`;
+  form.expression.placeholder = kind.placeholder;
+}
+
 function saveRefinedAsFilter() {
   if (view.mode !== "filter" || !view.refinements.length) return;
-  const { filter, refinements } = view;
+  if (view.expression === undefined) {
+    toast("Run the refined query first: its expression comes from the result");
+    return;
+  }
+  const { filter } = view;
   openFilterModal(
-    {
-      ...filter,
-      name: `${filter.name} · refined`,
-      expression: effectiveExpression(filter, refinements),
-    },
+    { ...filter, name: `${filter.name} · refined`, expression: view.expression },
     { asNew: true }
   );
 }
@@ -1098,7 +1175,7 @@ async function submitFilter(event) {
   const form = event.target;
   const payload = {
     name: form.name.value.trim(),
-    project: form.project.value.trim(),
+    source_id: form.source_id.value,
     expression: form.expression.value.trim(),
     freshness: form.freshness.value,
     limit: Number(form.limit.value) || 50,
@@ -1130,6 +1207,79 @@ async function loadFilters() {
   syncChrome();
 }
 
+// ----- source modal ------------------------------------------------------
+
+function renderSourceFields(kindName, config = {}) {
+  const kind = kindOf({ kind: kindName });
+  document.getElementById("source-config").innerHTML = kind.fields
+    .map(
+      (field) => `
+        <label class="field">
+          <span>${escapeHtml(field.label)} *</span>
+          <input data-config="${escapeHtml(field.key)}" required maxlength="120" class="mono"
+            spellcheck="false" placeholder="${escapeHtml(field.placeholder)}"
+            value="${escapeHtml(config[field.key] || "")}" />
+        </label>`
+    )
+    .join("");
+  document.getElementById("source-hint").textContent = kind.hint;
+}
+
+function openSourceModal(source = null) {
+  editingSourceId = source?.id || null;
+  const form = document.getElementById("source-form");
+  form.reset();
+  document.getElementById("source-modal-title").textContent = source
+    ? "Edit log source"
+    : "New log source";
+  form.kind.innerHTML = Object.entries(SOURCE_KINDS)
+    .map(([key, kind]) => `<option value="${key}">${escapeHtml(kind.label)}</option>`)
+    .join("");
+  form.kind.value = source?.kind || "gcp";
+  form.kind.disabled = Boolean(source); // the filters on it are written in its kind's language
+  form.name.value = source?.name || "";
+  form.name.dataset.touched = source ? "1" : "";
+  renderSourceFields(form.kind.value, source?.config);
+  openModal("source-modal");
+}
+
+async function submitSource(event) {
+  event.preventDefault();
+  const form = event.target;
+  const config = Object.fromEntries(
+    [...form.querySelectorAll("[data-config]")].map((input) => [
+      input.dataset.config,
+      input.value.trim(),
+    ])
+  );
+  const name = form.name.value.trim();
+  const button = document.getElementById("source-save-btn");
+  button.disabled = true;
+  try {
+    if (editingSourceId) {
+      await api.updateSource(editingSourceId, { name, config });
+      toast("Source updated", "success");
+    } else {
+      await api.createSource({ name, kind: form.kind.value, config });
+      toast("Source added", "success");
+    }
+    closeModal("source-modal");
+    await loadSources();
+  } catch (error) {
+    toast(error.message, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function loadSources() {
+  sources = await api.listSources();
+  renderSourceList();
+  renderFilterList(); // the filters show their source's name
+  if (view.source) view.source = sourceById(view.source.id) || view.source;
+  document.dispatchEvent(new CustomEvent("logs:sources"));
+}
+
 async function persistFilterOrder(ids) {
   const previous = filters.map((filter) => filter.id);
   if (ids.join("|") === previous.join("|")) return;
@@ -1156,17 +1306,36 @@ export async function initLogs() {
     button: document.getElementById("filter-share-btn"),
     list: document.getElementById("filter-list"),
     itemSelector: ".filter-item",
-    reload: loadFilters,
+    reload: async () => {
+      await loadSources(); // an import may bring sources along
+      await loadFilters();
+    },
   });
 
   document.getElementById("filter-new-btn").addEventListener("click", () => openFilterModal());
   document.getElementById("filter-empty-btn").addEventListener("click", () => openFilterModal());
   document.getElementById("filter-form").addEventListener("submit", submitFilter);
+  document
+    .querySelector("#filter-form [name=source_id]")
+    .addEventListener("change", syncExpressionField);
+
+  document.getElementById("source-new-btn").addEventListener("click", () => openSourceModal());
+  const sourceForm = document.getElementById("source-form");
+  sourceForm.addEventListener("submit", submitSource);
+  sourceForm.kind.addEventListener("change", () => renderSourceFields(sourceForm.kind.value));
+  // a new source is named after what it reads until the name is typed
+  sourceForm.name.addEventListener("input", () => {
+    sourceForm.name.dataset.touched = "1";
+  });
+  document.getElementById("source-config").addEventListener("input", (event) => {
+    if (sourceForm.name.dataset.touched || !event.target.matches("[data-config]")) return;
+    sourceForm.name.value = event.target.value.trim();
+  });
 
   document.getElementById("rerun-btn").addEventListener("click", rerun);
-  document.getElementById("open-gcp-btn").addEventListener("click", openInGcp);
+  document.getElementById("open-console-btn").addEventListener("click", openInConsole);
   document.getElementById("results-back-btn").addEventListener("click", goBack);
-  document.getElementById("trace-projects-btn").addEventListener("click", expandTraceProjects);
+  document.getElementById("trace-sources-btn").addEventListener("click", expandTraceSources);
 
   document.getElementById("refine-clear-btn").addEventListener("click", () => {
     if (view.mode !== "filter") return;
@@ -1212,7 +1381,7 @@ export async function initLogs() {
     try {
       const updated = await api.updateFilter(filter.id, {
         name: filter.name,
-        project: filter.project,
+        source_id: filter.source_id,
         expression: filter.expression,
         freshness: filter.freshness,
         limit: filter.limit,
@@ -1226,5 +1395,6 @@ export async function initLogs() {
     }
   });
 
+  await loadSources();
   await loadFilters();
 }

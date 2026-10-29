@@ -56,7 +56,7 @@ cp ~/.config/gcloud/application_default_credentials.json secrets/gcp-adc.json
 chmod 644 secrets/gcp-adc.json
 ```
 
-No project needs to be configured: each saved filter names its own. If the credentials are missing, unreadable, expired or lack access to a project, the top-bar `logs` dot turns red and the Logs tab says what to fix.
+Logs are read from **sources**, listed under the saved filters: a source is a Google Cloud project for now (other kinds of log backends can be added later), and each filter runs on one. Add a source with **+ Source**, then create filters on it. Clicking a severity, a resource or a field of an entry refines the results, and **Save as new filter** keeps the refined query. If the credentials are missing, unreadable, expired or lack access to a project, the top-bar `logs` dot turns red and the Logs tab says what to fix; the dot is hidden while there are no sources.
 
 ## Run locally
 

@@ -60,10 +60,12 @@ function showStatus(id, ok, title) {
 async function checkHealth() {
   try {
     const health = await api.health();
+    // null: no log source yet, so there is nothing to report
+    document.getElementById("logs-status").hidden = health.logs === null;
     showStatus(
       "logs-status",
       health.logs,
-      health.logs ? "Log provider available" : "Log provider unavailable"
+      health.logs ? "Log sources can be queried" : "Some log source cannot be queried"
     );
     showStatus(
       "github-status",
@@ -94,6 +96,7 @@ async function start() {
   setupTabs();
   setupClock();
   checkHealth();
+  document.addEventListener("logs:sources", checkHealth);
 
   await initTheme();
   try {

@@ -7,7 +7,7 @@ import pytest
 
 from app.application.github import GithubFeedService
 from app.application.links import ImageService, LinkService
-from app.application.logs import LogFilterService
+from app.application.logs import LogFilterService, LogSourceService
 from app.application.sharing import (
     Bundle,
     ImportAction,
@@ -22,6 +22,7 @@ from tests.fakes import (
     InMemoryFeedRepository,
     InMemoryFilterRepository,
     InMemoryLinkRepository,
+    InMemorySourceRepository,
 )
 
 PNG = b"\x89PNG fake"
@@ -29,14 +30,20 @@ PNG = b"\x89PNG fake"
 
 def make_deck():
     links, filters, feeds = InMemoryLinkRepository(), InMemoryFilterRepository(), InMemoryFeedRepository()
+    sources = InMemorySourceRepository()
     images = ImageService(FakeImageStore())
     return SimpleNamespace(
         links=LinkService(links),
-        filters=LogFilterService(filters),
+        sources=LogSourceService(sources, filters),
+        filters=LogFilterService(filters, sources),
         feeds=GithubFeedService(feeds),
         images=images,
-        sharing=SharingService(links, filters, feeds, images),
+        sharing=SharingService(links, filters, sources, feeds, images),
     )
+
+
+def gcp(deck, project, name=None):
+    return deck.sources.create_source(name or project, "gcp", {"project": project}).id
 
 
 @pytest.fixture
@@ -49,14 +56,14 @@ def create(item_type, index=0, action=ImportAction.CREATE):
 
 
 def test_export_keeps_only_portable_fields_in_the_users_order(deck):
-    first = deck.filters.create_filter(name="errors", project="p1", expression="severity>=ERROR")
-    second = deck.filters.create_filter(name="api", project="p2", limit=20)
+    first = deck.filters.create_filter(name="errors", source_id=gcp(deck, "p1"), expression="severity>=ERROR")
+    second = deck.filters.create_filter(name="api", source_id=gcp(deck, "p2", "Billing"), limit=20)
     feed = deck.feeds.create_feed(name="core", org="acme", repos=["core"], event_kinds=["pr"])
     bundle = deck.sharing.export([], [second.id, first.id], [feed.id])
     assert [item["name"] for item in bundle.log_filters] == ["errors", "api"]
     assert bundle.log_filters[1] == {
         "name": "api",
-        "project": "p2",
+        "source": {"name": "Billing", "kind": "gcp", "config": {"project": "p2"}},
         "expression": "",
         "freshness": "1h",
         "limit": 20,
@@ -105,7 +112,7 @@ def test_round_trip_into_another_deck_saves_the_embedded_image(deck):
 
 
 def test_check_reports_new_conflicts_and_invalid_items(deck):
-    deck.filters.create_filter(name="Errors", project="p")
+    deck.filters.create_filter(name="Errors", source_id=gcp(deck, "p"))
     bundle = Bundle(
         log_filters=[
             {"name": "errors ", "project": "p"},  # same name, other case and spaces
@@ -123,7 +130,7 @@ def test_check_reports_new_conflicts_and_invalid_items(deck):
         (ItemType.FILTER, 3, ImportStatus.INVALID),
         (ItemType.FEED, 0, ImportStatus.INVALID),
     ]
-    assert checks[2].error == "GCP project is required"
+    assert checks[2].error == "Project is required"
     assert checks[3].error == "Field 'limit' must be a number"
     assert checks[1].detail == "p"
 
@@ -139,7 +146,7 @@ def test_check_rejects_a_file_that_is_not_an_export(deck):
     with pytest.raises(ValidationError, match="Not an OpsDeck export"):
         deck.sharing.check(Bundle(version=0))
     with pytest.raises(ValidationError, match="newer OpsDeck"):
-        deck.sharing.check(Bundle(version=2))
+        deck.sharing.check(Bundle(version=3))
 
 
 def test_import_keep_both_renames_and_appends(deck):
@@ -153,14 +160,16 @@ def test_import_keep_both_renames_and_appends(deck):
 
 
 def test_import_replace_overwrites_fields_and_keeps_identity(deck):
-    existing = deck.filters.create_filter(name="errors", project="old")
-    deck.filters.create_filter(name="other", project="x")
-    bundle = Bundle(log_filters=[{"name": "Errors", "project": "new", "limit": 10}])
+    existing = deck.filters.create_filter(name="errors", source_id=gcp(deck, "old"))
+    deck.filters.create_filter(name="other", source_id=gcp(deck, "x"))
+    bundle = Bundle(log_filters=[{"name": "Errors", "project": "new", "limit": 10}])  # a version 1 file
     result = deck.sharing.import_bundle(bundle, [create(ItemType.FILTER, 0, ImportAction.REPLACE)])
     assert result.replaced == [(ItemType.FILTER, existing.id)] and result.created == []
     [replaced, _] = deck.filters.list_filters()
     assert (replaced.id, replaced.position) == (existing.id, existing.position)
-    assert (replaced.name, replaced.project, replaced.limit) == ("Errors", "new", 10)
+    assert (replaced.name, replaced.limit) == ("Errors", 10)
+    assert deck.sources.list_sources()[0].name == "new"  # the project became a source
+    assert replaced.source_id == deck.sources.list_sources()[0].id
 
 
 def test_import_skips_items_left_out_of_the_choices(deck):
@@ -171,13 +180,61 @@ def test_import_skips_items_left_out_of_the_choices(deck):
 
 def test_a_bad_choice_imports_nothing(deck):
     bundle = Bundle(log_filters=[{"name": "ok", "project": "p"}, {"name": "bad", "project": ""}])
-    with pytest.raises(ValidationError, match="Filter 'bad': GCP project is required"):
+    with pytest.raises(ValidationError, match="Filter 'bad': Project is required"):
         deck.sharing.import_bundle(bundle, [create(ItemType.FILTER, 0), create(ItemType.FILTER, 1)])
     with pytest.raises(ValidationError, match="nothing to replace"):
         deck.sharing.import_bundle(bundle, [create(ItemType.FILTER, 0, ImportAction.REPLACE)])
     with pytest.raises(ValidationError, match="no link #1"):
         deck.sharing.import_bundle(bundle, [create(ItemType.LINK, 0)])
-    assert deck.filters.list_filters() == []
+    assert deck.filters.list_filters() == [] and deck.sources.list_sources() == []
+
+
+def source_item(name, project, kind="gcp"):
+    return {"name": name, "kind": kind, "config": {"project": project}}
+
+
+def test_a_filter_reuses_the_source_that_reads_the_same_place(deck):
+    here = gcp(deck, "proj-prod", "Production")
+    bundle = Bundle(log_filters=[{"name": "errors", "source": source_item("Prod", "proj-prod")}])
+    [check] = deck.sharing.check(bundle)
+    assert (check.status, check.detail) == (ImportStatus.NEW, "Production")
+    deck.sharing.import_bundle(bundle, [create(ItemType.FILTER)])
+    assert deck.filters.list_filters()[0].source_id == here
+    assert len(deck.sources.list_sources()) == 1
+
+
+def test_a_missing_source_is_created_once_under_a_free_name(deck):
+    gcp(deck, "proj-other", "Prod")  # the name is taken by another project
+    bundle = Bundle(
+        log_filters=[
+            {"name": "errors", "source": source_item("Prod", "proj-prod")},
+            {"name": "slow", "source": source_item("Prod", "proj-prod")},
+        ]
+    )
+    checks = deck.sharing.check(bundle)
+    assert [check.detail for check in checks] == ["Prod · new log source"] * 2
+    deck.sharing.import_bundle(bundle, [create(ItemType.FILTER, 0), create(ItemType.FILTER, 1)])
+
+    created = [source for source in deck.sources.list_sources() if source.config == {"project": "proj-prod"}]
+    assert [source.name for source in created] == ["Prod (2)"]
+    assert {f.source_id for f in deck.filters.list_filters()} == {created[0].id}
+
+
+@pytest.mark.parametrize(
+    ("item", "error"),
+    [
+        ({"name": "a"}, "The filter has no log source"),
+        ({"name": "a", "source": "proj"}, "The filter has no log source"),
+        (
+            {"name": "a", "source": {"name": "x", "kind": "gcp"}},
+            "The filter's log source needs a name, a kind and a config",
+        ),
+        ({"name": "a", "source": source_item("x", "p", kind="aws")}, "Unknown kind of log source: 'aws'"),
+    ],
+)
+def test_a_filter_with_a_bad_source_is_invalid(deck, item, error):
+    [check] = deck.sharing.check(Bundle(log_filters=[item]))
+    assert (check.status, check.error) == (ImportStatus.INVALID, error)
 
 
 def test_import_drops_an_upload_path_without_its_image(deck):

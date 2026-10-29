@@ -25,7 +25,15 @@ from app.domain.github import (
     SubjectType,
 )
 from app.domain.links import CommandRunner, ImageStore, Link, LinkRepository
-from app.domain.logs import LogEntry, LogFilter, LogFilterRepository, LogProvider, LogQuery
+from app.domain.logs import (
+    LogEntry,
+    LogFilter,
+    LogFilterRepository,
+    LogProvider,
+    LogQuery,
+    LogSource,
+    LogSourceRepository,
+)
 from app.domain.settings import AppSettings, SettingsRepository
 
 
@@ -71,6 +79,30 @@ class InMemoryFilterRepository(LogFilterRepository):
         return self.items.pop(filter_id, None) is not None
 
 
+class InMemorySourceRepository(LogSourceRepository):
+    def __init__(self, items: list[LogSource] | None = None):
+        self.items = {item.id: item for item in items or []}
+
+    def list_all(self):
+        return list(self.items.values())
+
+    def get(self, source_id):
+        return self.items.get(source_id)
+
+    def save(self, source):
+        self.items[source.id] = source
+
+    def delete(self, source_id):
+        return self.items.pop(source_id, None) is not None
+
+
+def gcp_source(project: str = "proj-x", name: str | None = None, id_: str | None = None) -> LogSource:
+    source = LogSource.new(name=name or project, kind="gcp", config={"project": project})
+    if id_:
+        source.id = id_
+    return source
+
+
 class FakeCommandRunner(CommandRunner):
     def __init__(self, error: Exception | None = None):
         self.ran: list[str] = []
@@ -95,18 +127,29 @@ class FakeLogProvider(LogProvider):
         self.error = error
         self.available = available
         self.last_query: LogQuery | None = None
+        self.last_source: LogSource | None = None
 
     def is_available(self):
         return self.available
 
-    def query(self, query):
-        self.last_query = query
+    def expression(self, query):
+        # the refinements spelled plainly, enough to see them ANDed on
+        clauses = [
+            f"{'.'.join(item.path)}{'!=' if item.negate else '='}{item.value}" for item in query.refinements
+        ]
+        return " AND ".join(filter(None, [query.expression, *clauses]))
+
+    def query(self, source, query):
+        self.last_source, self.last_query = source, query
         if self.error:
             raise self.error
         return list(self.entries)
 
-    def describe(self, query):
-        return f"fake --project={query.project}"
+    def describe(self, source, query):
+        return f"fake --project={source.config['project']}"
+
+    def console_url(self, source, query):
+        return f"https://console.example/{source.config['project']}"
 
 
 class InMemorySettingsRepository(SettingsRepository):

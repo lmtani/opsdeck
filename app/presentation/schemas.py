@@ -25,7 +25,7 @@ from app.domain.github import (
     SubjectType,
 )
 from app.domain.links import LinkKind
-from app.domain.logs import Freshness
+from app.domain.logs import Freshness, LogSourceKind, Refinement
 
 
 class LinkIn(BaseModel):
@@ -55,9 +55,25 @@ class ReorderIn(BaseModel):
     ids: list[str]
 
 
+class LogSourceUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    config: dict[str, str] = Field(default_factory=dict)  # per kind; gcp: {"project": ...}
+
+
+class LogSourceIn(LogSourceUpdate):
+    kind: LogSourceKind = LogSourceKind.GCP
+
+
+class LogSourceOut(LogSourceIn):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    created_at: datetime
+
+
 class LogFilterIn(BaseModel):
     name: str = Field(min_length=1)
-    project: str = Field(min_length=1)
+    source_id: str = Field(min_length=1)
     expression: str = ""
     freshness: Freshness = Freshness.H1
     limit: int = Field(default=50, ge=1, le=500)
@@ -73,13 +89,31 @@ class LogFilterOut(LogFilterIn):
     created_at: datetime
 
 
-class LogQueryIn(BaseModel):
-    """An ad-hoc query; saved filters run through POST /api/filters/{id}/query."""
+class RefinementIn(BaseModel):
+    """`path` (the field's segments in the entry record) = or != `value`."""
 
-    project: str = Field(min_length=1)
+    path: list[str] = Field(min_length=1, max_length=8)
+    value: bool | int | float | str
+    negate: bool = False
+
+    def to_refinement(self) -> Refinement:
+        return Refinement(path=tuple(self.path), value=self.value, negate=self.negate)
+
+
+class SavedQueryIn(BaseModel):
+    """Refinements ANDed onto a saved filter for one run (not saved)."""
+
+    refinements: list[RefinementIn] = Field(default_factory=list, max_length=20)
+
+
+class LogQueryIn(BaseModel):
+    """An ad-hoc query on a source; saved filters run through POST /api/filters/{id}/query."""
+
+    source_id: str = Field(min_length=1)
     expression: str = ""
     freshness: Freshness = Freshness.H1
     limit: int = Field(default=50, ge=1, le=500)
+    refinements: list[RefinementIn] = Field(default_factory=list, max_length=20)
 
 
 class LogEntryOut(BaseModel):
@@ -100,7 +134,10 @@ class LogEntryOut(BaseModel):
 
 
 class LogQueryOut(BaseModel):
+    source_id: str
+    expression: str  # what ran, refinements included, in the source's language
     command: str
+    console_url: str = ""
     entries: list[LogEntryOut]
 
 
@@ -124,7 +161,7 @@ class ImageOut(BaseModel):
 
 class HealthOut(BaseModel):
     status: str = "ok"
-    logs: bool  # the Cloud Logging credentials are in place
+    logs: bool | None  # every kind of log source in use can be queried; None without sources
     github: bool = False  # GitHub credentials are configured
 
 

@@ -38,7 +38,13 @@ export const api = {
   deleteFilter: (id) => request(`/api/filters/${id}`, { method: "DELETE" }),
   reorderFilters: (ids) => request("/api/filters/order", json("PUT", { ids })),
 
-  runFilter: (id) => request(`/api/filters/${id}/query`, { method: "POST" }),
+  listSources: () => request("/api/log-sources"),
+  createSource: (data) => request("/api/log-sources", json("POST", data)),
+  updateSource: (id, data) => request(`/api/log-sources/${id}`, json("PUT", data)),
+  deleteSource: (id) => request(`/api/log-sources/${id}`, { method: "DELETE" }),
+
+  runFilter: (id, refinements = []) =>
+    request(`/api/filters/${id}/query`, json("POST", { refinements })),
   queryLogs: (data) => request("/api/logs/query", json("POST", data)),
 
   listGithubFeeds: () => request("/api/github/feeds"),

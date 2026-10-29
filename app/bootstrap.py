@@ -5,25 +5,27 @@ concrete implementations — and the only place that reads the environment
 (through Settings.from_env). Storage and command runner are chosen here:
 
 - storage: MySQL (default), JSON files with DASHBOARD_STORAGE=json.
-- logs: Cloud Logging API client with Application Default Credentials.
+- logs: one provider per kind of log source; GCP sources read Cloud Logging
+  through its API client with Application Default Credentials.
 - commands: real subprocess by default, disabled with DASHBOARD_COMMANDS=off.
 - github: REST/GraphQL API with GITHUB_TOKEN or, locally, the
   token of the `gh` CLI login.
 """
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import FastAPI
 
 from app.application.github import GithubActivityService, GithubFeedService
 from app.application.links import CommandService, ImageService, LinkService
-from app.application.logs import LogFilterService, LogQueryService
+from app.application.logs import LogFilterService, LogQueryService, LogSourceService
 from app.application.settings import SettingsService
 from app.application.sharing import SharingService
 from app.config import Settings
 from app.domain.github import GithubFeedRepository
 from app.domain.links import CommandRunner, LinkRepository
-from app.domain.logs import LogFilterRepository, LogProvider
+from app.domain.logs import LogFilterRepository, LogProvider, LogSourceKind, LogSourceRepository
 from app.domain.settings import SettingsRepository
 from app.infrastructure.cloud_logging_provider import CloudLoggingApiProvider
 from app.infrastructure.github_api_provider import GithubApiProvider, resolve_github_token
@@ -31,7 +33,9 @@ from app.infrastructure.json_repositories import (
     JsonGithubFeedRepository,
     JsonLinkRepository,
     JsonLogFilterRepository,
+    JsonLogSourceRepository,
     JsonSettingsRepository,
+    adopt_legacy_projects,
 )
 from app.infrastructure.local_image_store import LocalImageStore
 from app.infrastructure.migrations import run_migrations
@@ -40,6 +44,7 @@ from app.infrastructure.mysql_repositories import (
     MySqlGithubFeedRepository,
     MySqlLinkRepository,
     MySqlLogFilterRepository,
+    MySqlLogSourceRepository,
     MySqlSettingsRepository,
 )
 from app.infrastructure.subprocess_command_runner import SubprocessCommandRunner
@@ -51,28 +56,39 @@ DATA_DIR = BASE_DIR / "data"
 WEB_DIR = BASE_DIR / "web"
 
 
-def _build_repositories(
-    data_dir: Path, settings: Settings
-) -> tuple[LinkRepository, LogFilterRepository, SettingsRepository, GithubFeedRepository]:
+@dataclass(frozen=True)
+class _Repositories:
+    links: LinkRepository
+    filters: LogFilterRepository
+    sources: LogSourceRepository
+    settings: SettingsRepository
+    feeds: GithubFeedRepository
+
+
+def _build_repositories(data_dir: Path, settings: Settings) -> _Repositories:
     if settings.storage == "json":
-        return (
-            JsonLinkRepository(data_dir / "links.json"),
-            JsonLogFilterRepository(data_dir / "filters.json"),
-            JsonSettingsRepository(data_dir / "settings.json"),
-            JsonGithubFeedRepository(data_dir / "github_feeds.json"),
+        sources = JsonLogSourceRepository(data_dir / "log_sources.json")
+        adopt_legacy_projects(data_dir / "filters.json", sources)
+        return _Repositories(
+            links=JsonLinkRepository(data_dir / "links.json"),
+            filters=JsonLogFilterRepository(data_dir / "filters.json"),
+            sources=sources,
+            settings=JsonSettingsRepository(data_dir / "settings.json"),
+            feeds=JsonGithubFeedRepository(data_dir / "github_feeds.json"),
         )
     mysql_factory = MySqlConnectionFactory(settings.mysql)
     run_migrations(mysql_factory)
-    return (
-        MySqlLinkRepository(mysql_factory),
-        MySqlLogFilterRepository(mysql_factory),
-        MySqlSettingsRepository(mysql_factory),
-        MySqlGithubFeedRepository(mysql_factory),
+    return _Repositories(
+        links=MySqlLinkRepository(mysql_factory),
+        filters=MySqlLogFilterRepository(mysql_factory),
+        sources=MySqlLogSourceRepository(mysql_factory),
+        settings=MySqlSettingsRepository(mysql_factory),
+        feeds=MySqlGithubFeedRepository(mysql_factory),
     )
 
 
-def _build_log_provider(settings: Settings) -> LogProvider:
-    return CloudLoggingApiProvider(credentials_file=settings.gcp_credentials_file)
+def _build_log_providers(settings: Settings) -> dict[LogSourceKind, LogProvider]:
+    return {LogSourceKind.GCP: CloudLoggingApiProvider(credentials_file=settings.gcp_credentials_file)}
 
 
 def _build_command_runner(settings: Settings) -> CommandRunner:
@@ -85,24 +101,22 @@ def _build_command_runner(settings: Settings) -> CommandRunner:
 
 def build_services(data_dir: Path = DATA_DIR, settings: Settings | None = None) -> Services:
     settings = settings or Settings.from_env()
-    (
-        link_repository,
-        filter_repository,
-        settings_repository,
-        github_feed_repository,
-    ) = _build_repositories(data_dir, settings)
+    repositories = _build_repositories(data_dir, settings)
     github_provider = GithubApiProvider(token_source=lambda: resolve_github_token(settings.github_token))
     images = ImageService(LocalImageStore(data_dir / "images"))
     return Services(
-        links=LinkService(link_repository),
-        commands=CommandService(_build_command_runner(settings), link_repository),
-        filters=LogFilterService(filter_repository),
-        logs=LogQueryService(_build_log_provider(settings), filter_repository),
-        settings=SettingsService(settings_repository),
+        links=LinkService(repositories.links),
+        commands=CommandService(_build_command_runner(settings), repositories.links),
+        sources=LogSourceService(repositories.sources, repositories.filters),
+        filters=LogFilterService(repositories.filters, repositories.sources),
+        logs=LogQueryService(_build_log_providers(settings), repositories.sources, repositories.filters),
+        settings=SettingsService(repositories.settings),
         images=images,
-        github_feeds=GithubFeedService(github_feed_repository),
-        github=GithubActivityService(github_provider, github_feed_repository),
-        sharing=SharingService(link_repository, filter_repository, github_feed_repository, images),
+        github_feeds=GithubFeedService(repositories.feeds),
+        github=GithubActivityService(github_provider, repositories.feeds),
+        sharing=SharingService(
+            repositories.links, repositories.filters, repositories.sources, repositories.feeds, images
+        ),
     )
 
 

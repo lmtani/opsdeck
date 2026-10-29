@@ -31,7 +31,7 @@
     <nav class="tabs" id="tabs">
       <span class="tab-indicator" id="tab-indicator"></span>
       <button type="button" class="tab is-active" data-view="links">Links</button>
-      <button type="button" class="tab" data-view="logs">GCP Logs</button>
+      <button type="button" class="tab" data-view="logs">Logs</button>
       <button type="button" class="tab" data-view="github">GitHub<span class="tab-badge" id="gh-tab-badge" hidden></span></button>
     </nav>
 
@@ -97,9 +97,17 @@
           </div>
           <div class="filter-list" id="filter-list"></div>
           <div class="empty empty-sm" id="filters-empty" hidden>
-            <p>Save Cloud Logging queries to run them with one click.</p>
+            <p id="filters-empty-text">Save log queries to run them with one click.</p>
             <button type="button" class="btn btn-primary btn-sm" id="filter-empty-btn">Create filter</button>
           </div>
+
+          <section class="sources-block" id="sources-block">
+            <div class="panel-head">
+              <h2 class="panel-title">Sources</h2>
+              <button type="button" class="btn btn-ghost btn-sm" id="source-new-btn">+ Source</button>
+            </div>
+            <div class="source-list" id="source-list"></div>
+          </section>
         </aside>
 
         <div class="results-panel">
@@ -117,9 +125,9 @@
                 <p class="results-meta" id="results-meta"></p>
               </div>
               <div class="results-actions">
-                <button type="button" class="btn btn-ghost btn-sm" id="trace-projects-btn" hidden>⊕ other projects</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="trace-sources-btn" hidden>⊕ other sources</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="format-toggle" title="Format each line with payload values">⌗ format</button>
-                <button type="button" class="btn btn-ghost btn-sm" id="open-gcp-btn" title="Open this query in the GCP Logs Explorer">↗ open in GCP</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="open-console-btn" hidden>↗ open in console</button>
                 <button type="button" class="btn btn-primary btn-sm" id="rerun-btn">↻ Refresh</button>
               </div>
             </div>
@@ -300,12 +308,12 @@
             <input name="name" required maxlength="80" placeholder="Service X errors" />
           </label>
           <label class="field">
-            <span>GCP project *</span>
-            <input name="project" required maxlength="80" placeholder="my-project-prod" class="mono" />
+            <span>Source *</span>
+            <select name="source_id" required></select>
           </label>
         </div>
         <label class="field">
-          <span>Expression (Cloud Logging syntax)</span>
+          <span id="filter-expression-label">Expression</span>
           <textarea name="expression" rows="4" class="mono" placeholder='resource.type="cloud_run_revision"&#10;severity>=ERROR'></textarea>
         </label>
         <label class="field">
@@ -337,6 +345,28 @@
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" data-close>Cancel</button>
           <button type="submit" class="btn btn-primary" id="filter-save-btn">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="source-modal" hidden>
+    <div class="modal modal-sm" role="dialog" aria-modal="true">
+      <h2 class="modal-title" id="source-modal-title">New log source</h2>
+      <form id="source-form" autocomplete="off">
+        <label class="field">
+          <span>Kind</span>
+          <select name="kind"></select>
+        </label>
+        <div id="source-config"></div>
+        <label class="field">
+          <span>Name *</span>
+          <input name="name" required maxlength="80" placeholder="Production" />
+        </label>
+        <p class="field-hint" id="source-hint"></p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+          <button type="submit" class="btn btn-primary" id="source-save-btn">Save</button>
         </div>
       </form>
     </div>

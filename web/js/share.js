@@ -9,7 +9,7 @@ import { closeModal, escapeHtml, openModal, toast } from "./ui.js";
 
 const TYPES = {
   link: { label: "Links", one: "link", many: "links", exportKey: "links" },
-  filter: { label: "GCP Logs", one: "filter", many: "filters", exportKey: "filters" },
+  filter: { label: "Logs", one: "filter", many: "filters", exportKey: "filters" },
   feed: { label: "GitHub feeds", one: "feed", many: "feeds", exportKey: "feeds" },
 };
 const ORDER = ["link", "filter", "feed"];
