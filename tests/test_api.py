@@ -10,6 +10,7 @@ from app.application.github import GithubActivityService, GithubFeedService
 from app.application.links import CommandService, ImageService, LinkService
 from app.application.logs import LogFilterService, LogQueryService
 from app.application.settings import SettingsService
+from app.application.sharing import SharingService
 from app.domain.common import utc_now
 from app.domain.errors import CommandError, GithubError, LogProviderError
 from app.domain.github import (
@@ -62,6 +63,7 @@ def world(tmp_path):
         images=ImageService(fakes.images),
         github_feeds=GithubFeedService(fakes.feeds),
         github=GithubActivityService(fakes.github, fakes.feeds),
+        sharing=SharingService(fakes.links, fakes.filters, fakes.feeds, ImageService(fakes.images)),
     )
     web = tmp_path / "web"
     web.mkdir()
@@ -397,3 +399,46 @@ def test_github_feed_contribution_day_route(world):
     )
     assert client.post(url, json={"days": 7, "login": "ana", "day": "2000-01-01"}).status_code == 422
     assert client.post(url, json={"days": 7, "day": today}).status_code == 422  # login is required
+
+
+# ----- sharing ---------------------------------------------------------------
+
+
+def test_share_export_check_and_import_round_trip(world):
+    client = world.client
+    created = client.post("/api/filters", json={"name": "errors", "project": "p"}).json()
+    bundle = client.post("/api/share/export", json={"filters": [created["id"]]}).json()
+    assert bundle["opsdeck"] == 1
+    assert bundle["log_filters"][0]["name"] == "errors"
+    assert "id" not in bundle["log_filters"][0]
+
+    checks = client.post("/api/share/check", json=bundle).json()
+    assert checks == [
+        {
+            "type": "filter",
+            "index": 0,
+            "name": "errors",
+            "detail": "p",
+            "status": "conflict",
+            "error": "",
+            "command": "",
+        }
+    ]
+
+    choice = {"type": "filter", "index": 0, "action": "create"}
+    result = client.post("/api/share/import", json={"bundle": bundle, "choices": [choice]}).json()
+    assert result["replaced"] == [] and result["created"][0]["type"] == "filter"
+    assert [f["name"] for f in client.get("/api/filters").json()] == ["errors", "errors (2)"]
+
+
+def test_share_errors_map_to_http(world):
+    client = world.client
+    assert client.post("/api/share/export", json={"links": ["nope"]}).status_code == 404
+    not_export = client.post("/api/share/check", json={"links": []})
+    assert not_export.status_code == 422
+    assert not_export.json()["detail"] == "Not an OpsDeck export"
+    bad = {"opsdeck": 1, "links": [{"title": "x"}]}
+    choice = {"type": "link", "index": 0, "action": "create"}
+    rejected = client.post("/api/share/import", json={"bundle": bad, "choices": [choice]})
+    assert rejected.status_code == 422
+    assert rejected.json()["detail"] == "Link 'x': URL is required"

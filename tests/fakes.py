@@ -128,6 +128,12 @@ class FakeImageStore(ImageStore):
         self.saved.append((content, extension))
         return f"/images/{len(self.saved)}.{extension}"
 
+    def load(self, url):
+        for index, (content, extension) in enumerate(self.saved, start=1):
+            if url == f"/images/{index}.{extension}":
+                return content, extension
+        return None
+
 
 # ----- GitHub --------------------------------------------------------------
 

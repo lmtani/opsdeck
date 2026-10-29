@@ -121,3 +121,8 @@ class ImageStore(ABC):
 
     @abstractmethod
     def save(self, content: bytes, extension: str) -> str: ...
+
+    @abstractmethod
+    def load(self, url: str) -> tuple[bytes, str] | None:
+        """Content and extension of an image this store saved, by its URL path;
+        None for anything else (an external URL, a missing file)."""

@@ -59,6 +59,10 @@ class ImageService:
 
     def save_image(self, content: bytes, filename: str) -> str:
         extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        self.check_image(content, extension)
+        return self._store.save(content, extension)
+
+    def check_image(self, content: bytes, extension: str) -> None:
         if extension not in ALLOWED_IMAGE_EXTENSIONS:
             allowed = ", ".join(sorted(ALLOWED_IMAGE_EXTENSIONS))
             raise ValidationError(f"Unsupported format. Use: {allowed}")
@@ -66,4 +70,7 @@ class ImageService:
             raise ValidationError("Image too large (5 MB max)")
         if not content:
             raise ValidationError("Empty file")
-        return self._store.save(content, extension)
+
+    def load_image(self, url: str) -> tuple[bytes, str] | None:
+        """An uploaded image back as (content, extension); None for external URLs."""
+        return self._store.load(url)
