@@ -48,9 +48,10 @@ The **● live** switch at the top of the feed list pauses every background upda
 
 ### Logs tab
 
-Copy your Google Cloud Application Default Credentials to `secrets/gcp-adc.json`. They need `roles/logging.viewer` on the projects you query, and the file must be readable by the container user:
+The Logs tab reads Cloud Logging through its API with Google Cloud Application Default Credentials; the `gcloud` CLI is only needed once, to create them. They need `roles/logging.viewer` on the projects you query. Copy them to `secrets/gcp-adc.json`, readable by the container user:
 
 ```bash
+gcloud auth application-default login
 cp ~/.config/gcloud/application_default_credentials.json secrets/gcp-adc.json
 chmod 644 secrets/gcp-adc.json
 ```
@@ -59,14 +60,14 @@ No project needs to be configured: each saved filter names its own. If the crede
 
 ## Run locally
 
-Requirements: Python 3.12, [uv](https://docs.astral.sh/uv/), a MySQL 8 server, and optionally the `gcloud` and `gh` CLIs logged in.
+Requirements: Python 3.12, [uv](https://docs.astral.sh/uv/), a MySQL 8 server and, optionally, the `gh` CLI logged in and Google Cloud Application Default Credentials (`gcloud auth application-default login`).
 
 ```bash
 uv run main.py      # http://127.0.0.1:8765
 uv run pytest -q
 ```
 
-Locally the app uses the `gcloud` CLI for logs and falls back to `gh auth token` for GitHub.
+Locally the app reads the Application Default Credentials from their well-known location (`~/.config/gcloud/application_default_credentials.json`, or the file at `GOOGLE_APPLICATION_CREDENTIALS`) and falls back to `gh auth token` for GitHub.
 
 ### Contributing
 
@@ -84,7 +85,7 @@ uv run pre-commit run --all-files   # what CI runs
 | `DASHBOARD_DB_HOST`, `DASHBOARD_DB_PORT` | `127.0.0.1`, `13306` | MySQL server |
 | `DASHBOARD_DB_USER`, `DASHBOARD_DB_PASSWORD` | `root`, `1234` | MySQL credentials |
 | `DASHBOARD_DB_NAME` | `opsdeck` | Database, created if missing |
-| `DASHBOARD_LOG_PROVIDER` | `gcloud` | `api` uses the Cloud Logging client with `GOOGLE_APPLICATION_CREDENTIALS` |
+| `GOOGLE_APPLICATION_CREDENTIALS` | empty | Credentials file for the Logs tab; when empty, the well-known gcloud location is used |
 | `DASHBOARD_COMMANDS` | `on` | `off` disables cards that run local commands |
 | `GITHUB_TOKEN` | empty | Token for the GitHub tab; when empty, the local `gh` login is used |
 | `DASHBOARD_HOST`, `DASHBOARD_PORT` | `127.0.0.1`, `8765` | Address the server listens on |

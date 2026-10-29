@@ -1,14 +1,13 @@
 """LogProvider backed by the Cloud Logging API client.
 
-Used where the gcloud CLI is unavailable (containers): authenticates with
-Application Default Credentials (the file at GOOGLE_APPLICATION_CREDENTIALS),
-which need roles/logging.viewer on every project queried. The client is
-created per queried project, so no GOOGLE_CLOUD_PROJECT is needed: user
+Authenticates with Application Default Credentials (the file at
+GOOGLE_APPLICATION_CREDENTIALS, else the well-known location), which need
+roles/logging.viewer on every project queried; no gcloud CLI is run. The
+client is created per queried project, so no GOOGLE_CLOUD_PROJECT is needed: user
 credentials from `gcloud auth application-default login` carry none.
 Credentials are refreshed before the first query, so expired or revoked ones
 fail at once with instructions instead of after a minute of gRPC retries.
-`describe` still returns the equivalent gcloud command so the UI copy button
-keeps working on any machine.
+`describe` returns the equivalent gcloud command for the UI copy button.
 """
 
 import re

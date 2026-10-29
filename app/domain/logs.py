@@ -159,7 +159,7 @@ class LogFilterRepository(Repository[LogFilter]):
 
 
 class LogProvider(ABC):
-    """Reads log entries from some backend (gcloud CLI, API client, ...)."""
+    """Reads log entries from some backend (the Cloud Logging API)."""
 
     def is_available(self) -> bool:
         """Whether the backend is ready to serve queries (health check)."""

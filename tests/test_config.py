@@ -11,7 +11,7 @@ def test_defaults_match_the_local_setup():
         13306,
         "opsdeck",
     )
-    assert (settings.storage, settings.log_provider) == ("mysql", "gcloud")
+    assert settings.storage == "mysql"
     assert settings.commands_enabled is True and settings.github_token == ""
 
 
@@ -21,7 +21,6 @@ def test_container_overrides():
             "DASHBOARD_DB_HOST": "mysql.infra.svc.cluster.local",
             "DASHBOARD_DB_PORT": "3306",
             "DASHBOARD_DB_PASSWORD": "s3cret",
-            "DASHBOARD_LOG_PROVIDER": "API",
             "DASHBOARD_COMMANDS": "off",
             "GITHUB_TOKEN": "ghp_x",
         }
@@ -31,7 +30,7 @@ def test_container_overrides():
         3306,
         "s3cret",
     )
-    assert settings.log_provider == "api" and settings.commands_enabled is False
+    assert settings.commands_enabled is False
     assert settings.github_token == "ghp_x"
     assert Settings.from_env({"GH_TOKEN": "gho_y"}).github_token == "gho_y"
 

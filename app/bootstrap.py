@@ -2,12 +2,10 @@
 
 This is the only place that knows both sides — domain interfaces and the
 concrete implementations — and the only place that reads the environment
-(through Settings.from_env). Storage, log provider and command runner are
-chosen here:
+(through Settings.from_env). Storage and command runner are chosen here:
 
 - storage: MySQL (default), JSON files with DASHBOARD_STORAGE=json.
-- logs: gcloud CLI by default, Cloud Logging API client with
-  DASHBOARD_LOG_PROVIDER=api (containers).
+- logs: Cloud Logging API client with Application Default Credentials.
 - commands: real subprocess by default, disabled with DASHBOARD_COMMANDS=off.
 - github: REST/GraphQL API with GITHUB_TOKEN or, locally, the
   token of the `gh` CLI login.
@@ -27,7 +25,7 @@ from app.domain.github import GithubFeedRepository
 from app.domain.links import CommandRunner, LinkRepository
 from app.domain.logs import LogFilterRepository, LogProvider
 from app.domain.settings import SettingsRepository
-from app.infrastructure.gcloud_log_provider import GcloudLogProvider
+from app.infrastructure.cloud_logging_provider import CloudLoggingApiProvider
 from app.infrastructure.github_api_provider import GithubApiProvider, resolve_github_token
 from app.infrastructure.json_repositories import (
     JsonGithubFeedRepository,
@@ -74,12 +72,7 @@ def _build_repositories(
 
 
 def _build_log_provider(settings: Settings) -> LogProvider:
-    if settings.log_provider == "api":
-        # imported lazily: pulls in grpc, which local gcloud runs don't need
-        from app.infrastructure.cloud_logging_provider import CloudLoggingApiProvider
-
-        return CloudLoggingApiProvider(credentials_file=settings.gcp_credentials_file)
-    return GcloudLogProvider()
+    return CloudLoggingApiProvider(credentials_file=settings.gcp_credentials_file)
 
 
 def _build_command_runner(settings: Settings) -> CommandRunner:
