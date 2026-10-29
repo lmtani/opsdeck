@@ -1,11 +1,11 @@
-"""Parsing tests for the gcloud entry normalization (no subprocess)."""
+"""Parsing tests for the Cloud Logging entry normalization."""
 
 from app.domain.logs import LogQuery
-from app.infrastructure.gcloud_log_provider import GcloudLogProvider
+from app.infrastructure.log_entry_parsing import describe_gcloud_command, format_latency, parse_entry
 
 
 def test_parse_text_payload():
-    entry = GcloudLogProvider._parse_entry(
+    entry = parse_entry(
         {
             "timestamp": "2026-06-12T10:00:00Z",
             "severity": "WARNING",
@@ -32,7 +32,7 @@ def test_parse_entry_keeps_full_raw_record_for_formatting():
         "trace": "projects/p/traces/abc",
         "resource": {"type": "gae_app", "labels": {"version_id": "main-5037"}},
     }
-    entry = GcloudLogProvider._parse_entry(raw)
+    entry = parse_entry(raw)
     # the normalized fields stay, and the complete record is carried through
     assert entry.fields == raw
     assert entry.fields["httpRequest"]["status"] == 200
@@ -41,7 +41,7 @@ def test_parse_entry_keeps_full_raw_record_for_formatting():
 
 
 def test_parse_entry_exposes_trace_span_and_operation():
-    entry = GcloudLogProvider._parse_entry(
+    entry = parse_entry(
         {
             "trace": "projects/p/traces/0123abcd",
             "spanId": "span-9",
@@ -54,27 +54,27 @@ def test_parse_entry_exposes_trace_span_and_operation():
 
 
 def test_parse_entry_defaults_correlation_fields_to_empty():
-    entry = GcloudLogProvider._parse_entry({"severity": "INFO", "operation": None})
+    entry = parse_entry({"severity": "INFO", "operation": None})
     assert entry.trace == ""
     assert entry.span_id == ""
     assert entry.operation_id == ""
 
 
 def test_parse_json_payload_prefers_message_key():
-    entry = GcloudLogProvider._parse_entry({"jsonPayload": {"message": "request failed", "code": 500}})
+    entry = parse_entry({"jsonPayload": {"message": "request failed", "code": 500}})
     assert entry.summary == "request failed"
     assert entry.severity == "DEFAULT"
     assert entry.payload == {"message": "request failed", "code": 500}
 
 
 def test_parse_entry_without_payload():
-    entry = GcloudLogProvider._parse_entry({"severity": "INFO"})
+    entry = parse_entry({"severity": "INFO"})
     assert entry.summary == "(no payload)"
     assert entry.payload is None
 
 
 def test_parse_entry_without_payload_summarizes_http_request():
-    entry = GcloudLogProvider._parse_entry(
+    entry = parse_entry(
         {
             "httpRequest": {
                 "requestMethod": "GET",
@@ -89,7 +89,7 @@ def test_parse_entry_without_payload_summarizes_http_request():
 
 
 def test_parse_app_engine_request_log_summarizes_request_line():
-    entry = GcloudLogProvider._parse_entry(
+    entry = parse_entry(
         {
             "protoPayload": {
                 "@type": "type.googleapis.com/google.appengine.logging.v1.RequestLog",
@@ -106,7 +106,7 @@ def test_parse_app_engine_request_log_summarizes_request_line():
 
 
 def test_summarize_prefers_message_over_request_line():
-    entry = GcloudLogProvider._parse_entry(
+    entry = parse_entry(
         {
             "jsonPayload": {"message": "done"},
             "httpRequest": {"requestMethod": "GET", "requestUrl": "/x", "status": 200},
@@ -116,8 +116,6 @@ def test_summarize_prefers_message_over_request_line():
 
 
 def test_format_latency_variants():
-    from app.infrastructure.log_entry_parsing import format_latency
-
     assert format_latency("0.043460s") == "43 ms"
     assert format_latency("2.5s") == "2.5 s"
     assert format_latency({"seconds": 1, "nanos": 500000000}) == "1.5 s"
@@ -126,8 +124,7 @@ def test_format_latency_variants():
 
 
 def test_describe_includes_expression_and_flags():
-    provider = GcloudLogProvider()
-    command = provider.describe(
+    command = describe_gcloud_command(
         LogQuery(project="proj-x", expression="severity>=ERROR", freshness="6h", limit=25)
     )
     assert "gcloud logging read" in command

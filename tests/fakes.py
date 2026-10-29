@@ -1,6 +1,6 @@
 """In-memory fakes of the domain ports and builders of GitHub events.
 
-Service and API tests use these instead of MySQL, subprocess, gcloud or
+Service and API tests use these instead of MySQL, subprocess, Cloud Logging or
 HTTP. Each fake records what it was asked, so tests can assert on it.
 """
 

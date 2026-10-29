@@ -34,7 +34,6 @@ services:
       DASHBOARD_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-opsdeck}
       DASHBOARD_DB_NAME: opsdeck
       DASHBOARD_COMMANDS: "off"
-      DASHBOARD_LOG_PROVIDER: api
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp-adc.json
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
     volumes:

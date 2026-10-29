@@ -2,7 +2,7 @@
 
 Two families: DomainError is a rule of the application (something was not
 found, or an input broke an invariant); ExternalServiceError is a port
-whose backend failed (gcloud, the Cloud Logging API, GitHub, the host
+whose backend failed (the Cloud Logging API, GitHub, the host
 shell). The first is the caller's problem, the second is not.
 """
 
@@ -24,7 +24,7 @@ class ExternalServiceError(Exception):
 
 
 class LogProviderError(ExternalServiceError):
-    """The log backend (gcloud CLI or Cloud Logging API) failed."""
+    """The log backend (the Cloud Logging API) failed."""
 
 
 class CommandError(ExternalServiceError):

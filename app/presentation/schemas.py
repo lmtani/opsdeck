@@ -124,7 +124,7 @@ class ImageOut(BaseModel):
 
 class HealthOut(BaseModel):
     status: str = "ok"
-    logs: bool  # the log provider (gcloud CLI or Cloud Logging API) is usable
+    logs: bool  # the Cloud Logging credentials are in place
     github: bool = False  # GitHub credentials are configured
 
 
