@@ -4,6 +4,7 @@ import { api } from "./api.js";
 import { initGithub, setGithubAvailability } from "./github.js";
 import { initLinks } from "./links.js";
 import { initLogs } from "./logs.js";
+import { initShare } from "./share.js";
 import { initTheme } from "./theme.js";
 import { LOCALE, setupConfirmModal, setupModalDismissal, toast } from "./ui.js";
 
@@ -89,6 +90,7 @@ async function start() {
   registerServiceWorker();
   setupModalDismissal();
   setupConfirmModal();
+  initShare();
   setupTabs();
   setupClock();
   checkHealth();

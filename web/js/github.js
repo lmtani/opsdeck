@@ -22,6 +22,7 @@ import {
   notificationsBlocked,
   toggleNotifications,
 } from "./notifications.js";
+import { registerShare } from "./share.js";
 import { closeModal, confirmDanger, escapeHtml, LOCALE, openModal, toast } from "./ui.js";
 
 const KIND_LABELS = {
@@ -1677,6 +1678,14 @@ export async function initGithub() {
     onReorder: persistOrder,
   });
 
+  registerShare({
+    type: "feed",
+    button: document.getElementById("gh-feed-share-btn"),
+    list: document.getElementById("gh-feed-list"),
+    itemSelector: ".filter-item",
+    reload: loadFeeds,
+  });
+
   document.getElementById("gh-feed-new-btn").addEventListener("click", () => openFeedModal());
   document.getElementById("gh-feed-empty-btn").addEventListener("click", () => openFeedModal());
   document.getElementById("gh-feed-form").addEventListener("submit", submitFeed);
@@ -1750,7 +1759,13 @@ export async function initGithub() {
   setInterval(pollTick, POLL_TICK_MS);
 
   checkToken();
+  await loadFeeds();
+}
+
+async function loadFeeds() {
   feeds = await api.listGithubFeeds();
+  // an import may have replaced the open feed: keep the open one current
+  if (view.feed) view.feed = feeds.find((feed) => feed.id === view.feed.id) || view.feed;
   renderFeedList();
   refreshUnseen();
 }

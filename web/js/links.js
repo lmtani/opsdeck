@@ -2,6 +2,7 @@
 
 import { api } from "./api.js";
 import { makeSortable } from "./dnd.js";
+import { registerShare } from "./share.js";
 import { closeModal, confirmDanger, escapeHtml, openModal, toast } from "./ui.js";
 
 let links = [];
@@ -323,6 +324,14 @@ export async function initLinks() {
     // reordering a filtered subset would scramble hidden items
     canDrag: () => !activeCategory && !searchTerm,
     onReorder: persistOrder,
+  });
+
+  registerShare({
+    type: "link",
+    button: document.getElementById("link-share-btn"),
+    list: grid(),
+    itemSelector: ".card",
+    reload: load,
   });
 
   document.getElementById("link-new-btn").addEventListener("click", () => openLinkModal());

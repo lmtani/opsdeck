@@ -61,6 +61,10 @@ export const api = {
   queryGithub: (data) => request("/api/github/events/query", json("POST", data)),
   githubOrgRepos: (org) => request(`/api/github/orgs/${encodeURIComponent(org)}/repos`),
 
+  exportShare: (data) => request("/api/share/export", json("POST", data)),
+  checkShare: (bundle) => request("/api/share/check", json("POST", bundle)),
+  importShare: (data) => request("/api/share/import", json("POST", data)),
+
   getSettings: () => request("/api/settings"),
   saveSettings: (data) => request("/api/settings", json("PUT", data)),
 
