@@ -6,6 +6,8 @@ A personal devops dashboard with three tabs:
 - **Logs**: saved Google Cloud Logging queries, with a severity histogram over the results, click-to-refine, trace drill-down and watched filters that count new entries in the background.
 - **Links**: cards for the consoles, dashboards and tools you open every day.
 
+A reload reopens the tab you were on.
+
 FastAPI backend, vanilla JavaScript frontend with no build step, MySQL storage.
 
 OpsDeck can be installed as an app (PWA) in Chrome, Edge or other Chromium browsers: open it on `localhost` or over HTTPS and use the install icon in the address bar. The installed app runs in its own window, shows the count of unseen GitHub events on its icon and shows a notice instead of an error page when the server is down. It caches nothing, so the server must be running.

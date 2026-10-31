@@ -8,6 +8,18 @@ import { initShare } from "./share.js";
 import { initTheme } from "./theme.js";
 import { LOCALE, setupConfirmModal, setupModalDismissal, toast } from "./ui.js";
 
+// The tab in use is remembered, so a reload reopens it.
+const TAB_KEY = "opsdeck.tab";
+
+function savedTab() {
+  try {
+    return localStorage.getItem(TAB_KEY);
+  } catch {
+    return null; // storage blocked: open on the default tab
+  }
+}
+
+// Returns a function that announces the active tab with `view:change`.
 function setupTabs() {
   const tabs = [...document.querySelectorAll(".tab")];
   const indicator = document.getElementById("tab-indicator");
@@ -17,22 +29,38 @@ function setupTabs() {
     indicator.style.width = `${tab.offsetWidth}px`;
   }
 
-  function activate(tab) {
+  // lets views react to being shown or left (e.g. GitHub marks feeds as seen)
+  const announce = (tab) =>
+    document.dispatchEvent(new CustomEvent("view:change", { detail: tab.dataset.view }));
+
+  function show(tab) {
     for (const item of tabs) item.classList.toggle("is-active", item === tab);
     moveIndicator(tab);
     document.querySelectorAll(".view").forEach((view) => {
       view.hidden = view.id !== `view-${tab.dataset.view}`;
     });
-    // lets views react to being shown or left (e.g. GitHub marks feeds as seen)
-    document.dispatchEvent(new CustomEvent("view:change", { detail: tab.dataset.view }));
+    try {
+      localStorage.setItem(TAB_KEY, tab.dataset.view);
+    } catch {
+      /* not remembered: the next load opens the default tab */
+    }
   }
 
   const activeTab = () => tabs.find((tab) => tab.classList.contains("is-active"));
-  for (const tab of tabs) tab.addEventListener("click", () => activate(tab));
+  for (const tab of tabs) {
+    tab.addEventListener("click", () => {
+      show(tab);
+      announce(tab);
+    });
+  }
+  // reopen the tab of the last visit right away, so the default one never flashes
+  const remembered = tabs.find((tab) => tab.dataset.view === savedTab());
+  if (remembered) show(remembered);
   // a tab changes size when the display font loads or the GitHub badge shows,
   // which also moves the tabs after it
   const observer = new ResizeObserver(() => moveIndicator(activeTab()));
   for (const tab of tabs) observer.observe(tab);
+  return () => announce(activeTab());
 }
 
 function setupClock() {
@@ -94,7 +122,7 @@ async function start() {
   setupModalDismissal();
   setupConfirmModal();
   initShare();
-  setupTabs();
+  const announceTab = setupTabs();
   setupClock();
   checkHealth();
   document.addEventListener("logs:sources", checkHealth);
@@ -105,6 +133,8 @@ async function start() {
   } catch (error) {
     toast(`Could not load data: ${error.message}`, "error");
   }
+  // the views listen once initialized: tell them which one a reload reopened
+  announceTab();
 }
 
 start();
