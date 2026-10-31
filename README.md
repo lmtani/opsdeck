@@ -55,7 +55,7 @@ docker compose up -d --build    # http://127.0.0.1:8765
 FastAPI backend in ports-and-adapters layers, vanilla JavaScript frontend with no build step; the architecture notes are in [CLAUDE.md](CLAUDE.md).
 
 ```bash
-uv run pre-commit install           # once per clone: ruff, mypy, Biome, gitleaks on every commit
+uv run pre-commit install           # once per clone: ruff, mypy, Biome, gitleaks, pip-audit, zizmor
 uv run pytest -q
 uv run migrate.py revision "add x"  # after editing tables.py: draft the next migration, then review it
 ```
