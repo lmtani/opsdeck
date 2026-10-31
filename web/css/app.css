@@ -2157,10 +2157,8 @@ body {
 .poll-line { position: relative; height: 10px; margin: -11px 0 5px; }
 .poll-line::before, .poll-line i { content: ""; position: absolute; left: 0; right: 0; top: 4px; height: 2px; border-radius: 1px; }
 .poll-line::before { background: var(--border); }
-.poll-line i { background: var(--accent); opacity: 0.5; transform: scaleX(0); transform-origin: left; animation: poll-fill linear forwards; }
+.poll-line i { background: var(--accent); opacity: 0.5; transform: scaleX(0); transform-origin: left; }
 .poll-line.is-paused::before { background: repeating-linear-gradient(90deg, var(--border) 0 4px, transparent 4px 8px); }
-.poll-line.is-paused i { animation: none; transform: scaleX(0); }
-@keyframes poll-fill { to { transform: scaleX(1); } }
 /* along the top edge of the open feed; the loading bar takes its place */
 .poll-line.is-edge { position: absolute; top: 0; left: 0; right: 0; height: 8px; margin: 0; z-index: 1; }
 .poll-line.is-edge::before { background: transparent; }

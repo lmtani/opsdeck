@@ -27,18 +27,23 @@ export function createPoller({ line, what, state, run, menu = null }) {
   let last = Date.now();
   let timer = null;
   let current = null;
+  let filling = null;
 
+  // The fill is a script animation set to the time already elapsed. A CSS
+  // animation would start over whenever its view comes back from display:
+  // none (switching tabs); this one keeps running while hidden.
   function paint() {
+    filling?.cancel();
+    filling = null;
     line.hidden = !current;
     if (!current) return;
     line.classList.toggle("is-paused", !current.every);
     if (!current.every) return;
-    // restart the fill where the countdown is, so a repaint does not jump
-    fill.style.animation = "none";
-    void fill.offsetWidth;
-    fill.style.animation = "";
-    fill.style.animationDuration = `${current.every}ms`;
-    fill.style.animationDelay = `${-Math.min(Date.now() - last, current.every)}ms`;
+    filling = fill.animate([{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], {
+      duration: current.every,
+      fill: "forwards",
+    });
+    filling.currentTime = Math.min(Date.now() - last, current.every);
   }
 
   function schedule() {
