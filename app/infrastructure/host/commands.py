@@ -1,6 +1,7 @@
-"""CommandRunner backed by a detached subprocess.
+"""The two CommandRunners: SubprocessCommandRunner for local mode and
+DisabledCommandRunner for containers (DASHBOARD_COMMANDS=off).
 
-Launches local programs (e.g. opening IGV) on the user's machine, reusing
+SubprocessCommandRunner launches local programs (e.g. opening IGV) on the user's machine, reusing
 their shell so `~`, environment variables and pipes behave as typed. The
 child is fully detached so GUI apps keep running after the request returns;
 we only wait a brief moment to surface commands that fail immediately
@@ -43,3 +44,14 @@ class SubprocessCommandRunner(CommandRunner):
         if code != 0:
             raise CommandError(f"Command exited with code {code}")
         return "Command finished"
+
+
+class DisabledCommandRunner(CommandRunner):
+    """In a container, command cards would run inside the container instead of
+    on the user's machine: useless and unsafe, so they are refused."""
+
+    def run(self, command: str) -> str:
+        raise CommandError(
+            "Command cards launch local programs and are disabled"
+            " in this deployment (DASHBOARD_COMMANDS=off)."
+        )

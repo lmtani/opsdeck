@@ -1,7 +1,7 @@
 """Settings come from the environment once, with local defaults."""
 
 from app.config import Settings
-from app.infrastructure.github_api_provider import resolve_github_token
+from app.infrastructure.github.provider import resolve_github_token
 
 
 def test_defaults_match_the_local_setup():
@@ -37,7 +37,7 @@ def test_container_overrides():
 
 def test_github_token_prefers_the_configured_one(monkeypatch):
     assert resolve_github_token("configured") == "configured"
-    monkeypatch.setattr("app.infrastructure.github_api_provider.shutil.which", lambda name: None)
+    monkeypatch.setattr("app.infrastructure.github.provider.shutil.which", lambda name: None)
     assert resolve_github_token("") == ""  # no gh CLI either
 
 

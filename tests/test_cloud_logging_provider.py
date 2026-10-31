@@ -11,7 +11,7 @@ from google.auth import exceptions as auth_exceptions
 
 from app.domain.errors import LogProviderError
 from app.domain.logs import LogQuery, Refinement
-from app.infrastructure.cloud_logging_provider import CloudLoggingApiProvider
+from app.infrastructure.logs.gcp.provider import CloudLoggingApiProvider
 from tests.fakes import gcp_source
 
 SOURCE = gcp_source("proj-x")

@@ -49,7 +49,7 @@ from app.domain.github import (
     TokenStatus,
 )
 from app.domain.github_rules import pull_url
-from app.infrastructure.github_event_parsing import (
+from app.infrastructure.github.parsing import (
     commit_contributions,
     context_from_api,
     events_from_search_pull,

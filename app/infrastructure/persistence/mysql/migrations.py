@@ -8,9 +8,10 @@ of string literals.
 
 from pathlib import Path
 
-from app.infrastructure.mysql_connection import MySqlConnectionFactory
+from app.infrastructure.persistence.mysql.connection import MySqlConnectionFactory
 
-MIGRATIONS_ROOT = Path(__file__).resolve().parent.parent.parent / "migrations"
+# app/infrastructure/persistence/mysql/ -> repository root
+MIGRATIONS_ROOT = Path(__file__).resolve().parents[4] / "migrations"
 
 _MYSQL_TRACKING_TABLE = (
     "CREATE TABLE IF NOT EXISTS schema_migrations ("

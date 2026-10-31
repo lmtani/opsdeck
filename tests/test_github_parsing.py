@@ -18,7 +18,7 @@ from app.domain.github import (
     SubjectType,
 )
 from app.domain.github_rules import compare_url, is_bot
-from app.infrastructure.github_event_parsing import (
+from app.infrastructure.github.parsing import (
     commit_contributions,
     context_from_api,
     events_from_search_pull,

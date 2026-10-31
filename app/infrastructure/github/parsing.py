@@ -42,7 +42,7 @@ from app.domain.github_rules import (
     review_comments_summary,
     short_sha,
 )
-from app.infrastructure.html_sanitizer import sanitize_html
+from app.infrastructure.github.html_sanitizer import sanitize_html
 
 BODY_EXCERPT = 400
 
