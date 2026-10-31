@@ -57,7 +57,6 @@ WORKDIR /app
 
 COPY app ./app
 COPY web ./web
-COPY migrations ./migrations
 COPY main.py migrate.py ./
 
 ENV PYTHONUNBUFFERED=1 \

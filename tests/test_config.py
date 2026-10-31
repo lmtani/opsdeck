@@ -4,35 +4,35 @@ from app.config import Settings
 from app.infrastructure.github.token import resolve_github_token
 
 
-def test_defaults_match_the_local_setup():
+def test_defaults_use_the_sqlite_file_and_local_tools():
     settings = Settings.from_env({})
-    assert (settings.mysql.host, settings.mysql.port, settings.mysql.database) == (
-        "127.0.0.1",
-        13306,
-        "opsdeck",
-    )
-    assert settings.storage == "mysql"
+    assert settings.database_url == ""  # bootstrap puts a SQLite file in the data directory
     assert settings.commands_enabled is True and settings.github_token == ""
 
 
-def test_container_overrides():
+def test_a_database_host_means_mysql():
+    """docker-compose points at its MySQL through DASHBOARD_DB_* variables."""
     settings = Settings.from_env(
         {
-            "DASHBOARD_DB_HOST": "mysql.infra.svc.cluster.local",
-            "DASHBOARD_DB_PORT": "3306",
-            "DASHBOARD_DB_PASSWORD": "s3cret",
+            "DASHBOARD_DB_HOST": "db",
+            "DASHBOARD_DB_PASSWORD": "s3cr@t/x",
             "DASHBOARD_COMMANDS": "off",
             "GITHUB_TOKEN": "ghp_x",
         }
     )
-    assert (settings.mysql.host, settings.mysql.port, settings.mysql.password) == (
-        "mysql.infra.svc.cluster.local",
-        3306,
-        "s3cret",
-    )
+    assert settings.database_url == "mysql+pymysql://root:s3cr%40t%2Fx@db:3306/opsdeck"
     assert settings.commands_enabled is False
     assert settings.github_token == "ghp_x"
     assert Settings.from_env({"GH_TOKEN": "gho_y"}).github_token == "gho_y"
+    full = Settings.from_env(
+        {"DASHBOARD_DB_HOST": "h", "DASHBOARD_DB_PORT": "13306", "DASHBOARD_DB_NAME": "x"}
+    )
+    assert full.database_url == "mysql+pymysql://root@h:13306/x"
+
+
+def test_an_explicit_url_wins():
+    env = {"DASHBOARD_DB_URL": "sqlite:////tmp/o.db", "DASHBOARD_DB_HOST": "db"}
+    assert Settings.from_env(env).database_url == "sqlite:////tmp/o.db"
 
 
 def test_github_token_prefers_the_configured_one(monkeypatch):

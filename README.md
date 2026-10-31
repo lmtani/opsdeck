@@ -8,7 +8,7 @@ A personal devops dashboard with three tabs:
 
 A reload reopens the tab you were on.
 
-FastAPI backend, vanilla JavaScript frontend with no build step, MySQL storage.
+FastAPI backend, vanilla JavaScript frontend with no build step, SQLite storage (or MySQL).
 
 OpsDeck can be installed as an app (PWA) in Chrome, Edge or other Chromium browsers: open it on `localhost` or over HTTPS and use the install icon in the address bar. The installed app runs in its own window, shows the count of unseen GitHub events on its icon and shows a notice instead of an error page when the server is down. It caches nothing, so the server must be running.
 
@@ -64,12 +64,14 @@ If the credentials are missing, unreadable, expired or lack access to a project,
 
 ## Run locally
 
-Requirements: Python 3.12, [uv](https://docs.astral.sh/uv/), a MySQL 8 server and, optionally, the `gh` CLI logged in and Google Cloud Application Default Credentials (`gcloud auth application-default login`).
+Requirements: Python 3.12, [uv](https://docs.astral.sh/uv/) and, optionally, the `gh` CLI logged in and Google Cloud Application Default Credentials (`gcloud auth application-default login`).
 
 ```bash
 uv run main.py      # http://127.0.0.1:8765
 uv run pytest -q
 ```
+
+Data goes to a SQLite file, `data/opsdeck.db`, created on the first run; migrations run on startup. To use a MySQL 8 server instead, set `DASHBOARD_DB_URL` (e.g. `mysql+pymysql://user:password@host:3306/opsdeck`) or the `DASHBOARD_DB_HOST` group below; the database is created if missing. A MySQL database from earlier versions is picked up as it is.
 
 Locally the app reads the Application Default Credentials from their well-known location (`~/.config/gcloud/application_default_credentials.json`, or the file at `GOOGLE_APPLICATION_CREDENTIALS`) and falls back to `gh auth token` for GitHub.
 
@@ -86,9 +88,10 @@ uv run pre-commit run --all-files   # what CI runs
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DASHBOARD_DB_HOST`, `DASHBOARD_DB_PORT` | `127.0.0.1`, `13306` | MySQL server |
-| `DASHBOARD_DB_USER`, `DASHBOARD_DB_PASSWORD` | `root`, `1234` | MySQL credentials |
-| `DASHBOARD_DB_NAME` | `opsdeck` | Database, created if missing |
+| `DASHBOARD_DB_URL` | empty | Database URL; when empty, the SQLite file `data/opsdeck.db` (or MySQL, when `DASHBOARD_DB_HOST` is set) |
+| `DASHBOARD_DB_HOST`, `DASHBOARD_DB_PORT` | empty, `3306` | MySQL server, instead of a URL |
+| `DASHBOARD_DB_USER`, `DASHBOARD_DB_PASSWORD` | `root`, empty | MySQL credentials |
+| `DASHBOARD_DB_NAME` | `opsdeck` | MySQL database, created if missing |
 | `GOOGLE_APPLICATION_CREDENTIALS` | empty | Credentials file for the Logs tab; when empty, the well-known gcloud location is used |
 | `DASHBOARD_COMMANDS` | `on` | `off` disables cards that run local commands |
 | `GITHUB_TOKEN` | empty | Token for the GitHub tab; when empty, the local `gh` login is used |

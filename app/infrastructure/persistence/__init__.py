@@ -1,3 +1,3 @@
 """The repository ports (LinkRepository, LogSourceRepository,
-LogFilterRepository, GithubFeedRepository, SettingsRepository), one
-subpackage per storage backend. Both map entities through rows.py."""
+LogFilterRepository, GithubFeedRepository, SettingsRepository): sql/ holds
+the one implementation, on SQLite or MySQL, mapping entities through rows.py."""
