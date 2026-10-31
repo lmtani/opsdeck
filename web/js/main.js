@@ -27,11 +27,12 @@ function setupTabs() {
     document.dispatchEvent(new CustomEvent("view:change", { detail: tab.dataset.view }));
   }
 
+  const activeTab = () => tabs.find((tab) => tab.classList.contains("is-active"));
   for (const tab of tabs) tab.addEventListener("click", () => activate(tab));
-  requestAnimationFrame(() => moveIndicator(tabs[0]));
-  window.addEventListener("resize", () =>
-    moveIndicator(tabs.find((tab) => tab.classList.contains("is-active")))
-  );
+  // a tab changes size when the display font loads or the GitHub badge shows,
+  // which also moves the tabs after it
+  const observer = new ResizeObserver(() => moveIndicator(activeTab()));
+  for (const tab of tabs) observer.observe(tab);
 }
 
 function setupClock() {

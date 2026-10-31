@@ -2,9 +2,9 @@
 
 A personal devops dashboard with three tabs:
 
-- **Links**: cards for the consoles, dashboards and tools you open every day.
-- **Logs**: saved Google Cloud Logging queries, with a severity histogram over the results, click-to-refine and trace drill-down.
 - **GitHub**: activity feeds for an organization or a set of repositories.
+- **Logs**: saved Google Cloud Logging queries, with a severity histogram over the results, click-to-refine and trace drill-down.
+- **Links**: cards for the consoles, dashboards and tools you open every day.
 
 FastAPI backend, vanilla JavaScript frontend with no build step, MySQL storage.
 
