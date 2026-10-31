@@ -1,6 +1,9 @@
 """Settings context use cases."""
 
+import pytest
+
 from app.application.settings import SettingsService
+from app.domain.errors import ValidationError
 from app.domain.settings import AppSettings
 from tests.fakes import InMemorySettingsRepository
 
@@ -23,3 +26,12 @@ def test_update_changes_only_what_is_given():
     paused = service.update_settings(polling=False)
     assert (paused.theme, paused.polling) == ("paper", False)
     assert service.update_settings(theme="ember").polling is False
+
+
+def test_intervals_change_alone_and_reject_what_is_not_offered():
+    repository = InMemorySettingsRepository()
+    service = SettingsService(repository)
+    assert service.update_settings(github_every=120, polling=None).github_every == 120
+    with pytest.raises(ValidationError):
+        service.update_settings(github_every=7, theme="paper")
+    assert (repository.load().github_every, repository.load().theme) == (120, "midnight")

@@ -20,6 +20,7 @@ from app.domain.logs import (
     TimeRange,
     severity_band,
 )
+from app.domain.settings import EVERY_CHOICES, AppSettings
 from tests.fakes import ts
 
 # ----- links -----------------------------------------------------------------
@@ -222,3 +223,14 @@ def test_severities_fold_into_bands_and_counts_add_up():
     total = first + LogCount.of(["ERROR"], capped=True)
     assert (total.error, total.total, total.capped) == (3, 7, True)
     assert LogCount() + LogCount() == LogCount()
+
+
+# ----- settings ----------------------------------------------------------------
+
+
+def test_settings_defaults_are_offered_choices_and_others_are_rejected():
+    defaults = AppSettings()
+    for name, choices in EVERY_CHOICES.items():
+        assert getattr(defaults, name) in choices
+    with pytest.raises(ValidationError):
+        AppSettings(feed_refresh_every=10)

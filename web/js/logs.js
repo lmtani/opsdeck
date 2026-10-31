@@ -33,7 +33,8 @@ let editingSourceId = null;
 let unseen = {};
 let polling = true;
 let watchPoller = null; // schedules the rounds and draws their countdown line
-const WATCH_REFRESH_MS = 2 * 60_000;
+let watchEvery = 120; // seconds between rounds (settings.logs_every)
+let watchChoices = [watchEvery];
 const EYE_ICON =
   '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">' +
   '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="2"/>' +
@@ -300,7 +301,7 @@ function watchState() {
   if (!filters.some((filter) => filter.watch)) return null;
   if (!polling) return { paused: "Paused: live updates are off" };
   if (document.hidden) return { paused: "Waiting for the page to be visible" };
-  return { every: WATCH_REFRESH_MS };
+  return { every: watchEvery * 1000 };
 }
 
 function replaceFilter(updated) {
@@ -1718,12 +1719,28 @@ export async function initLogs() {
     what: () => "Watched filters: new entries",
     state: watchState,
     run: refreshUnseen,
+    menu: {
+      choices: () => watchChoices,
+      current: () => watchEvery,
+      choose: async (seconds) => {
+        try {
+          watchEvery = (await api.saveSettings({ logs_every: seconds })).logs_every;
+          watchPoller.schedule();
+        } catch (error) {
+          toast(error.message, "error");
+        }
+      },
+    },
   });
   try {
-    polling = (await api.getSettings()).polling !== false;
+    const settings = await api.getSettings();
+    polling = settings.polling !== false;
+    watchEvery = settings.logs_every;
+    watchChoices = settings.every_choices.logs_every;
   } catch {
-    /* settings unavailable: stay live */
+    /* settings unavailable: stay live, at the default pace */
   }
+  watchPoller.schedule();
 
   await loadSources();
   await loadFilters();

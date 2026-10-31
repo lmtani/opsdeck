@@ -44,7 +44,7 @@ Clicking an event shows its details; **Full context →** opens a side panel wit
 
 To get desktop notifications of new events, hover a feed and click 🔔. The browser asks for permission once and a test notification confirms they reach your desktop (if it does not show up, check the system's notification settings, such as do-not-disturb, for the browser); a feed that notifies shows a bell next to its name. Notifications arrive while OpsDeck is open in some tab, even in the background (it checks every 2 minutes), and clicking one opens the feed. Browsers only allow them on `localhost` or HTTPS, and the choice is kept per browser.
 
-The **● live** switch at the top of the feed list pauses every background update: unread badges, notifications, the 60 s auto refresh and the count of watched log filters. A thin line under the header of the feed list, the filter list and the open feed fills up until the next background update; hover it to see when that is and how often updates run. While paused, the line turns dashed and a feed only updates when you open it or click Refresh. The setting is saved with the theme.
+The **● live** switch at the top of the feed list pauses every background update: unread badges, notifications, the 60 s auto refresh and the count of watched log filters. A thin line under the header of the feed list, the filter list and the open feed fills up until the next background update; hover it to see when that is and how often updates run, and click it to change how often (every 1 to 15 min; the open feed every 30 s to 5 min). The choice is saved with the theme. While paused, the line turns dashed and a feed only updates when you open it or click Refresh. The setting is saved with the theme.
 
 ### Logs tab
 

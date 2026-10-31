@@ -27,6 +27,7 @@ from app.domain.github import (
 )
 from app.domain.links import LinkKind
 from app.domain.logs import Freshness, LogSourceKind, Refinement, SeverityBand, TimeRange
+from app.domain.settings import EVERY_CHOICES
 
 
 class LinkIn(BaseModel):
@@ -182,11 +183,21 @@ class LogQueryOut(BaseModel):
     entries: list[LogEntryOut]
 
 
+def _every_choices() -> dict[str, list[int]]:
+    return {name: list(choices) for name, choices in EVERY_CHOICES.items()}
+
+
 class SettingsModel(BaseModel):
+    """The preferences, plus the intervals each `*_every` may take (seconds)."""
+
     model_config = ConfigDict(from_attributes=True)
 
     theme: str = "midnight"
     polling: bool = True
+    logs_every: int = 120
+    github_every: int = 300
+    feed_refresh_every: int = 60
+    every_choices: dict[str, list[int]] = Field(default_factory=_every_choices)
 
 
 class SettingsUpdate(BaseModel):
@@ -194,6 +205,9 @@ class SettingsUpdate(BaseModel):
 
     theme: str | None = None
     polling: bool | None = None
+    logs_every: int | None = None
+    github_every: int | None = None
+    feed_refresh_every: int | None = None
 
 
 class ImageOut(BaseModel):

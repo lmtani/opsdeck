@@ -98,3 +98,6 @@ def test_settings_read_booleans_from_mysql_text_or_json_values():
     assert values_to_settings({"polling": "True"}).polling is True
     assert values_to_settings({"polling": False}).polling is False
     assert values_to_settings({"polling": True, "gone": "x"}) == AppSettings()
+    # intervals come back from MySQL as text; garbage keeps the default
+    assert values_to_settings({"logs_every": "600", "github_every": "soon"}).logs_every == 600
+    assert values_to_settings({"github_every": "soon"}).github_every == 300

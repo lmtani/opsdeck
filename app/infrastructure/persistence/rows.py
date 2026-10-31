@@ -112,5 +112,10 @@ def values_to_settings(values: dict) -> AppSettings:
         value = values[field.name]
         if isinstance(field.default, bool):
             value = str(value).strip().lower() in ("1", "true")
+        elif isinstance(field.default, int):  # MySQL stores every value as text
+            try:
+                value = int(value)
+            except (TypeError, ValueError):
+                continue
         known[field.name] = value
     return AppSettings(**known)

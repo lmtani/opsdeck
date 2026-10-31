@@ -371,9 +371,16 @@ def test_github_events_query_and_repos(world):
 
 def test_settings_roundtrip(world):
     client = world.client
-    assert client.get("/api/settings").json() == {"theme": "midnight", "polling": True}
+    defaults = client.get("/api/settings").json()
+    assert (defaults["theme"], defaults["polling"]) == ("midnight", True)
+    assert (defaults["logs_every"], defaults["github_every"], defaults["feed_refresh_every"]) == (
+        120,
+        300,
+        60,
+    )
+    assert defaults["every_choices"]["feed_refresh_every"] == [30, 60, 120, 300]  # for the menus
     saved = client.put("/api/settings", json={"theme": "paper"}).json()
-    assert saved == {"theme": "paper", "polling": True}
+    assert (saved["theme"], saved["polling"]) == ("paper", True)
     assert world.settings.load().theme == "paper"
 
 
@@ -381,9 +388,18 @@ def test_settings_update_is_partial(world):
     client = world.client
     client.put("/api/settings", json={"theme": "paper"})
     paused = client.put("/api/settings", json={"polling": False}).json()
-    assert paused == {"theme": "paper", "polling": False}
+    assert (paused["theme"], paused["polling"]) == ("paper", False)
     # saving the theme alone, as the theme picker does, keeps polling paused
     assert client.put("/api/settings", json={"theme": "ember"}).json()["polling"] is False
+
+
+def test_settings_intervals_take_only_the_offered_choices(world):
+    client = world.client
+    assert client.put("/api/settings", json={"logs_every": 600}).json()["logs_every"] == 600
+    bad = client.put("/api/settings", json={"logs_every": 5, "theme": "paper"})
+    assert bad.status_code == 422 and "logs_every" in bad.json()["detail"]
+    kept = world.settings.load()
+    assert (kept.logs_every, kept.theme) == (600, "midnight")  # nothing changed
 
 
 def test_image_upload(world):

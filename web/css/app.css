@@ -2166,6 +2166,14 @@ body {
 .poll-line.is-edge::before { background: transparent; }
 .poll-line.is-edge i { top: 0; opacity: 0.35; border-radius: var(--radius) 0 0 0; }
 .gh-progress:not([hidden]) + .poll-line { visibility: hidden; }
+.poll-line[role="button"] { cursor: pointer; }
+.poll-line[role="button"]:hover::before, .poll-line[role="button"]:focus-visible::before { background: var(--border-strong); }
+.poll-line:focus-visible { outline: none; }
+.poll-line:focus-visible i { opacity: 1; }
+.poll-menu { position: absolute; z-index: 30; display: flex; width: max-content; white-space: nowrap; align-items: center; gap: 2px; padding: 4px 5px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--bg-elev); box-shadow: var(--shadow); animation: detail-open 160ms var(--ease); }
+.poll-menu button { border: 1px solid transparent; border-radius: 999px; background: none; color: var(--text); font-family: var(--font-mono); font-size: 11px; padding: 2px 5px; cursor: pointer; }
+.poll-menu button:hover, .poll-menu button:focus-visible { border-color: var(--border-strong); outline: none; }
+.poll-menu button.is-on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .gh-progress { position: absolute; top: 0; left: 0; right: 0; height: 3px; overflow: hidden; border-radius: var(--radius) var(--radius) 0 0; }
 .gh-progress::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 35%; background: linear-gradient(90deg, transparent, var(--accent), transparent); box-shadow: 0 0 10px var(--glow); animation: progress-slide 1.1s var(--ease) infinite; }
 @keyframes progress-slide { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
