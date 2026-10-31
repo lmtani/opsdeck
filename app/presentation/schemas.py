@@ -521,6 +521,19 @@ class BundleModel(BaseModel):
         )
 
 
+class BackupSummaryOut(BaseModel):
+    """What a backup holds, or what restoring it wrote."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    created_at: datetime | None
+    links: int
+    log_sources: int
+    log_filters: int
+    github_feeds: int
+    images: int
+
+
 class ShareExportIn(BaseModel):
     links: list[str] = Field(default_factory=list)
     filters: list[str] = Field(default_factory=list)

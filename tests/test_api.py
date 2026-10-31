@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
+from app.application.backup import BackupService
 from app.application.github import GithubActivityService, GithubFeedService
 from app.application.links import CommandService, ImageService, LinkService
 from app.application.logs import LogFilterService, LogQueryService, LogSourceService, LogWatchService
@@ -74,6 +75,9 @@ def world(tmp_path):
         github=GithubActivityService(fakes.github, fakes.feeds),
         sharing=SharingService(
             fakes.links, fakes.filters, fakes.sources, fakes.feeds, ImageService(fakes.images)
+        ),
+        backup=BackupService(
+            fakes.links, fakes.sources, fakes.filters, fakes.feeds, fakes.settings, ImageService(fakes.images)
         ),
     )
     web = tmp_path / "web"
@@ -400,6 +404,34 @@ def test_settings_intervals_take_only_the_offered_choices(world):
     assert bad.status_code == 422 and "logs_every" in bad.json()["detail"]
     kept = world.settings.load()
     assert (kept.logs_every, kept.theme) == (600, "midnight")  # nothing changed
+
+
+def test_backup_download_check_and_restore(world):
+    client = world.client
+    client.post("/api/links", json={"title": "Console", "url": "https://console.cloud.google.com"})
+    client.put("/api/settings", json={"theme": "paper"})
+
+    download = client.get("/api/backup")
+    assert download.status_code == 200
+    disposition = download.headers["content-disposition"]  # named after the day it was made
+    assert disposition.startswith('attachment; filename="opsdeck-backup-') and disposition.endswith('.json"')
+    backup = download.json()
+    assert backup["opsdeck_backup"] == 1 and backup["settings"]["theme"] == "paper"
+
+    client.post("/api/links", json={"title": "Later", "url": "https://later.example"})
+    client.put("/api/settings", json={"theme": "ember"})
+    check = client.post("/api/backup/check", json=backup).json()
+    assert (check["links"], check["log_filters"]) == (1, 0)
+    assert len(world.links.list_all()) == 2  # a check writes nothing
+
+    restored = client.post("/api/backup/restore", json=backup)
+    assert restored.status_code == 200 and restored.json()["links"] == 1
+    assert [link.title for link in world.links.list_all()] == ["Console"]
+    assert world.settings.load().theme == "paper"
+
+    bad = client.post("/api/backup/restore", json={"opsdeck": 2, "links": []})
+    assert bad.status_code == 422 and "export of chosen items" in bad.json()["detail"]
+    assert client.post("/api/backup/check", json=[1, 2]).status_code == 422
 
 
 def test_image_upload(world):
