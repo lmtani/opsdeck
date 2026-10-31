@@ -22,6 +22,7 @@ import {
   notificationsBlocked,
   toggleNotifications,
 } from "./notifications.js";
+import { createPoller } from "./poller.js";
 import { registerShare } from "./share.js";
 import { hideTooltip, setupTooltips, tooltipContent } from "./tooltip.js";
 import { closeModal, confirmDanger, escapeHtml, LOCALE, openModal, toast } from "./ui.js";
@@ -42,7 +43,6 @@ const FIELD_LABELS = { repo: "repo", kind: "kind", actor: "author", day: "day" }
 const AUTO_REFRESH_MS = 60_000;
 const UNSEEN_REFRESH_MS = 5 * 60_000; // badges only, while the page is visible
 const NOTIFY_REFRESH_MS = 2 * 60_000; // when some feed notifies, also in the background
-const POLL_TICK_MS = 60_000;
 const AUTO_KEY = "opsdeck.github.auto";
 const MODE_KEY = "opsdeck.github.mode";
 const GITHUB_WEB = "https://github.com/";
@@ -61,7 +61,8 @@ const repoCache = new Map(); // org -> Promise<repos>
 // of one field are OR-ed, different fields AND-ed.
 let view = { feed: null, activity: null, mark: "", refinements: [], expanded: new Set() };
 let requestSeq = 0;
-let autoTimer = null;
+let autoPoller = null; // the open feed's auto refresh and its line
+let unseenPoller = null; // the badge rounds and their line
 let polling = true; // the "live" switch, saved in the backend settings
 let drawer = null; // side panel with an event's full context (github-context.js)
 let contributors = null; // the contributors mode (github-contributors.js)
@@ -235,6 +236,9 @@ function renderFeedList() {
     container.appendChild(item);
   });
   updateTabBadge();
+  // a feed added, removed or notifying changes what the rounds do
+  unseenPoller?.schedule();
+  autoPoller?.schedule();
 }
 
 async function deleteFeed(feed) {
@@ -289,6 +293,7 @@ function markActiveSeen({ keepalive = false } = {}) {
 }
 
 async function refreshUnseen() {
+  unseenPoller?.ran();
   if (!available || feeds.length === 0) return;
   try {
     const counts = await api.githubUnseen();
@@ -361,16 +366,22 @@ async function setNotifications(feed) {
 // Badges refresh every 5 min while the page is visible; with any feed
 // notifying, every 2 min even in a background tab. Nothing runs while the
 // "live" switch is off.
-let lastPoll = Date.now();
+const notifyingAny = () => anyNotifying(feeds.map((feed) => feed.id));
 
-function pollTick() {
-  if (!polling) return;
-  const notifying = anyNotifying(feeds.map((feed) => feed.id));
-  if (document.hidden && !notifying) return;
-  const every = notifying ? NOTIFY_REFRESH_MS : UNSEEN_REFRESH_MS;
-  if (Date.now() - lastPoll < every) return;
-  lastPoll = Date.now();
-  refreshUnseen();
+function unseenState() {
+  if (!available || feeds.length === 0) return null;
+  if (!polling) return { paused: "Paused: live updates are off" };
+  const notifying = notifyingAny();
+  if (document.hidden && !notifying) return { paused: "Waiting for the page to be visible" };
+  return { every: notifying ? NOTIFY_REFRESH_MS : UNSEEN_REFRESH_MS };
+}
+
+// The open feed reloads every 60 s while "auto" is on and its tab shows.
+function autoState() {
+  if (!autoOn() || !view.feed) return null;
+  if (!polling) return { paused: "Paused: live updates are off" };
+  if (!visible || document.hidden) return { paused: "Waiting for the tab to be visible" };
+  return { every: AUTO_REFRESH_MS };
 }
 
 // ----- timeline --------------------------------------------------------
@@ -443,6 +454,7 @@ async function loadActivity({ initial = false } = {}) {
   const feed = view.feed;
   if (!feed) return;
   const seq = ++requestSeq;
+  autoPoller?.ran(); // a manual refresh restarts the countdown too
   setBusy("timeline", true);
   try {
     const activity = await api.runFeed(feed.id);
@@ -1208,16 +1220,11 @@ function stepContext(delta) {
 const autoOn = () => storageGet(AUTO_KEY) === "1";
 
 function scheduleAuto() {
-  clearInterval(autoTimer);
-  autoTimer = null;
+  autoPoller?.schedule();
   const button = document.getElementById("gh-auto-btn");
   button.classList.toggle("is-on", autoOn() && polling);
   button.disabled = !polling;
   button.title = polling ? "Refresh every 60 s" : "Live updates are paused";
-  if (!autoOn() || !polling) return;
-  autoTimer = setInterval(() => {
-    if (visible && !document.hidden && view.feed) loadActivity();
-  }, AUTO_REFRESH_MS);
 }
 
 // ----- live switch -----------------------------------------------------
@@ -1243,10 +1250,7 @@ function applyPolling(on) {
 
 async function togglePolling() {
   applyPolling(!polling);
-  if (polling) {
-    lastPoll = Date.now();
-    refreshUnseen();
-  }
+  if (polling) refreshUnseen();
   toast(
     polling
       ? "Live updates on: badges, notifications, auto refresh and watched log filters resume."
@@ -1500,10 +1504,12 @@ function onViewChange(name) {
     // on leaving), so the server flags only what arrived since
     loadActivity();
   }
+  autoPoller?.schedule();
 }
 
 export function setGithubAvailability(isAvailable) {
   available = isAvailable;
+  unseenPoller?.schedule();
 }
 
 // Server text with `code` spans and bare URLs, made safe and clickable.
@@ -1670,9 +1676,20 @@ export async function initGithub() {
   } catch {
     /* settings unavailable: stay live */
   }
+  unseenPoller = createPoller({
+    line: document.getElementById("gh-poll-line"),
+    what: () => (notifyingAny() ? "Feed badges and notifications" : "Feed badges"),
+    state: unseenState,
+    run: refreshUnseen,
+  });
+  autoPoller = createPoller({
+    line: document.getElementById("gh-auto-line"),
+    what: () => `Auto refresh of “${view.feed?.name || "the feed"}”`,
+    state: autoState,
+    run: () => loadActivity(),
+  });
   renderPolling();
   scheduleAuto();
-  setInterval(pollTick, POLL_TICK_MS);
 
   checkToken();
   await loadFeeds();

@@ -6,6 +6,7 @@
 
 import { api } from "./api.js";
 import { makeSortable } from "./dnd.js";
+import { createPoller } from "./poller.js";
 import { registerShare } from "./share.js";
 import { hideTooltip, setupTooltips, tooltipContent } from "./tooltip.js";
 import {
@@ -31,8 +32,7 @@ let editingSourceId = null;
 // count refreshes every few minutes while the app-wide "live" switch is on.
 let unseen = {};
 let polling = true;
-let lastWatchPoll = 0;
-const WATCH_TICK_MS = 60_000;
+let watchPoller = null; // schedules the rounds and draws their countdown line
 const WATCH_REFRESH_MS = 2 * 60_000;
 const EYE_ICON =
   '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">' +
@@ -216,6 +216,7 @@ function renderFilterList() {
     container.appendChild(item);
   });
   renderTabBadge();
+  watchPoller?.schedule(); // a watch turned on or off, a filter removed
 }
 
 // ----- watched filters -------------------------------------------------
@@ -277,7 +278,7 @@ function renderTabBadge() {
 }
 
 async function refreshUnseen() {
-  lastWatchPoll = Date.now();
+  watchPoller?.ran();
   if (!filters.some((filter) => filter.watch)) {
     unseen = {};
     renderTabBadge();
@@ -293,10 +294,13 @@ async function refreshUnseen() {
   }
 }
 
-function watchTick() {
-  if (!polling || document.hidden) return;
-  if (Date.now() - lastWatchPoll < WATCH_REFRESH_MS) return;
-  refreshUnseen();
+// The rounds run every few minutes while some filter is watched, the page is
+// visible and the live switch is on.
+function watchState() {
+  if (!filters.some((filter) => filter.watch)) return null;
+  if (!polling) return { paused: "Paused: live updates are off" };
+  if (document.hidden) return { paused: "Waiting for the page to be visible" };
+  return { every: WATCH_REFRESH_MS };
 }
 
 function replaceFilter(updated) {
@@ -1709,12 +1713,17 @@ export async function initLogs() {
     renderFilterList();
     if (polling) refreshUnseen();
   });
+  watchPoller = createPoller({
+    line: document.getElementById("logs-poll-line"),
+    what: () => "Watched filters: new entries",
+    state: watchState,
+    run: refreshUnseen,
+  });
   try {
     polling = (await api.getSettings()).polling !== false;
   } catch {
     /* settings unavailable: stay live */
   }
-  setInterval(watchTick, WATCH_TICK_MS);
 
   await loadSources();
   await loadFilters();
