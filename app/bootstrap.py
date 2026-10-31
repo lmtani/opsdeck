@@ -4,7 +4,8 @@ This is the only place that knows both sides — domain interfaces and the
 concrete implementations — and the only place that reads the environment
 (through Settings.from_env). Storage and command runner are chosen here:
 
-- storage: MySQL (default), JSON files with DASHBOARD_STORAGE=json.
+- storage: a SQL database through SQLAlchemy: a SQLite file in the data
+  directory by default, MySQL with DASHBOARD_DB_URL or DASHBOARD_DB_HOST.
 - logs: one provider per kind of log source; GCP sources read Cloud Logging
   through its API client with Application Default Credentials.
 - commands: real subprocess by default, disabled with DASHBOARD_COMMANDS=off.
@@ -30,21 +31,13 @@ from app.domain.settings import SettingsRepository
 from app.infrastructure.github import GithubApiProvider, resolve_github_token
 from app.infrastructure.host import DisabledCommandRunner, LocalImageStore, SubprocessCommandRunner
 from app.infrastructure.logs.gcp import CloudLoggingApiProvider
-from app.infrastructure.persistence.json_files import (
-    JsonGithubFeedRepository,
-    JsonLinkRepository,
-    JsonLogFilterRepository,
-    JsonLogSourceRepository,
-    JsonSettingsRepository,
-    adopt_legacy_projects,
-)
-from app.infrastructure.persistence.mysql import (
-    MySqlConnectionFactory,
-    MySqlGithubFeedRepository,
-    MySqlLinkRepository,
-    MySqlLogFilterRepository,
-    MySqlLogSourceRepository,
-    MySqlSettingsRepository,
+from app.infrastructure.persistence.sql import (
+    SqlGithubFeedRepository,
+    SqlLinkRepository,
+    SqlLogFilterRepository,
+    SqlLogSourceRepository,
+    SqlSettingsRepository,
+    create_database_engine,
     run_migrations,
 )
 from app.presentation.api import Services
@@ -64,25 +57,19 @@ class _Repositories:
     feeds: GithubFeedRepository
 
 
+def database_url(data_dir: Path, settings: Settings) -> str:
+    return settings.database_url or f"sqlite:///{data_dir / 'opsdeck.db'}"
+
+
 def _build_repositories(data_dir: Path, settings: Settings) -> _Repositories:
-    if settings.storage == "json":
-        sources = JsonLogSourceRepository(data_dir / "log_sources.json")
-        adopt_legacy_projects(data_dir / "filters.json", sources)
-        return _Repositories(
-            links=JsonLinkRepository(data_dir / "links.json"),
-            filters=JsonLogFilterRepository(data_dir / "filters.json"),
-            sources=sources,
-            settings=JsonSettingsRepository(data_dir / "settings.json"),
-            feeds=JsonGithubFeedRepository(data_dir / "github_feeds.json"),
-        )
-    mysql_factory = MySqlConnectionFactory(settings.mysql)
-    run_migrations(mysql_factory)
+    engine = create_database_engine(database_url(data_dir, settings))
+    run_migrations(engine)
     return _Repositories(
-        links=MySqlLinkRepository(mysql_factory),
-        filters=MySqlLogFilterRepository(mysql_factory),
-        sources=MySqlLogSourceRepository(mysql_factory),
-        settings=MySqlSettingsRepository(mysql_factory),
-        feeds=MySqlGithubFeedRepository(mysql_factory),
+        links=SqlLinkRepository(engine),
+        filters=SqlLogFilterRepository(engine),
+        sources=SqlLogSourceRepository(engine),
+        settings=SqlSettingsRepository(engine),
+        feeds=SqlGithubFeedRepository(engine),
     )
 
 

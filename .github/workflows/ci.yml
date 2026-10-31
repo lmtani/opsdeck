@@ -38,6 +38,20 @@ jobs:
   tests:
     runs-on: ubuntu-latest
 
+    # the SQL repository tests run on SQLite and, through this service, MySQL
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: opsdeck
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -popsdeck"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
     steps:
       - uses: actions/checkout@v4
 
@@ -51,6 +65,8 @@ jobs:
 
       - name: Tests
         run: uv run pytest -q
+        env:
+          OPSDECK_TEST_MYSQL_URL: mysql+pymysql://root:opsdeck@127.0.0.1:3306/opsdeck_test
 
       # Fail early, with a clear message, when the lock is out of date with
       # pyproject: the image build uses --frozen.

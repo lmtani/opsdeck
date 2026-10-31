@@ -1,17 +1,9 @@
-"""Row mapping shared by the SQL and JSON repositories, and the upgrade of
-legacy JSON filters to log sources."""
-
-import json
+"""Row mapping of the SQL repositories."""
 
 from app.domain.github import EventKind, GithubFeed
 from app.domain.links import Link, LinkKind
 from app.domain.logs import Freshness, LogFilter, LogSource, LogSourceKind
 from app.domain.settings import AppSettings
-from app.infrastructure.persistence.json_files import (
-    JsonLogFilterRepository,
-    JsonLogSourceRepository,
-    adopt_legacy_projects,
-)
 from app.infrastructure.persistence.rows import (
     feed_to_row,
     filter_to_row,
@@ -44,28 +36,6 @@ def test_source_kind_and_config_survive_a_roundtrip():
     assert row_to_source(row) == source
 
 
-def test_legacy_json_filters_get_a_source_per_project(tmp_path):
-    filters_path = tmp_path / "filters.json"
-    legacy = [
-        {"id": "a" * 32, "name": "errors", "project": "p1", "expression": ""},
-        {"id": "b" * 32, "name": "slow", "project": "p2", "expression": ""},
-        {"id": "c" * 32, "name": "api", "project": "p1", "expression": ""},
-    ]
-    filters_path.write_text(json.dumps(legacy))
-    sources = JsonLogSourceRepository(tmp_path / "log_sources.json")
-    existing = LogSource.new(name="Billing", kind="gcp", config={"project": "p2"})
-    sources.save(existing)
-
-    assert adopt_legacy_projects(filters_path, sources) == 3
-    assert adopt_legacy_projects(filters_path, sources) == 0  # already upgraded
-
-    by_project = {source.config["project"]: source for source in sources.list_all()}
-    assert sorted(by_project) == ["p1", "p2"] and by_project["p2"].id == existing.id
-    assert by_project["p1"].name == "p1"
-    filters = {item.name: item.source_id for item in JsonLogFilterRepository(filters_path).list_all()}
-    assert filters == {"errors": by_project["p1"].id, "slow": existing.id, "api": by_project["p1"].id}
-
-
 def test_feed_lists_booleans_and_kinds_survive_a_roundtrip():
     feed = GithubFeed(
         id="f" * 32,
@@ -89,12 +59,9 @@ def test_mysql_tinyint_and_missing_lists_are_normalized():
     assert feed.hide_own is False and feed.hide_bots is True
 
 
-def test_settings_read_booleans_from_mysql_text_or_json_values():
+def test_settings_read_booleans_and_numbers_from_text():
     assert values_to_settings({}) == AppSettings()
     assert values_to_settings({"theme": "paper", "polling": "False"}) == AppSettings("paper", False)
-    # saved before the live switch covered logs too
-    assert values_to_settings({"github_polling": "False"}).polling is False
-    assert values_to_settings({"github_polling": "False", "polling": "True"}).polling is True
     assert values_to_settings({"polling": "True"}).polling is True
     assert values_to_settings({"polling": False}).polling is False
     assert values_to_settings({"polling": True, "gone": "x"}) == AppSettings()

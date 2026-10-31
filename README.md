@@ -1,97 +1,61 @@
 # OpsDeck
 
-A personal devops dashboard with three tabs:
+A personal devops dashboard that runs on your machine:
 
-- **GitHub**: activity feeds for an organization or a set of repositories.
-- **Logs**: saved Google Cloud Logging queries, with a severity histogram over the results, click-to-refine, trace drill-down and watched filters that count new entries in the background.
+- **GitHub**: activity feeds for an organization or some of its repositories, with contributors and network views.
+- **Logs**: saved Google Cloud Logging queries, with click-to-refine, trace drill-down and filters watched in the background.
 - **Links**: cards for the consoles, dashboards and tools you open every day.
 
-A reload reopens the tab you were on.
+What each tab does is described in [docs/features.md](docs/features.md).
 
-FastAPI backend, vanilla JavaScript frontend with no build step, MySQL storage.
+## Quick start
 
-OpsDeck can be installed as an app (PWA) in Chrome, Edge or other Chromium browsers: open it on `localhost` or over HTTPS and use the install icon in the address bar. The installed app runs in its own window, shows the count of unseen GitHub events on its icon and shows a notice instead of an error page when the server is down. It caches nothing, so the server must be running.
-
-## Run with Docker Compose
-
-```bash
-cp .env.example .env
-docker compose up -d --build
-```
-
-Open http://127.0.0.1:8765. Compose starts the app and a MySQL database; migrations run on startup. Links work right away; the other two tabs need credentials.
-
-### GitHub tab
-
-Set `GITHUB_TOKEN` in `.env`. If you use the GitHub CLI, its token works:
-
-```bash
-echo "GITHUB_TOKEN=$(gh auth token)" >> .env
-```
-
-Otherwise create a token in GitHub's Developer settings. Either kind works:
-
-- **Classic** (simplest): [Tokens (classic)](https://github.com/settings/tokens) → Generate new token (classic), with the `repo` and `read:org` scopes. They let the dashboard see private repositories and your organizations.
-- **Fine-grained**: [Fine-grained tokens](https://github.com/settings/personal-access-tokens) → Generate new token. Set **Resource owner** to the organization you want to follow, not your user; give it access to all its repositories (or the ones you follow); and grant **Organization permissions → Events: Read-only** and **Repository permissions → Metadata**, **Pull requests** and **Contents: Read-only** (Contents is only needed by the contributors view). The organization may have to approve the token, and some organizations do not allow fine-grained tokens at all. One token covers one organization.
-
-Restart with `docker compose up -d` after changing `.env`. If the token cannot do what the dashboard needs (rejected, missing scopes, not authorized for SAML single sign-on, or limited to public events), the GitHub tab says so and what to change.
-
-Each day of a feed's timeline opens with a histogram of its activity per half hour and a strip of who contributed, busiest first. Hovering a person shows what they did (kinds, repositories, first and last event) and highlights their share of the histogram; clicking filters the timeline to them.
-
-The **contributors** switch at the top of a feed shows its daily volume per person instead: one row per person, one column per day for the last 2, 4 or 8 weeks, under the team's volume per day. It counts commits that reached a default branch, pull requests and issues opened, and reviews of other people's pull requests (a person's reviews of one pull request count once per day, so long review discussions do not inflate the ranking), read from the repositories, so it is not limited by the events API and reaches weeks back (pushes to other branches and comments are not counted). Kind and repository chips filter the grid; hovering a day or the bar at the end of a row shows the breakdown by kind and repository. Clicking a name highlights that person's share of the team's volume, and clicking a day lists what the person did (commits, pull requests and issues opened, and reviews grouped per pull request, each linked to GitHub) and opens the day in the timeline, filtered by person and day, or, for days the timeline no longer has, in GitHub search. The first read of a whole organization takes several seconds; it is cached for ten minutes.
-
-The **network** switch draws the same contributions as a map of the team: repositories are the anchors (size = activity in the period) and each person is linked to the repositories they contributed to, with the link's width showing how much they did there and its length how large a share of their work it was, so people settle next to the repository they live in (a switch measures length by the repository's share instead, which brings its main contributors close). A ring around every node shows its mix of kinds. People linked to two or more repositories are *bridges*, and a repository where one person made 60 % or more of the work is *concentrated*; the panel beside the drawing lists both at rest and, when a node is hovered or pinned with a click, shows that person's repositories or that repository's people with their shares, with buttons to the timeline refined by them and to the contributors grid. Kind and repository chips filter the map, a slider hides a person's minor repositories (links under 5 % of their work by default), nodes can be dragged into place (double-click releases one) and the drawing zooms with ctrl + scroll or the buttons in its corner.
-
-Clicking an event shows its details; **Full context →** opens a side panel with the whole text of the comment, review, issue, pull request or release, rendered like on GitHub, and the conversation around it: the whole thread of a review comment (with the code it refers to), the line comments of a review, and the size, branches, labels and reviewers of a pull request. With the panel open, clicking another event or pressing ↑/↓ moves to it, and Esc closes it.
-
-To get desktop notifications of new events, hover a feed and click 🔔. The browser asks for permission once and a test notification confirms they reach your desktop (if it does not show up, check the system's notification settings, such as do-not-disturb, for the browser); a feed that notifies shows a bell next to its name. Notifications arrive while OpsDeck is open in some tab, even in the background (it checks every 2 minutes), and clicking one opens the feed. Browsers only allow them on `localhost` or HTTPS, and the choice is kept per browser.
-
-The **● live** switch at the top of the feed list pauses every background update: unread badges, notifications, the 60 s auto refresh and the count of watched log filters. A thin line under the header of the feed list, the filter list and the open feed fills up until the next background update; hover it to see when that is and how often updates run, and click it to change how often (every 1 to 15 min; the open feed every 30 s to 5 min). The choice is saved with the theme. While paused, the line turns dashed and a feed only updates when you open it or click Refresh. The setting is saved with the theme.
-
-### Logs tab
-
-The Logs tab reads Cloud Logging through its API with Google Cloud Application Default Credentials; the `gcloud` CLI is only needed once, to create them. They need `roles/logging.viewer` on the projects you query. Copy them to `secrets/gcp-adc.json`, readable by the container user:
-
-```bash
-gcloud auth application-default login
-cp ~/.config/gcloud/application_default_credentials.json secrets/gcp-adc.json
-chmod 644 secrets/gcp-adc.json
-```
-
-Logs are read from **sources**, listed under the saved filters: a source is a Google Cloud project for now (other kinds of log backends can be added later), and each filter runs on one. Add a source with **+ Source**, then create filters on it. Clicking a severity, a resource or a field of an entry refines the results, and **Save as new filter** keeps the refined query. The eye button of a filter **watches** it: every few minutes the app counts the entries that arrived since you last opened the filter and shows them on its card, one chip per severity (error, warning, info, debug), with the total on the Logs tab. Clicking a chip shows exactly those entries, whatever the filter's window, and **← back** returns to the window. Opening the filter marks the new entries with a dot and starts the count over when they all fit in its window; when some are older than the window, or more than its limit, a bar above the results says so and its chips show them. The new entries are seen once a view shows all of them, or when you click **✓ mark seen**. Each round reads only the minutes since the previous one, one API call per watched filter (Cloud Logging does not bill reads; its quota is 60 per minute per project), and a round that reaches 1000 entries shows the number as a lower bound, like `1000+`.
-
-If the credentials are missing, unreadable, expired or lack access to a project, the top-bar `logs` dot turns red and the Logs tab says what to fix; the dot is hidden while there are no sources.
-
-## Run locally
-
-Requirements: Python 3.12, [uv](https://docs.astral.sh/uv/), a MySQL 8 server and, optionally, the `gh` CLI logged in and Google Cloud Application Default Credentials (`gcloud auth application-default login`).
+Requirements: Python 3.12 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv run main.py      # http://127.0.0.1:8765
-uv run pytest -q
 ```
 
-Locally the app reads the Application Default Credentials from their well-known location (`~/.config/gcloud/application_default_credentials.json`, or the file at `GOOGLE_APPLICATION_CREDENTIALS`) and falls back to `gh auth token` for GitHub.
+Data goes to a SQLite file, `data/opsdeck.db`, created on the first run. The Links tab works right away; the other two need credentials. OpsDeck can also be installed as an app from Chrome or Edge (the install icon in the address bar).
 
-### Contributing
+## Credentials
 
-Install the git hooks once per clone; they check every commit with ruff (lint and format), mypy, [Biome](https://biomejs.dev/) for the frontend and gitleaks for secrets:
+**GitHub**: if the `gh` CLI is logged in, nothing else is needed. Otherwise set `GITHUB_TOKEN` to a [classic token](https://github.com/settings/tokens) with the `repo` and `read:org` scopes. A [fine-grained token](https://github.com/settings/personal-access-tokens) also works for one organization: set its resource owner to the organization and grant *Events* (organization), *Metadata*, *Pull requests* and *Contents* (repository) read access; some organizations must approve it or do not allow it. When the token falls short, the GitHub tab says what to change.
+
+**Logs**: the tab uses Google Cloud Application Default Credentials with `roles/logging.viewer` on the projects you query. Create them once:
 
 ```bash
-uv run pre-commit install
-uv run pre-commit run --all-files   # what CI runs
+gcloud auth application-default login
+```
+
+## Docker Compose
+
+Runs the app with its own MySQL; command cards are off inside the container.
+
+```bash
+cp .env.example .env    # set GITHUB_TOKEN here, e.g. echo "GITHUB_TOKEN=$(gh auth token)" >> .env
+cp ~/.config/gcloud/application_default_credentials.json secrets/gcp-adc.json
+chmod 644 secrets/gcp-adc.json
+docker compose up -d --build    # http://127.0.0.1:8765
 ```
 
 ## Configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DASHBOARD_DB_HOST`, `DASHBOARD_DB_PORT` | `127.0.0.1`, `13306` | MySQL server |
-| `DASHBOARD_DB_USER`, `DASHBOARD_DB_PASSWORD` | `root`, `1234` | MySQL credentials |
-| `DASHBOARD_DB_NAME` | `opsdeck` | Database, created if missing |
-| `GOOGLE_APPLICATION_CREDENTIALS` | empty | Credentials file for the Logs tab; when empty, the well-known gcloud location is used |
+| `DASHBOARD_DB_URL` | SQLite in `data/` | Database URL, e.g. `mysql+pymysql://user:password@host:3306/opsdeck` (the database is created if missing) |
+| `DASHBOARD_DB_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_NAME` | empty, `3306`, `root`, empty, `opsdeck` | MySQL by parts, as Compose sets it |
+| `GITHUB_TOKEN` | the `gh` login | Token for the GitHub tab |
+| `GOOGLE_APPLICATION_CREDENTIALS` | the gcloud location | Credentials file for the Logs tab |
 | `DASHBOARD_COMMANDS` | `on` | `off` disables cards that run local commands |
-| `GITHUB_TOKEN` | empty | Token for the GitHub tab; when empty, the local `gh` login is used |
 | `DASHBOARD_HOST`, `DASHBOARD_PORT` | `127.0.0.1`, `8765` | Address the server listens on |
 
-Architecture notes for contributors are in [CLAUDE.md](CLAUDE.md).
+## Contributing
+
+FastAPI backend in ports-and-adapters layers, vanilla JavaScript frontend with no build step; the architecture notes are in [CLAUDE.md](CLAUDE.md).
+
+```bash
+uv run pre-commit install           # once per clone: ruff, mypy, Biome, gitleaks on every commit
+uv run pytest -q
+uv run migrate.py revision "add x"  # after editing tables.py: draft the next migration, then review it
+```

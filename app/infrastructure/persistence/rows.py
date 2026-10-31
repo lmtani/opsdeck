@@ -1,10 +1,10 @@
-"""Row <-> entity mapping shared by the MySQL and JSON repositories.
+"""Row <-> entity mapping for the SQL repositories.
 
 Rows hold only plain values (str, int, bool, list of str): enums become
 their values and datetimes ISO-8601 UTC text on the way out, and both are
 rebuilt on the way in. The feed's lists and a source's config stay a list
-and a dict here; the MySQL repository turns them into text itself. Settings are name/value pairs,
-text in MySQL, so their booleans are read back from either form.
+and a dict here; the SQL repository turns them into text itself. Settings
+are name/value text rows, so their booleans and numbers are parsed back.
 """
 
 from dataclasses import asdict, fields
@@ -94,17 +94,9 @@ def row_to_feed(row: dict) -> GithubFeed:
     return GithubFeed(**values)
 
 
-# preferences saved under an older name (JSON storage; MySQL renames the rows)
-_RENAMED_SETTINGS = {"github_polling": "polling"}
-
-
 def values_to_settings(values: dict) -> AppSettings:
     """Unknown names are ignored (a preference that no longer exists) and
     missing ones keep their default."""
-    values = dict(values)
-    for old, new in _RENAMED_SETTINGS.items():
-        if old in values:
-            values.setdefault(new, values.pop(old))
     known = {}
     for field in fields(AppSettings):
         if field.name not in values:
@@ -112,7 +104,7 @@ def values_to_settings(values: dict) -> AppSettings:
         value = values[field.name]
         if isinstance(field.default, bool):
             value = str(value).strip().lower() in ("1", "true")
-        elif isinstance(field.default, int):  # MySQL stores every value as text
+        elif isinstance(field.default, int):  # stored as text
             try:
                 value = int(value)
             except (TypeError, ValueError):
