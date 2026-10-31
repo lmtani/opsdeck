@@ -52,4 +52,8 @@ The **● live** switch at the top of the feed list pauses all of it: the lines 
 
 OpsDeck can be installed as an app in Chrome, Edge or other Chromium browsers: open it on `localhost` or over HTTPS and use the install icon in the address bar. The installed app runs in its own window and shows the count of unseen GitHub events on its icon. It caches nothing, so the server must be running; when it is not, the app shows a notice instead of an error page.
 
-A reload reopens the tab you were on. Cards, filters and feeds can be exported and imported with the ⇅ button of each tab.
+A reload reopens the tab you were on. Cards, filters and feeds can be exported and imported with the ⇅ button of each tab, to share some of them.
+
+## Backup
+
+The box button in the top bar downloads a **backup**: one JSON file with every card (uploaded images included), log source, filter, feed and setting, down to which filters are watched and what has been seen. **Restore from backup…** reads such a file, says what it holds and, once confirmed, replaces everything with it; the page reloads with the restored dashboard. A file the restore cannot use (another kind of file, a newer OpsDeck, an invalid item) is refused before anything changes. It is also how you move to another machine, or from a MySQL database to the default SQLite file.

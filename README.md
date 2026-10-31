@@ -16,7 +16,7 @@ Requirements: Python 3.12 and [uv](https://docs.astral.sh/uv/).
 uv run main.py      # http://127.0.0.1:8765
 ```
 
-Data goes to a SQLite file, `data/opsdeck.db`, created on the first run. The Links tab works right away; the other two need credentials. OpsDeck can also be installed as an app from Chrome or Edge (the install icon in the address bar).
+Data goes to a SQLite file, `data/opsdeck.db`, created on the first run; the box button in the top bar downloads a backup of everything and restores one, here or on another machine. The Links tab works right away; the other two need credentials. OpsDeck can also be installed as an app from Chrome or Edge (the install icon in the address bar).
 
 ## Credentials
 

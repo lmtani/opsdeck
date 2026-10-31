@@ -1,6 +1,7 @@
 // App bootstrap: tabs, clock, provider status, module init.
 
 import { api } from "./api.js";
+import { initBackup } from "./backup.js";
 import { initGithub, setGithubAvailability } from "./github.js";
 import { initLinks } from "./links.js";
 import { initLogs } from "./logs.js";
@@ -122,6 +123,7 @@ async function start() {
   setupModalDismissal();
   setupConfirmModal();
   initShare();
+  initBackup();
   const announceTab = setupTabs();
   setupClock();
   checkHealth();

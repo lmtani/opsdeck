@@ -2,11 +2,13 @@
 
 import logging
 from pathlib import Path
+from typing import Any
 
-from fastapi import FastAPI, Request, UploadFile
+from fastapi import Body, FastAPI, Request, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.application.backup import BackupService
 from app.application.github import GithubActivityService, GithubFeedService
 from app.application.links import CommandService, ImageService, LinkService
 from app.application.logs import (
@@ -41,6 +43,7 @@ class Services:
         github_feeds: GithubFeedService,
         github: GithubActivityService,
         sharing: SharingService,
+        backup: BackupService,
     ):
         self.links = links
         self.commands = commands
@@ -53,6 +56,7 @@ class Services:
         self.github_feeds = github_feeds
         self.github = github
         self.sharing = sharing
+        self.backup = backup
 
 
 def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
@@ -324,6 +328,24 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
         return schemas.ImageOut(url=url)
 
     # ----- Sharing (export / import of cards, filters and feeds) ----------
+
+    # ----- Backup (everything, to restore on this or another OpsDeck) ------
+
+    @app.get("/api/backup")
+    def download_backup():
+        backup = services.backup.create()
+        day = backup["created_at"][:10]
+        return JSONResponse(
+            backup, headers={"Content-Disposition": f'attachment; filename="opsdeck-backup-{day}.json"'}
+        )
+
+    @app.post("/api/backup/check", response_model=schemas.BackupSummaryOut)
+    def check_backup(body: dict[str, Any] = Body(...)):  # noqa: B008 - FastAPI's way to take a raw JSON body
+        return schemas.BackupSummaryOut.model_validate(services.backup.check(body))
+
+    @app.post("/api/backup/restore", response_model=schemas.BackupSummaryOut)
+    def restore_backup(body: dict[str, Any] = Body(...)):  # noqa: B008 - FastAPI's way to take a raw JSON body
+        return schemas.BackupSummaryOut.model_validate(services.backup.restore(body))
 
     @app.post("/api/share/export", response_model=schemas.BundleModel)
     def export_bundle(body: schemas.ShareExportIn):

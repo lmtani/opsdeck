@@ -49,6 +49,17 @@
         <span class="clock-date" id="clock-date"></span>
       </div>
       <div class="theme-picker">
+        <button type="button" class="icon-btn icon-btn-still" id="backup-btn" title="Backup and restore" aria-label="Backup and restore" aria-haspopup="true">
+          <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M3.5 4.5h17v4h-17zM5.5 8.5v10a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-10M12 11.5v5M9.5 14l2.5 2.5 2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="theme-pop backup-pop" id="backup-pop" hidden>
+          <a class="theme-option" href="/api/backup" download id="backup-download">↓ Download backup</a>
+          <button type="button" class="theme-option" id="backup-restore-btn">↑ Restore from backup…</button>
+          <p class="backup-note">Cards, log sources, filters, feeds and settings, in one file to restore here or on another OpsDeck.</p>
+        </div>
+        <input type="file" id="backup-file" accept="application/json,.json" hidden>
+      </div>
+      <div class="theme-picker">
         <button type="button" class="icon-btn" id="theme-btn" title="Theme" aria-label="Choose theme">◐</button>
         <div class="theme-pop" id="theme-pop" hidden></div>
       </div>

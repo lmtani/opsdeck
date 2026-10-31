@@ -160,7 +160,7 @@ def _portable_fields(section: _Section, item: Any) -> dict[str, Any]:
     return values
 
 
-def _decode_image(uri: Any) -> tuple[bytes, str]:
+def decode_image_uri(uri: Any) -> tuple[bytes, str]:
     if not isinstance(uri, str) or not uri.startswith("data:image/") or ";base64," not in uri:
         raise ValidationError("Image must be a base64 data URI")
     head, data = uri.split(",", 1)
@@ -173,7 +173,7 @@ def _decode_image(uri: Any) -> tuple[bytes, str]:
         raise ValidationError("Image is not valid base64") from None
 
 
-def _encode_image(content: bytes, extension: str) -> str:
+def encode_image_uri(content: bytes, extension: str) -> str:
     return f"data:image/{_IMAGE_MIME[extension]};base64,{base64.b64encode(content).decode()}"
 
 
@@ -272,7 +272,7 @@ class SharingService:
             image = self._images.load_image(values["image_url"])
             if image is not None:  # an upload: the URL means nothing elsewhere
                 values["image_url"] = ""
-                values["image"] = _encode_image(*image)
+                values["image"] = encode_image_uri(*image)
         if section.type is ItemType.FILTER:
             source = self._sources.get(entity.source_id)
             if source is not None:
@@ -410,7 +410,7 @@ class SharingService:
 
     def _prepare_image(self, values: dict[str, Any], raw: dict[str, Any]) -> tuple[bytes, str] | None:
         if raw.get("image"):
-            content, extension = _decode_image(raw["image"])
+            content, extension = decode_image_uri(raw["image"])
             self._images.check_image(content, extension)
             values["image_url"] = ""
             return content, extension

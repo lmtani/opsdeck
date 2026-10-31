@@ -18,6 +18,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from app.application.backup import BackupService
 from app.application.github import GithubActivityService, GithubFeedService
 from app.application.links import CommandService, ImageService, LinkService
 from app.application.logs import LogFilterService, LogQueryService, LogSourceService, LogWatchService
@@ -102,6 +103,14 @@ def build_services(data_dir: Path = DATA_DIR, settings: Settings | None = None) 
         github=GithubActivityService(github_provider, repositories.feeds),
         sharing=SharingService(
             repositories.links, repositories.filters, repositories.sources, repositories.feeds, images
+        ),
+        backup=BackupService(
+            repositories.links,
+            repositories.sources,
+            repositories.filters,
+            repositories.feeds,
+            repositories.settings,
+            images,
         ),
     )
 
