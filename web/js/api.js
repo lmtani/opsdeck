@@ -37,14 +37,20 @@ export const api = {
   updateFilter: (id, data) => request(`/api/filters/${id}`, json("PUT", data)),
   deleteFilter: (id) => request(`/api/filters/${id}`, { method: "DELETE" }),
   reorderFilters: (ids) => request("/api/filters/order", json("PUT", { ids })),
+  watchFilter: (id, watch) => request(`/api/filters/${id}/watch`, json("PUT", { watch })),
+  // seenAt: entries up to that instant were seen (default: up to now)
+  markFilterSeen: (id, seenAt = null) =>
+    request(`/api/filters/${id}/seen`, json("POST", { seen_at: seenAt })),
+  logsUnseen: () => request("/api/filters/unseen"),
 
   listSources: () => request("/api/log-sources"),
   createSource: (data) => request("/api/log-sources", json("POST", data)),
   updateSource: (id, data) => request(`/api/log-sources/${id}`, json("PUT", data)),
   deleteSource: (id) => request(`/api/log-sources/${id}`, { method: "DELETE" }),
 
-  runFilter: (id, refinements = []) =>
-    request(`/api/filters/${id}/query`, json("POST", { refinements })),
+  // range: {since, until, bands} for the new entries of a watched filter
+  runFilter: (id, refinements = [], range = {}) =>
+    request(`/api/filters/${id}/query`, json("POST", { refinements, ...range })),
   queryLogs: (data) => request("/api/logs/query", json("POST", data)),
 
   listGithubFeeds: () => request("/api/github/feeds"),

@@ -31,7 +31,7 @@
     <nav class="tabs" id="tabs">
       <span class="tab-indicator" id="tab-indicator"></span>
       <button type="button" class="tab" data-view="github">GitHub<span class="tab-badge" id="gh-tab-badge" hidden></span></button>
-      <button type="button" class="tab" data-view="logs">Logs</button>
+      <button type="button" class="tab" data-view="logs">Logs<span class="tab-badge" id="logs-tab-badge" hidden></span></button>
       <button type="button" class="tab is-active" data-view="links">Links</button>
     </nav>
 
@@ -95,6 +95,7 @@
               <button type="button" class="btn btn-ghost btn-sm" id="filter-new-btn">+ New</button>
             </span>
           </div>
+          <div class="poll-line" id="logs-poll-line" hidden><i></i></div>
           <div class="filter-list" id="filter-list"></div>
           <div class="empty empty-sm" id="filters-empty" hidden>
             <p id="filters-empty-text">Save log queries to run them with one click.</p>
@@ -132,6 +133,8 @@
               </div>
             </div>
 
+            <div class="unseen-bar" id="unseen-bar" hidden></div>
+
             <div class="refine-bar" id="refine-bar" hidden>
               <span class="format-fields-label">refined by</span>
               <div class="refine-chips" id="refine-chips"></div>
@@ -168,6 +171,7 @@
               <button type="button" class="btn btn-ghost btn-sm" id="gh-feed-new-btn">+ New</button>
             </span>
           </div>
+          <div class="poll-line" id="gh-poll-line" hidden><i></i></div>
           <div class="gh-token-hint" id="gh-token-hint" role="status" hidden></div>
           <div class="filter-list" id="gh-feed-list"></div>
           <div class="empty empty-sm" id="gh-feeds-empty" hidden>
@@ -184,6 +188,7 @@
 
           <div class="results" id="gh-results" hidden>
             <div class="gh-progress" id="gh-progress" role="progressbar" aria-label="Loading" hidden></div>
+            <div class="poll-line is-edge" id="gh-auto-line" hidden><i></i></div>
             <div class="results-head">
               <div>
                 <!-- biome-ignore lint/a11y/useHeadingContent: github.js fills it with the feed name -->
@@ -201,7 +206,7 @@
                   <button type="button" data-days="28" aria-pressed="false">4 w</button>
                   <button type="button" data-days="56" aria-pressed="false">8 w</button>
                 </div>
-                <button type="button" class="btn btn-ghost btn-sm gh-auto" id="gh-auto-btn" title="Refresh every 60 s">◷ auto</button>
+                <button type="button" class="btn btn-ghost btn-sm gh-auto" id="gh-auto-btn" title="Refresh the open feed on its own">◷ auto</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="gh-seen-btn" title="Mark everything as seen">✓ seen</button>
                 <a class="btn btn-ghost btn-sm" id="gh-open-btn" href="https://github.com/" target="_blank" rel="noopener" title="Open on GitHub">↗ GitHub</a>
                 <button type="button" class="btn btn-primary btn-sm" id="gh-refresh-btn"><span class="btn-spin" aria-hidden="true">↻</span> Refresh</button>

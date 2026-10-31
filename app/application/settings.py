@@ -1,5 +1,7 @@
 """Use cases of the settings context."""
 
+from dataclasses import replace
+
 from app.domain.settings import AppSettings, SettingsRepository
 
 
@@ -10,12 +12,10 @@ class SettingsService:
     def get_settings(self) -> AppSettings:
         return self._repository.load()
 
-    def update_settings(self, theme: str | None = None, github_polling: bool | None = None) -> AppSettings:
-        """Change only the preferences given; the others keep their saved value."""
-        settings = self._repository.load()
-        if theme is not None:
-            settings.theme = theme
-        if github_polling is not None:
-            settings.github_polling = github_polling
+    def update_settings(self, **changes) -> AppSettings:
+        """Change only the preferences given (None = keep the saved value);
+        an invalid value changes nothing."""
+        given = {name: value for name, value in changes.items() if value is not None}
+        settings = replace(self._repository.load(), **given)  # validates
         self._repository.save(settings)
         return settings

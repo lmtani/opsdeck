@@ -19,7 +19,7 @@ from fastapi import FastAPI
 
 from app.application.github import GithubActivityService, GithubFeedService
 from app.application.links import CommandService, ImageService, LinkService
-from app.application.logs import LogFilterService, LogQueryService, LogSourceService
+from app.application.logs import LogFilterService, LogQueryService, LogSourceService, LogWatchService
 from app.application.settings import SettingsService
 from app.application.sharing import SharingService
 from app.config import Settings
@@ -101,12 +101,14 @@ def build_services(data_dir: Path = DATA_DIR, settings: Settings | None = None) 
     repositories = _build_repositories(data_dir, settings)
     github_provider = GithubApiProvider(token_source=lambda: resolve_github_token(settings.github_token))
     images = ImageService(LocalImageStore(data_dir / "images"))
+    log_providers = _build_log_providers(settings)
     return Services(
         links=LinkService(repositories.links),
         commands=CommandService(_build_command_runner(settings), repositories.links),
         sources=LogSourceService(repositories.sources, repositories.filters),
         filters=LogFilterService(repositories.filters, repositories.sources),
-        logs=LogQueryService(_build_log_providers(settings), repositories.sources, repositories.filters),
+        logs=LogQueryService(log_providers, repositories.sources, repositories.filters),
+        watch=LogWatchService(log_providers, repositories.sources, repositories.filters),
         settings=SettingsService(repositories.settings),
         images=images,
         github_feeds=GithubFeedService(repositories.feeds),

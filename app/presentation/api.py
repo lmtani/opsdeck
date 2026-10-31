@@ -9,7 +9,14 @@ from fastapi.staticfiles import StaticFiles
 
 from app.application.github import GithubActivityService, GithubFeedService
 from app.application.links import CommandService, ImageService, LinkService
-from app.application.logs import LogFilterService, LogQueryService, LogResult, LogSourceService
+from app.application.logs import (
+    LogFilterService,
+    LogQueryService,
+    LogResult,
+    LogSourceService,
+    LogWatchService,
+    WatchStatus,
+)
 from app.application.settings import SettingsService
 from app.application.sharing import ImportChoice, SharingService
 from app.domain.errors import ExternalServiceError, NotFoundError, ValidationError
@@ -28,6 +35,7 @@ class Services:
         sources: LogSourceService,
         filters: LogFilterService,
         logs: LogQueryService,
+        watch: LogWatchService,
         settings: SettingsService,
         images: ImageService,
         github_feeds: GithubFeedService,
@@ -39,6 +47,7 @@ class Services:
         self.sources = sources
         self.filters = filters
         self.logs = logs
+        self.watch = watch
         self.settings = settings
         self.images = images
         self.github_feeds = github_feeds
@@ -150,6 +159,34 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
     def reorder_filters(body: schemas.ReorderIn):
         services.filters.reorder_filters(body.ids)
 
+    def _watch_out(status: WatchStatus) -> schemas.LogWatchOut:
+        count = status.count
+        return schemas.LogWatchOut(
+            filter_id=status.filter_id,
+            since=status.since,
+            until=status.until,
+            error=count.error,
+            warning=count.warning,
+            info=count.info,
+            other=count.other,
+            total=count.total,
+            capped=count.capped,
+            problem=status.problem,
+        )
+
+    @app.get("/api/filters/unseen", response_model=list[schemas.LogWatchOut])
+    def unseen_log_entries():
+        return [_watch_out(status) for status in services.watch.unseen()]
+
+    @app.put("/api/filters/{filter_id}/watch", response_model=schemas.LogFilterOut)
+    def watch_filter(filter_id: str, body: schemas.WatchIn):
+        return schemas.LogFilterOut.model_validate(services.watch.set_watch(filter_id, body.watch))
+
+    @app.post("/api/filters/{filter_id}/seen", response_model=schemas.LogFilterOut)
+    def mark_filter_seen(filter_id: str, body: schemas.SeenIn | None = None):
+        seen_at = body.seen_at if body else None
+        return schemas.LogFilterOut.model_validate(services.watch.mark_seen(filter_id, seen_at))
+
     @app.put("/api/filters/{filter_id}", response_model=schemas.LogFilterOut)
     def update_filter(filter_id: str, body: schemas.LogFilterIn):
         updated = services.filters.update_filter(filter_id, **body.model_dump())
@@ -172,8 +209,11 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
 
     @app.post("/api/filters/{filter_id}/query", response_model=schemas.LogQueryOut)
     def run_saved_filter(filter_id: str, body: schemas.SavedQueryIn | None = None):
-        refinements = [item.to_refinement() for item in body.refinements] if body else []
-        return _log_result(services.logs.run_saved_filter(filter_id, refinements))
+        if body is None:
+            return _log_result(services.logs.run_saved_filter(filter_id))
+        refinements = [item.to_refinement() for item in body.refinements]
+        result = services.logs.run_saved_filter(filter_id, refinements, body.time_range(), body.bands)
+        return _log_result(result)
 
     @app.post("/api/logs/query", response_model=schemas.LogQueryOut)
     def query_logs(body: schemas.LogQueryIn):
@@ -274,7 +314,7 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
 
     @app.put("/api/settings", response_model=schemas.SettingsModel)
     def update_settings(body: schemas.SettingsUpdate):
-        settings = services.settings.update_settings(theme=body.theme, github_polling=body.github_polling)
+        settings = services.settings.update_settings(**body.model_dump())
         return schemas.SettingsModel.model_validate(settings)
 
     @app.post("/api/images", response_model=schemas.ImageOut, status_code=201)

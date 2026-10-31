@@ -1,6 +1,6 @@
 // GitHub view: saved feeds sidebar, org/repo activity timeline grouped by
 // day, client-side refinements (repo / kind / author / day), "new since the
-// last visit" marks and the optional 60 s auto-refresh. The "contributors"
+// last visit" marks and the optional auto-refresh. The "contributors"
 // mode (github-contributors.js) shows the same feed as daily volume per person.
 //
 // Seen marks: the server flags each event of a saved feed as `is_new` when
@@ -22,6 +22,7 @@ import {
   notificationsBlocked,
   toggleNotifications,
 } from "./notifications.js";
+import { createPoller } from "./poller.js";
 import { registerShare } from "./share.js";
 import { hideTooltip, setupTooltips, tooltipContent } from "./tooltip.js";
 import { closeModal, confirmDanger, escapeHtml, LOCALE, openModal, toast } from "./ui.js";
@@ -39,10 +40,6 @@ const KIND_LABELS = {
 const KIND_ORDER = Object.keys(KIND_LABELS);
 const STATE_LABELS = { open: "open", draft: "draft", merged: "merged", closed: "closed" };
 const FIELD_LABELS = { repo: "repo", kind: "kind", actor: "author", day: "day" };
-const AUTO_REFRESH_MS = 60_000;
-const UNSEEN_REFRESH_MS = 5 * 60_000; // badges only, while the page is visible
-const NOTIFY_REFRESH_MS = 2 * 60_000; // when some feed notifies, also in the background
-const POLL_TICK_MS = 60_000;
 const AUTO_KEY = "opsdeck.github.auto";
 const MODE_KEY = "opsdeck.github.mode";
 const GITHUB_WEB = "https://github.com/";
@@ -61,7 +58,11 @@ const repoCache = new Map(); // org -> Promise<repos>
 // of one field are OR-ed, different fields AND-ed.
 let view = { feed: null, activity: null, mark: "", refinements: [], expanded: new Set() };
 let requestSeq = 0;
-let autoTimer = null;
+let autoPoller = null; // the open feed's auto refresh and its line
+let unseenPoller = null; // the badge rounds and their line
+// seconds between rounds and the choices for each (backend settings)
+let every = { github_every: 300, feed_refresh_every: 60 };
+let everyChoices = { github_every: [300], feed_refresh_every: [60] };
 let polling = true; // the "live" switch, saved in the backend settings
 let drawer = null; // side panel with an event's full context (github-context.js)
 let contributors = null; // the contributors mode (github-contributors.js)
@@ -235,6 +236,9 @@ function renderFeedList() {
     container.appendChild(item);
   });
   updateTabBadge();
+  // a feed added, removed or notifying changes what the rounds do
+  unseenPoller?.schedule();
+  autoPoller?.schedule();
 }
 
 async function deleteFeed(feed) {
@@ -289,6 +293,7 @@ function markActiveSeen({ keepalive = false } = {}) {
 }
 
 async function refreshUnseen() {
+  unseenPoller?.ran();
   if (!available || feeds.length === 0) return;
   try {
     const counts = await api.githubUnseen();
@@ -358,19 +363,26 @@ async function setNotifications(feed) {
   renderFeedList();
 }
 
-// Badges refresh every 5 min while the page is visible; with any feed
-// notifying, every 2 min even in a background tab. Nothing runs while the
-// "live" switch is off.
-let lastPoll = Date.now();
+// Badges refresh every `github_every` (5 min by default) while the page is
+// visible, and also in a background tab when some feed notifies. Nothing runs
+// while the "live" switch is off.
+const notifyingAny = () => anyNotifying(feeds.map((feed) => feed.id));
 
-function pollTick() {
-  if (!polling) return;
-  const notifying = anyNotifying(feeds.map((feed) => feed.id));
-  if (document.hidden && !notifying) return;
-  const every = notifying ? NOTIFY_REFRESH_MS : UNSEEN_REFRESH_MS;
-  if (Date.now() - lastPoll < every) return;
-  lastPoll = Date.now();
-  refreshUnseen();
+function unseenState() {
+  if (!available || feeds.length === 0) return null;
+  if (!polling) return { paused: "Paused: live updates are off" };
+  const notifying = notifyingAny();
+  if (document.hidden && !notifying) return { paused: "Waiting for the page to be visible" };
+  return { every: every.github_every * 1000 };
+}
+
+// The open feed reloads every `feed_refresh_every` (60 s by default) while
+// "auto" is on and its tab shows.
+function autoState() {
+  if (!autoOn() || !view.feed) return null;
+  if (!polling) return { paused: "Paused: live updates are off" };
+  if (!visible || document.hidden) return { paused: "Waiting for the tab to be visible" };
+  return { every: every.feed_refresh_every * 1000 };
 }
 
 // ----- timeline --------------------------------------------------------
@@ -443,6 +455,7 @@ async function loadActivity({ initial = false } = {}) {
   const feed = view.feed;
   if (!feed) return;
   const seq = ++requestSeq;
+  autoPoller?.ran(); // a manual refresh restarts the countdown too
   setBusy("timeline", true);
   try {
     const activity = await api.runFeed(feed.id);
@@ -1208,16 +1221,32 @@ function stepContext(delta) {
 const autoOn = () => storageGet(AUTO_KEY) === "1";
 
 function scheduleAuto() {
-  clearInterval(autoTimer);
-  autoTimer = null;
+  autoPoller?.schedule();
   const button = document.getElementById("gh-auto-btn");
   button.classList.toggle("is-on", autoOn() && polling);
   button.disabled = !polling;
-  button.title = polling ? "Refresh every 60 s" : "Live updates are paused";
-  if (!autoOn() || !polling) return;
-  autoTimer = setInterval(() => {
-    if (visible && !document.hidden && view.feed) loadActivity();
-  }, AUTO_REFRESH_MS);
+  button.title = polling
+    ? `Refresh every ${pace(every.feed_refresh_every)}`
+    : "Live updates are paused";
+}
+
+const pace = (seconds) => (seconds >= 60 ? `${seconds / 60} min` : `${seconds} s`);
+
+// The interval picker of a poller's line, saved in the backend settings.
+function intervalMenu(name, poller) {
+  return {
+    choices: () => everyChoices[name],
+    current: () => every[name],
+    choose: async (seconds) => {
+      try {
+        every[name] = (await api.saveSettings({ [name]: seconds }))[name];
+        poller().schedule();
+        if (name === "feed_refresh_every") scheduleAuto(); // the button's title says it
+      } catch (error) {
+        toast(error.message, "error");
+      }
+    },
+  };
 }
 
 // ----- live switch -----------------------------------------------------
@@ -1228,8 +1257,8 @@ function renderPolling() {
   button.setAttribute("aria-pressed", String(polling));
   button.textContent = polling ? "● live" : "⏸ paused";
   button.title = polling
-    ? "Badges, notifications and auto refresh update in the background. Click to pause."
-    : "Paused: feeds only update when you open or refresh them. Click to resume.";
+    ? "Badges, notifications, auto refresh and watched log filters update in the background. Click to pause."
+    : "Paused: feeds and watched log filters only update when you open them. Click to resume.";
 }
 
 function applyPolling(on) {
@@ -1237,22 +1266,21 @@ function applyPolling(on) {
   renderPolling();
   scheduleAuto();
   renderFeedList();
+  // the switch is app-wide: watched log filters follow it too
+  document.dispatchEvent(new CustomEvent("polling:change", { detail: on }));
 }
 
 async function togglePolling() {
   applyPolling(!polling);
-  if (polling) {
-    lastPoll = Date.now();
-    refreshUnseen();
-  }
+  if (polling) refreshUnseen();
   toast(
     polling
-      ? "Live updates on: badges, notifications and auto refresh resume."
-      : "Live updates paused. Feeds update only when you open or refresh them.",
+      ? "Live updates on: badges, notifications, auto refresh and watched log filters resume."
+      : "Live updates paused. Feeds and watched log filters update only when you open them.",
     polling ? "success" : "info"
   );
   try {
-    await api.saveSettings({ github_polling: polling });
+    await api.saveSettings({ polling });
   } catch {
     toast("Could not save the live updates setting; it applies to this page only.", "error");
   }
@@ -1498,10 +1526,12 @@ function onViewChange(name) {
     // on leaving), so the server flags only what arrived since
     loadActivity();
   }
+  autoPoller?.schedule();
 }
 
 export function setGithubAvailability(isAvailable) {
   available = isAvailable;
+  unseenPoller?.schedule();
 }
 
 // Server text with `code` spans and bare URLs, made safe and clickable.
@@ -1650,7 +1680,7 @@ export async function initGithub() {
   document.getElementById("gh-auto-btn").addEventListener("click", () => {
     storageSet(AUTO_KEY, autoOn() ? "0" : "1");
     scheduleAuto();
-    toast(autoOn() ? "Auto refresh every 60 s" : "Auto refresh off");
+    toast(autoOn() ? `Auto refresh every ${pace(every.feed_refresh_every)}` : "Auto refresh off");
   });
   document.getElementById("gh-refine-clear-btn").addEventListener("click", () => {
     view.refinements = [];
@@ -1663,14 +1693,36 @@ export async function initGithub() {
     if (visible) markActiveSeen({ keepalive: true });
   });
 
+  let settings = null;
   try {
-    polling = (await api.getSettings()).github_polling !== false;
+    settings = await api.getSettings();
+    polling = settings.polling !== false;
   } catch {
-    /* settings unavailable: stay live */
+    /* settings unavailable: stay live, at the default pace */
   }
+  if (settings) {
+    every = {
+      github_every: settings.github_every,
+      feed_refresh_every: settings.feed_refresh_every,
+    };
+    everyChoices = settings.every_choices;
+  }
+  unseenPoller = createPoller({
+    line: document.getElementById("gh-poll-line"),
+    what: () => (notifyingAny() ? "Feed badges and notifications" : "Feed badges"),
+    state: unseenState,
+    run: refreshUnseen,
+    menu: intervalMenu("github_every", () => unseenPoller),
+  });
+  autoPoller = createPoller({
+    line: document.getElementById("gh-auto-line"),
+    what: () => `Auto refresh of “${view.feed?.name || "the feed"}”`,
+    state: autoState,
+    run: () => loadActivity(),
+    menu: intervalMenu("feed_refresh_every", () => autoPoller),
+  });
   renderPolling();
   scheduleAuto();
-  setInterval(pollTick, POLL_TICK_MS);
 
   checkToken();
   await loadFeeds();

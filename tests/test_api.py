@@ -1,6 +1,7 @@
 """HTTP layer over in-memory fakes: status codes, error mapping and the
 route precedence that depends on declaration order (/order, /unseen)."""
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -8,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.application.github import GithubActivityService, GithubFeedService
 from app.application.links import CommandService, ImageService, LinkService
-from app.application.logs import LogFilterService, LogQueryService, LogSourceService
+from app.application.logs import LogFilterService, LogQueryService, LogSourceService, LogWatchService
 from app.application.settings import SettingsService
 from app.application.sharing import SharingService
 from app.domain.common import utc_now
@@ -26,7 +27,7 @@ from app.domain.github import (
     SubjectType,
     ThreadComment,
 )
-from app.domain.logs import LogSourceKind
+from app.domain.logs import LogEntry, LogSourceKind, SeverityBand
 from app.presentation.api import Services, create_app
 from tests.fakes import (
     FakeCommandRunner,
@@ -56,6 +57,7 @@ def world(tmp_path):
         logs=FakeLogProvider(),
         github=FakeGithubProvider(),
         images=FakeImageStore(),
+        now=datetime(2026, 10, 31, 12, 0, tzinfo=UTC),
     )
     services = Services(
         links=LinkService(fakes.links),
@@ -63,6 +65,9 @@ def world(tmp_path):
         sources=LogSourceService(fakes.sources, fakes.filters),
         filters=LogFilterService(fakes.filters, fakes.sources),
         logs=LogQueryService({LogSourceKind.GCP: fakes.logs}, fakes.sources, fakes.filters),
+        watch=LogWatchService(
+            {LogSourceKind.GCP: fakes.logs}, fakes.sources, fakes.filters, clock=lambda: fakes.now
+        ),
         settings=SettingsService(fakes.settings),
         images=ImageService(fakes.images),
         github_feeds=GithubFeedService(fakes.feeds),
@@ -195,6 +200,41 @@ def test_filters_crud_and_order_route(world):
     assert client.put("/api/filters/ghost", json={"name": "c", "source_id": source}).status_code == 404
 
 
+def test_watched_filters_report_new_entries_until_opened(world):
+    client = world.client
+    source = add_source(world)["id"]
+    saved = client.post("/api/filters", json={"name": "a", "source_id": source}).json()
+    assert saved["watch"] is False and saved["last_seen_at"] is None
+    assert client.get("/api/filters/unseen").json() == []  # beats /api/filters/{id}
+
+    watched = client.put(f"/api/filters/{saved['id']}/watch", json={"watch": True}).json()
+    assert watched["watch"] is True and watched["last_seen_at"] == "2026-10-31T12:00:00Z"
+    world.logs.entries = [LogEntry(timestamp="2026-10-31T12:01:00Z", severity="WARNING", summary="w")]
+    world.now += timedelta(minutes=3)
+    [status] = client.get("/api/filters/unseen").json()
+    assert (status["filter_id"], status["warning"], status["total"], status["capped"]) == (
+        saved["id"],
+        1,
+        1,
+        False,
+    )
+    assert (status["since"], status["until"]) == ("2026-10-31T12:00:00Z", "2026-10-31T12:02:00Z")
+
+    world.now += timedelta(minutes=1)
+    assert client.post(f"/api/filters/{saved['id']}/seen").json()["last_seen_at"] == "2026-10-31T12:04:00Z"
+    assert client.get("/api/filters/unseen").json()[0]["total"] == 0
+    # the watch state is the user's own: it does not travel in shared files
+    bundle = client.post("/api/share/export", json={"filters": [saved["id"]]}).json()
+    assert "watch" not in bundle["log_filters"][0] and "last_seen_at" not in bundle["log_filters"][0]
+
+    world.now += timedelta(minutes=1)
+    up_to = client.post(f"/api/filters/{saved['id']}/seen", json={"seen_at": "2026-10-31T12:04:30Z"})
+    assert up_to.json()["last_seen_at"] == "2026-10-31T12:04:30Z"
+
+    assert client.put("/api/filters/ghost/watch", json={"watch": True}).status_code == 404
+    assert client.post("/api/filters/ghost/seen").status_code == 404
+
+
 def test_log_query_saved_refined_ad_hoc_and_failures(world):
     client = world.client
     source = add_source(world, "proj-x")["id"]
@@ -218,6 +258,18 @@ def test_log_query_saved_refined_ad_hoc_and_failures(world):
     assert (refinement.path, refinement.value, refinement.negate) == (("httpRequest", "status"), 500, True)
     bad = client.post(f"/api/filters/{saved['id']}/query", json={"refinements": [{"path": [], "value": "x"}]})
     assert bad.status_code == 422
+
+    # the new entries of a watched filter: an explicit range and bands
+    span = {"since": "2026-10-29T14:00:00Z", "until": "2026-10-31T12:00:00Z"}
+    client.post(f"/api/filters/{saved['id']}/query", json={**span, "bands": ["warning", "error"]})
+    assert world.logs.last_query.bands == (SeverityBand.ERROR, SeverityBand.WARNING)
+    assert world.logs.last_query.time_range.start.isoformat() == "2026-10-29T14:00:00+00:00"
+    half = client.post(f"/api/filters/{saved['id']}/query", json={"since": span["since"]})
+    backwards = client.post(
+        f"/api/filters/{saved['id']}/query", json={"since": span["until"], "until": span["since"]}
+    )
+    unknown = client.post(f"/api/filters/{saved['id']}/query", json={"bands": ["fatal"]})
+    assert (half.status_code, backwards.status_code, unknown.status_code) == (422, 422, 422)
 
     assert client.post("/api/filters/ghost/query").status_code == 404
     ad_hoc = client.post("/api/logs/query", json={"source_id": source, "expression": "x"})
@@ -319,19 +371,35 @@ def test_github_events_query_and_repos(world):
 
 def test_settings_roundtrip(world):
     client = world.client
-    assert client.get("/api/settings").json() == {"theme": "midnight", "github_polling": True}
+    defaults = client.get("/api/settings").json()
+    assert (defaults["theme"], defaults["polling"]) == ("midnight", True)
+    assert (defaults["logs_every"], defaults["github_every"], defaults["feed_refresh_every"]) == (
+        120,
+        300,
+        60,
+    )
+    assert defaults["every_choices"]["feed_refresh_every"] == [30, 60, 120, 300]  # for the menus
     saved = client.put("/api/settings", json={"theme": "paper"}).json()
-    assert saved == {"theme": "paper", "github_polling": True}
+    assert (saved["theme"], saved["polling"]) == ("paper", True)
     assert world.settings.load().theme == "paper"
 
 
 def test_settings_update_is_partial(world):
     client = world.client
     client.put("/api/settings", json={"theme": "paper"})
-    paused = client.put("/api/settings", json={"github_polling": False}).json()
-    assert paused == {"theme": "paper", "github_polling": False}
+    paused = client.put("/api/settings", json={"polling": False}).json()
+    assert (paused["theme"], paused["polling"]) == ("paper", False)
     # saving the theme alone, as the theme picker does, keeps polling paused
-    assert client.put("/api/settings", json={"theme": "ember"}).json()["github_polling"] is False
+    assert client.put("/api/settings", json={"theme": "ember"}).json()["polling"] is False
+
+
+def test_settings_intervals_take_only_the_offered_choices(world):
+    client = world.client
+    assert client.put("/api/settings", json={"logs_every": 600}).json()["logs_every"] == 600
+    bad = client.put("/api/settings", json={"logs_every": 5, "theme": "paper"})
+    assert bad.status_code == 422 and "logs_every" in bad.json()["detail"]
+    kept = world.settings.load()
+    assert (kept.logs_every, kept.theme) == (600, "midnight")  # nothing changed
 
 
 def test_image_upload(world):

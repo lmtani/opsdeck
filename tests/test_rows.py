@@ -91,7 +91,13 @@ def test_mysql_tinyint_and_missing_lists_are_normalized():
 
 def test_settings_read_booleans_from_mysql_text_or_json_values():
     assert values_to_settings({}) == AppSettings()
-    assert values_to_settings({"theme": "paper", "github_polling": "False"}) == AppSettings("paper", False)
-    assert values_to_settings({"github_polling": "True"}).github_polling is True
-    assert values_to_settings({"github_polling": False}).github_polling is False
-    assert values_to_settings({"github_polling": True, "gone": "x"}) == AppSettings()
+    assert values_to_settings({"theme": "paper", "polling": "False"}) == AppSettings("paper", False)
+    # saved before the live switch covered logs too
+    assert values_to_settings({"github_polling": "False"}).polling is False
+    assert values_to_settings({"github_polling": "False", "polling": "True"}).polling is True
+    assert values_to_settings({"polling": "True"}).polling is True
+    assert values_to_settings({"polling": False}).polling is False
+    assert values_to_settings({"polling": True, "gone": "x"}) == AppSettings()
+    # intervals come back from MySQL as text; garbage keeps the default
+    assert values_to_settings({"logs_every": "600", "github_every": "soon"}).logs_every == 600
+    assert values_to_settings({"github_every": "soon"}).github_every == 300

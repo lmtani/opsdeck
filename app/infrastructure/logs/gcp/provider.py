@@ -15,12 +15,13 @@ spelled as Cloud Logging clauses, come from expression.py.
 import shlex
 import threading
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from itertools import islice
 from pathlib import Path
 
 from app.domain.errors import LogProviderError
-from app.domain.logs import LogEntry, LogProvider, LogQuery, LogSource
+from app.domain.logs import LogCount, LogEntry, LogProvider, LogQuery, LogSource, TimeRange
 from app.infrastructure.logs.gcp.entries import parse_entry
 from app.infrastructure.logs.gcp.expression import (
     api_filter,
@@ -94,19 +95,31 @@ class CloudLoggingApiProvider(LogProvider):
         return logs_explorer_url(source.config["project"], query)
 
     def query(self, source: LogSource, query: LogQuery) -> list[LogEntry]:
+        filter_ = api_filter(query, datetime.now(UTC))
+        return [parse_entry(item) for item in self._read(source, filter_, query.limit)]
+
+    def count(self, source: LogSource, query: LogQuery, start: datetime, end: datetime, cap: int) -> LogCount:
+        """One page of up to `cap` entries, counted by severity. A full page
+        counts as capped: asking for one more entry would cost a second call."""
+        counted = replace(query, time_range=TimeRange(start, end), bands=())
+        items = self._read(source, api_filter(counted, start), cap)
+        return LogCount.of((item.get("severity") or "" for item in items), capped=len(items) >= cap)
+
+    def _read(self, source: LogSource, filter_: str, limit: int) -> list[dict]:
+        """Up to `limit` entries, newest first, as API records; the library's
+        errors become LogProviderErrors that say what to do."""
         from google.api_core import exceptions as api_exceptions
 
         project = source.config["project"]
         client = self._client(project)
-        filter_ = api_filter(query, datetime.now(UTC))
         try:
             iterator = client.list_entries(
                 resource_names=[f"projects/{project}"],
                 filter_=filter_,
                 order_by="timestamp desc",
-                page_size=min(query.limit, 1000),
+                page_size=min(limit, 1000),
             )
-            return [parse_entry(entry.to_api_repr()) for entry in islice(iterator, query.limit)]
+            return [entry.to_api_repr() for entry in islice(iterator, limit)]
         except api_exceptions.PermissionDenied as error:
             raise LogProviderError(
                 f"No permission to read the logs of project '{project}'. Grant"
