@@ -37,6 +37,9 @@ export const api = {
   updateFilter: (id, data) => request(`/api/filters/${id}`, json("PUT", data)),
   deleteFilter: (id) => request(`/api/filters/${id}`, { method: "DELETE" }),
   reorderFilters: (ids) => request("/api/filters/order", json("PUT", { ids })),
+  watchFilter: (id, watch) => request(`/api/filters/${id}/watch`, json("PUT", { watch })),
+  markFilterSeen: (id) => request(`/api/filters/${id}/seen`, { method: "POST" }),
+  logsUnseen: () => request("/api/filters/unseen"),
 
   listSources: () => request("/api/log-sources"),
   createSource: (data) => request("/api/log-sources", json("POST", data)),

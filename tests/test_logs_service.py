@@ -1,11 +1,13 @@
 """Logs context use cases: sources, saved filters and queries. In-memory fakes only."""
 
+from datetime import timedelta
+
 import pytest
 
-from app.application.logs import LogFilterService, LogQueryService, LogSourceService
+from app.application.logs import LogFilterService, LogQueryService, LogSourceService, LogWatchService
 from app.domain.errors import LogProviderError, NotFoundError, ValidationError
-from app.domain.logs import LogFilter, LogQuery, LogSourceKind, Refinement
-from tests.fakes import FakeLogProvider, InMemoryFilterRepository, InMemorySourceRepository, gcp_source
+from app.domain.logs import LogCount, LogEntry, LogFilter, LogQuery, LogSourceKind, Refinement
+from tests.fakes import FakeLogProvider, InMemoryFilterRepository, InMemorySourceRepository, gcp_source, ts
 
 
 def query_service(provider=None, sources=(), filters=()):
@@ -226,3 +228,121 @@ def test_delete_and_reorder_filters(filters):
 
     service.delete_filter(first.id)
     assert [item.id for item in service.list_filters()] == [third.id, second.id]
+
+
+# ----- watched filters ---------------------------------------------------------
+
+
+class Clock:
+    def __init__(self, at: str):
+        self.now = ts(at)
+
+    def __call__(self):
+        return self.now
+
+    def advance(self, **delta):
+        self.now += timedelta(**delta)
+
+
+def entry(at: str, severity: str = "ERROR") -> LogEntry:
+    return LogEntry(timestamp=at, severity=severity, summary="x")
+
+
+def watch_world(entries=(), **options):
+    clock = Clock("2026-10-31T10:00:00Z")
+    provider = FakeLogProvider(list(entries))
+    filters = InMemoryFilterRepository([LogFilter(id="f1", name="errors", source_id="s1", expression="e")])
+    service = LogWatchService(
+        {LogSourceKind.GCP: provider},
+        InMemorySourceRepository([gcp_source(id_="s1")]),
+        filters,
+        clock=clock,
+        **options,
+    )
+    return service, provider, filters, clock
+
+
+def test_a_watch_counts_only_what_arrives_after_it_is_turned_on():
+    service, provider, filters, clock = watch_world(
+        [
+            entry("2026-10-31T09:59:00Z"),
+            entry("2026-10-31T10:01:00Z"),
+            entry("2026-10-31T10:02:30Z", "WARNING"),
+        ]
+    )
+    assert service.unseen() == []  # nothing watched yet
+
+    service.set_watch("f1", True)
+    assert filters.get("f1").last_seen_at == ts("2026-10-31T10:00:00Z")
+    [status] = service.unseen()
+    assert status.count == LogCount() and provider.count_calls == []  # lag: nothing settled yet
+
+    clock.advance(minutes=4)  # counts [10:00, 10:03): the 09:59 entry is older than the watch
+    [status] = service.unseen()
+    assert (status.count.error, status.count.warning) == (1, 1)
+    assert (status.since, status.until) == (ts("2026-10-31T10:00:00Z"), ts("2026-10-31T10:03:00Z"))
+
+
+def test_each_round_reads_only_the_new_interval_and_rounds_are_throttled():
+    service, provider, _, clock = watch_world([entry("2026-10-31T10:01:00Z"), entry("2026-10-31T10:05:00Z")])
+    service.set_watch("f1", True)
+    clock.advance(minutes=3)
+    assert service.unseen()[0].count.error == 1
+    clock.advance(seconds=30)
+    service.unseen()  # asked again within min_interval: no read
+    assert len(provider.count_calls) == 1
+
+    clock.advance(minutes=4)
+    assert service.unseen()[0].count.error == 2
+    (*_, end1), (*_, start2, end2) = provider.count_calls
+    assert end1 == start2 and end2 == ts("2026-10-31T10:06:30Z")  # back to back, never overlapping
+
+
+def test_opening_a_filter_restarts_its_count_and_unwatching_drops_it():
+    service, _, _, clock = watch_world([entry("2026-10-31T10:01:00Z"), entry("2026-10-31T10:08:00Z")])
+    service.set_watch("f1", True)
+    clock.advance(minutes=3)
+    assert service.unseen()[0].count.total == 1
+
+    clock.advance(minutes=2)
+    assert service.mark_seen("f1").last_seen_at == ts("2026-10-31T10:05:00Z")
+    clock.advance(minutes=5)
+    [status] = service.unseen()
+    assert status.count.total == 1 and status.since == ts("2026-10-31T10:05:00Z")
+
+    service.set_watch("f1", False)
+    assert service.unseen() == []
+
+
+def test_a_failed_round_keeps_the_numbers_and_says_why():
+    service, provider, _, clock = watch_world([entry("2026-10-31T10:01:00Z")])
+    service.set_watch("f1", True)
+    clock.advance(minutes=3)
+    service.unseen()
+    provider.error = LogProviderError("quota exceeded")
+    clock.advance(minutes=2)
+    [status] = service.unseen()
+    assert status.problem == "quota exceeded" and status.count.total == 1
+    assert status.until == ts("2026-10-31T10:02:00Z")  # the failed interval is read again later
+
+    provider.error = None
+    clock.advance(minutes=2)
+    [status] = service.unseen()
+    assert status.problem == "" and status.until == ts("2026-10-31T10:06:00Z")
+
+
+def test_a_round_that_reaches_the_cap_is_a_lower_bound():
+    times = [f"2026-10-31T10:01:{second:02d}Z" for second in range(5)]
+    service, _, _, clock = watch_world([entry(at) for at in times], cap=3)
+    service.set_watch("f1", True)
+    clock.advance(minutes=3)
+    [status] = service.unseen()
+    assert status.count.total == 3 and status.count.capped
+
+
+def test_watch_and_seen_on_unknown_filters():
+    service, *_ = watch_world()
+    with pytest.raises(NotFoundError):
+        service.set_watch("ghost", True)
+    with pytest.raises(NotFoundError):
+        service.mark_seen("ghost")

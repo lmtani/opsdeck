@@ -739,6 +739,24 @@ body {
 .card-action.is-on { border-color: var(--accent); }
 .gh-bell-on { font-size: 11px; margin-left: 2px; vertical-align: 1px; }
 .gh-bell-on.is-paused { filter: grayscale(1); opacity: 0.5; }
+.card-action svg { display: block; margin: auto; }
+/* watched log filters: the eye and one chip per severity band with new entries */
+.log-watching { display: inline-flex; margin-left: 5px; color: var(--accent); vertical-align: -1px; }
+.log-watching.is-paused { color: var(--text-dim); opacity: 0.6; }
+.log-unseen {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--k) 18%, transparent);
+  color: var(--k);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 16px;
+  vertical-align: 1px;
+}
+.log-unseen.is-problem { --k: var(--warn); }
 
 /* results */
 .results-idle {
@@ -864,6 +882,8 @@ body {
 }
 .entry-time.is-relative { color: var(--text); }
 .entry.is-origin { border-left-color: var(--accent); }
+/* came after the watched filter was last opened */
+.entry.is-new .entry-time::before { content: "●"; margin-right: 6px; color: var(--accent); font-size: 8px; vertical-align: 1px; }
 .entry.is-origin .entry-row {
   background: color-mix(in srgb, var(--accent) 9%, transparent);
   box-shadow: inset 0 0 0 1px var(--accent-soft);
@@ -1358,6 +1378,8 @@ body {
   text-align: center;
   vertical-align: 1px;
 }
+.tab-badge.is-warn { background: var(--warn); color: #1a1206; }
+.tab-badge.is-calm { background: var(--accent); color: var(--accent-contrast); }
 
 .gh-token-hint {
   margin: 0 0 12px;

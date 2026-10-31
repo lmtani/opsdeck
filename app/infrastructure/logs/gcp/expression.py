@@ -3,7 +3,7 @@ freshness turned into a timestamp clause, and the same query as a
 `gcloud logging read` command and a Logs Explorer URL. Pure functions."""
 
 import re
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 
 from app.domain.errors import LogProviderError
@@ -106,3 +106,15 @@ def api_filter(query: LogQuery, now: datetime) -> str:
     if not expression:
         return clause
     return f"({expression}) AND {clause}"
+
+
+def _instant(at: datetime) -> str:
+    return at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def interval_filter(query: LogQuery, start: datetime, end: datetime) -> str:
+    """The refined expression limited to timestamps in [start, end), whatever
+    the freshness: the background count of a watched filter."""
+    clause = f'timestamp>="{_instant(start)}" AND timestamp<"{_instant(end)}"'
+    expression = refined_expression(query)
+    return f"({expression}) AND {clause}" if expression else clause

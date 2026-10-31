@@ -1,5 +1,5 @@
-// Logs view: the log sources and saved filters of the sidebar, query
-// execution, entry rendering, the trace drill-down (every entry that shares a
+// Logs view: the log sources and saved filters of the sidebar, the
+// background count of new entries of watched filters, query execution, entry rendering, the trace drill-down (every entry that shares a
 // trace / operation with one row, optionally across sources) and
 // click-to-refine on field values. Refinements travel as {path, value, negate}
 // and the backend spells them in the source's query language.
@@ -25,6 +25,19 @@ let lastEntries = [];
 let liveTemplate = "";
 let editingId = null;
 let editingSourceId = null;
+
+// Watched filters: what each one caught since it was last opened, by filter id
+// (GET /api/filters/unseen, counted per severity band by the backend). The
+// count refreshes every few minutes while the app-wide "live" switch is on.
+let unseen = {};
+let polling = true;
+let lastWatchPoll = 0;
+const WATCH_TICK_MS = 60_000;
+const WATCH_REFRESH_MS = 2 * 60_000;
+const EYE_ICON =
+  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">' +
+  '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="2"/>' +
+  '<circle cx="12" cy="12" r="3" fill="currentColor"/></svg>';
 
 // What the results panel is showing. `mode` is "idle", "filter" (a saved
 // filter on its `source`, plus ad-hoc `refinements` stacked on top of it) or
@@ -148,13 +161,15 @@ function renderFilterList() {
     item.tabIndex = 0;
     const source = sourceById(filter.source_id);
     item.innerHTML = `
-      <span class="filter-name">${escapeHtml(filter.name)}</span>
+      <span class="filter-name">${escapeHtml(filter.name)}${watchMarks(filter)}</span>
       <span class="filter-meta">
         <span title="${escapeHtml(source ? `${kindOf(source).label}: ${sourcePlace(source)}` : "")}">${escapeHtml(source?.name || "no source")}</span>
         <span>· ${FRESHNESS_LABELS[filter.freshness] || filter.freshness}</span>
         <span>· ${filter.limit}</span>
       </span>
       <span class="filter-edit">
+        <button class="card-action${filter.watch ? " is-on" : ""}" data-watch
+          title="${filter.watch ? "Stop watching" : "Watch: count new entries in the background"}">${EYE_ICON}</button>
         <button class="card-action" data-edit title="Edit">✎</button>
         <button class="card-action danger" data-delete title="Remove">✕</button>
       </span>`;
@@ -166,6 +181,10 @@ function renderFilterList() {
         event.preventDefault();
         run();
       }
+    });
+    item.querySelector("[data-watch]").addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleWatch(filter);
     });
     item.querySelector("[data-edit]").addEventListener("click", (event) => {
       event.stopPropagation();
@@ -189,6 +208,114 @@ function renderFilterList() {
 
     container.appendChild(item);
   });
+  renderTabBadge();
+}
+
+// ----- watched filters -------------------------------------------------
+
+const compactCount = (count) => (count >= 1000 ? `${Math.floor(count / 1000)}k` : String(count));
+
+// The eye of a watched filter plus one chip per severity band that caught
+// something since the filter was last opened ("+" when a read hit its cap).
+function watchMarks(filter) {
+  if (!filter.watch) return "";
+  const eye = polling
+    ? `<span class="log-watching" title="Watching: new entries are counted every few minutes">${EYE_ICON}</span>`
+    : `<span class="log-watching is-paused" title="Watching, waiting for live updates to resume">${EYE_ICON}</span>`;
+  const status = unseen[filter.id];
+  if (!status) return eye;
+  const plus = status.capped ? "+" : "";
+  const since = new Date(status.since).toLocaleString(LOCALE, {
+    hourCycle: "h23",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const chips = SEVERITY_BANDS.filter(({ band }) => status[band] > 0)
+    .map(
+      ({ band, label }) =>
+        `<span class="log-unseen lsev-${band}" title="${status[band]}${plus} new ${escapeHtml(label)} since ${since}">${compactCount(status[band])}${plus}</span>`
+    )
+    .join("");
+  const problem = status.problem
+    ? `<span class="log-unseen is-problem" title="${escapeHtml(`Count failed: ${status.problem}`)}">!</span>`
+    : "";
+  return eye + chips + problem;
+}
+
+// The Logs tab shows the new entries of every watched filter, colored by the
+// most severe band among them, so they are visible from the other tabs.
+function renderTabBadge() {
+  const badge = document.getElementById("logs-tab-badge");
+  const statuses = filters
+    .filter((filter) => filter.watch && unseen[filter.id])
+    .map((f) => unseen[f.id]);
+  const sum = (key) => statuses.reduce((total, status) => total + status[key], 0);
+  const total = sum("total");
+  const plus = statuses.some((status) => status.capped && status.total) ? "+" : "";
+  badge.hidden = total === 0;
+  badge.textContent = total > 99 ? "99+" : `${total}${plus}`;
+  badge.title = `${total}${plus} new log entries in watched filters`;
+  badge.classList.toggle("is-warn", sum("error") === 0 && sum("warning") > 0);
+  badge.classList.toggle("is-calm", sum("error") === 0 && sum("warning") === 0);
+}
+
+async function refreshUnseen() {
+  lastWatchPoll = Date.now();
+  if (!filters.some((filter) => filter.watch)) {
+    unseen = {};
+    renderTabBadge();
+    return;
+  }
+  try {
+    const statuses = await api.logsUnseen();
+    unseen = Object.fromEntries(statuses.map((status) => [status.filter_id, status]));
+    renderFilterList();
+  } catch {
+    /* the counts are best effort: try again on the next round */
+  }
+}
+
+function watchTick() {
+  if (!polling || document.hidden) return;
+  if (Date.now() - lastWatchPoll < WATCH_REFRESH_MS) return;
+  refreshUnseen();
+}
+
+function replaceFilter(updated) {
+  filters = filters.map((filter) => (filter.id === updated.id ? updated : filter));
+  if (view.filter?.id === updated.id) view.filter = updated;
+}
+
+async function toggleWatch(filter) {
+  try {
+    const updated = await api.watchFilter(filter.id, !filter.watch);
+    replaceFilter(updated);
+    if (!updated.watch) delete unseen[updated.id];
+    renderFilterList();
+    const when = polling ? "every few minutes" : "once live updates resume";
+    toast(
+      updated.watch
+        ? `Watching “${updated.name}”: new entries are counted ${when}.`
+        : `Stopped watching “${updated.name}”.`,
+      updated.watch ? "success" : "info"
+    );
+    if (updated.watch) refreshUnseen();
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+// Opening a watched filter is seeing what it caught: its count starts over.
+async function markSeen(filterId) {
+  try {
+    replaceFilter(await api.markFilterSeen(filterId));
+    delete unseen[filterId];
+    renderFilterList();
+  } catch {
+    /* the chips clear on the next round */
+  }
 }
 
 function renderSourceList() {
@@ -590,7 +717,9 @@ async function runFilter(filter) {
   showResultsPanel();
 
   const source = sourceById(filter.source_id);
-  view = { mode: "filter", filter, source, refinements: [], title: filter.name };
+  // a watched filter highlights what came after it was last opened
+  const newSince = filter.watch ? filter.last_seen_at : null;
+  view = { mode: "filter", filter, source, refinements: [], title: filter.name, newSince };
   liveTemplate = filter.line_format || "";
   document.getElementById("format-input").value = liveTemplate;
   await loadFilter();
@@ -615,6 +744,7 @@ async function loadFilter() {
     lastEntries = result.entries;
     paintEntries({ rise: true });
     renderFieldChips();
+    if (filters.find((item) => item.id === filter.id)?.watch) markSeen(filter.id);
     const refined = refinements.length ? ` · ${plural(refinements.length, "refinement")}` : "";
     setHeader(
       filter.name,
@@ -961,7 +1091,7 @@ function paintEntries({ rise = false } = {}) {
       showSource: view.sources.length > 1,
     });
   } else {
-    renderEntries(lastEntries, { refinable: view.mode === "filter" });
+    renderEntries(lastEntries, { refinable: view.mode === "filter", newSince: view.newSince });
   }
 }
 
@@ -992,6 +1122,7 @@ function renderEntries(entries, options = {}) {
     currentKey = null,
     showSource = false,
     refinable = false,
+    newSince = null,
   } = options;
   const container = document.getElementById("entries");
   container.innerHTML = "";
@@ -1003,11 +1134,13 @@ function renderEntries(entries, options = {}) {
   }
 
   const baseline = relative ? Date.parse(entries[0].timestamp) : NaN;
+  const newAfter = newSince ? Date.parse(newSince) : Infinity;
 
   entries.forEach((entry, index) => {
     const node = document.createElement("div");
     const isOrigin = Boolean(originId) && entry.insert_id === originId;
-    node.className = `entry b-${entry.severity}${isOrigin ? " is-origin" : ""}`;
+    const isNew = Date.parse(entry.timestamp) > newAfter;
+    node.className = `entry b-${entry.severity}${isOrigin ? " is-origin" : ""}${isNew ? " is-new" : ""}`;
     node.style.setProperty("--i", Math.min(index, 20));
 
     const absolute = absoluteTime(entry.timestamp);
@@ -1205,6 +1338,7 @@ async function loadFilters() {
   filters = await api.listFilters();
   renderFilterList();
   syncChrome();
+  refreshUnseen();
 }
 
 // ----- source modal ------------------------------------------------------
@@ -1394,6 +1528,19 @@ export async function initLogs() {
       toast(error.message, "error");
     }
   });
+
+  // the "live" switch (GitHub sidebar) pauses the background count too
+  document.addEventListener("polling:change", (event) => {
+    polling = event.detail;
+    renderFilterList();
+    if (polling) refreshUnseen();
+  });
+  try {
+    polling = (await api.getSettings()).polling !== false;
+  } catch {
+    /* settings unavailable: stay live */
+  }
+  setInterval(watchTick, WATCH_TICK_MS);
 
   await loadSources();
   await loadFilters();

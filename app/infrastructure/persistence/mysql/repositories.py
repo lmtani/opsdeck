@@ -87,7 +87,8 @@ class MySqlLinkRepository(LinkRepository):
 
 class MySqlLogFilterRepository(LogFilterRepository):
     _COLUMNS = (
-        "id, name, source_id, expression, freshness, `limit`, description, line_format, position, created_at"
+        "id, name, source_id, expression, freshness, `limit`, description, line_format,"
+        " watch, last_seen_at, position, created_at"
     )
 
     def __init__(self, factory: MySqlConnectionFactory):
@@ -112,15 +113,16 @@ class MySqlLogFilterRepository(LogFilterRepository):
             cursor.execute(
                 "INSERT INTO log_filters"
                 " (id, name, source_id, expression, freshness, `limit`,"
-                "  description, line_format, position, created_at)"
+                "  description, line_format, watch, last_seen_at, position, created_at)"
                 " VALUES (%(id)s, %(name)s, %(source_id)s, %(expression)s,"
                 "         %(freshness)s, %(limit)s, %(description)s,"
-                "         %(line_format)s, %(position)s, %(created_at)s)"
+                "         %(line_format)s, %(watch)s, %(last_seen_at)s, %(position)s, %(created_at)s)"
                 " ON DUPLICATE KEY UPDATE"
                 "  name = VALUES(name), source_id = VALUES(source_id),"
                 "  expression = VALUES(expression), freshness = VALUES(freshness),"
                 "  `limit` = VALUES(`limit`), description = VALUES(description),"
-                "  line_format = VALUES(line_format), position = VALUES(position)",
+                "  line_format = VALUES(line_format), watch = VALUES(watch),"
+                "  last_seen_at = VALUES(last_seen_at), position = VALUES(position)",
                 filter_to_row(log_filter),
             )
 

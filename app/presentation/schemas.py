@@ -85,8 +85,30 @@ class LogFilterOut(LogFilterIn):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    watch: bool = False
+    last_seen_at: datetime | None = None
     position: int = 0
     created_at: datetime
+
+
+class WatchIn(BaseModel):
+    watch: bool
+
+
+class LogWatchOut(BaseModel):
+    """New entries of a watched filter since it was last opened, per severity
+    band, with a timestamp in [since, until). `capped`: a lower bound."""
+
+    filter_id: str
+    since: datetime
+    until: datetime
+    error: int
+    warning: int
+    info: int
+    other: int
+    total: int
+    capped: bool
+    problem: str = ""
 
 
 class RefinementIn(BaseModel):
@@ -145,14 +167,14 @@ class SettingsModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     theme: str = "midnight"
-    github_polling: bool = True
+    polling: bool = True
 
 
 class SettingsUpdate(BaseModel):
     """A partial update: fields left out keep their saved value."""
 
     theme: str | None = None
-    github_polling: bool | None = None
+    polling: bool | None = None
 
 
 class ImageOut(BaseModel):

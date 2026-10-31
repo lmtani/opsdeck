@@ -1228,8 +1228,8 @@ function renderPolling() {
   button.setAttribute("aria-pressed", String(polling));
   button.textContent = polling ? "● live" : "⏸ paused";
   button.title = polling
-    ? "Badges, notifications and auto refresh update in the background. Click to pause."
-    : "Paused: feeds only update when you open or refresh them. Click to resume.";
+    ? "Badges, notifications, auto refresh and watched log filters update in the background. Click to pause."
+    : "Paused: feeds and watched log filters only update when you open them. Click to resume.";
 }
 
 function applyPolling(on) {
@@ -1237,6 +1237,8 @@ function applyPolling(on) {
   renderPolling();
   scheduleAuto();
   renderFeedList();
+  // the switch is app-wide: watched log filters follow it too
+  document.dispatchEvent(new CustomEvent("polling:change", { detail: on }));
 }
 
 async function togglePolling() {
@@ -1247,12 +1249,12 @@ async function togglePolling() {
   }
   toast(
     polling
-      ? "Live updates on: badges, notifications and auto refresh resume."
-      : "Live updates paused. Feeds update only when you open or refresh them.",
+      ? "Live updates on: badges, notifications, auto refresh and watched log filters resume."
+      : "Live updates paused. Feeds and watched log filters update only when you open them.",
     polling ? "success" : "info"
   );
   try {
-    await api.saveSettings({ github_polling: polling });
+    await api.saveSettings({ polling });
   } catch {
     toast("Could not save the live updates setting; it applies to this page only.", "error");
   }
@@ -1664,7 +1666,7 @@ export async function initGithub() {
   });
 
   try {
-    polling = (await api.getSettings()).github_polling !== false;
+    polling = (await api.getSettings()).polling !== false;
   } catch {
     /* settings unavailable: stay live */
   }

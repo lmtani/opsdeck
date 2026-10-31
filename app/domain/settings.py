@@ -7,7 +7,7 @@ from dataclasses import dataclass
 @dataclass
 class AppSettings:
     theme: str = "midnight"
-    github_polling: bool = True  # background refresh of feed badges, notifications and auto refresh
+    polling: bool = True  # the live switch: background counts, badges, notifications and auto refresh
 
 
 class SettingsRepository(ABC):

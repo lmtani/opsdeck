@@ -42,6 +42,8 @@ def row_to_link(row: dict) -> Link:
 def filter_to_row(log_filter: LogFilter) -> dict:
     row = asdict(log_filter)
     row["freshness"] = log_filter.freshness.value
+    row["watch"] = bool(log_filter.watch)
+    row["last_seen_at"] = _text(log_filter.last_seen_at)
     row["created_at"] = _text(log_filter.created_at)
     return row
 
@@ -49,6 +51,8 @@ def filter_to_row(log_filter: LogFilter) -> dict:
 def row_to_filter(row: dict) -> LogFilter:
     values = dict(row)
     values["freshness"] = Freshness(values.get("freshness") or Freshness.H1)
+    values["watch"] = bool(values.get("watch"))  # TINYINT(1) comes back as int
+    values["last_seen_at"] = parse_timestamp(values.get("last_seen_at"))
     values["created_at"] = _created_at(row)
     return LogFilter(**values)
 
@@ -90,9 +94,17 @@ def row_to_feed(row: dict) -> GithubFeed:
     return GithubFeed(**values)
 
 
+# preferences saved under an older name (JSON storage; MySQL renames the rows)
+_RENAMED_SETTINGS = {"github_polling": "polling"}
+
+
 def values_to_settings(values: dict) -> AppSettings:
     """Unknown names are ignored (a preference that no longer exists) and
     missing ones keep their default."""
+    values = dict(values)
+    for old, new in _RENAMED_SETTINGS.items():
+        if old in values:
+            values.setdefault(new, values.pop(old))
     known = {}
     for field in fields(AppSettings):
         if field.name not in values:

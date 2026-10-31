@@ -8,7 +8,17 @@ from app.domain.common import utc_now
 from app.domain.errors import ValidationError
 from app.domain.github import EventKind, EventSubject, FeedSpec, GithubFeed, SubjectType
 from app.domain.links import Link, LinkKind
-from app.domain.logs import Freshness, LogFilter, LogQuery, LogSource, LogSourceKind, Refinement
+from app.domain.logs import (
+    Freshness,
+    LogCount,
+    LogFilter,
+    LogQuery,
+    LogSource,
+    LogSourceKind,
+    Refinement,
+    SeverityBand,
+    severity_band,
+)
 from tests.fakes import ts
 
 # ----- links -----------------------------------------------------------------
@@ -165,3 +175,35 @@ def test_event_subject_needs_a_valid_repo_and_the_ids_of_its_type():
         EventSubject(SubjectType.PULL, "acme/core", item_id=5)
     with pytest.raises(ValueError, match="wiki"):
         EventSubject("wiki", "acme/core", item_id=5)
+
+
+def test_log_filter_watch_starts_from_now_and_the_seen_mark_only_moves_forward():
+    log_filter = LogFilter.new(name="errors", source_id="s1")
+    assert log_filter.watch is False and log_filter.last_seen_at is None
+
+    log_filter.set_watch(True, ts("2026-10-31T10:00:00Z"))
+    assert log_filter.watch is True and log_filter.last_seen_at == ts("2026-10-31T10:00:00Z")
+    log_filter.set_watch(True, ts("2026-10-31T11:00:00Z"))  # already on: the mark stays
+    assert log_filter.last_seen_at == ts("2026-10-31T10:00:00Z")
+
+    assert log_filter.mark_seen(ts("2026-10-31T09:00:00Z")) is False
+    assert log_filter.mark_seen(ts("2026-10-31T12:00:00Z")) is True
+    log_filter.set_watch(False)
+    assert log_filter.watch is False and log_filter.last_seen_at == ts("2026-10-31T12:00:00Z")
+
+    # editing keeps the watch state
+    log_filter.set_watch(True, ts("2026-10-31T13:00:00Z"))
+    log_filter.update(name="renamed", source_id="s1")
+    assert log_filter.watch is True and log_filter.last_seen_at == ts("2026-10-31T13:00:00Z")
+
+
+def test_severities_fold_into_bands_and_counts_add_up():
+    assert severity_band("CRITICAL") is SeverityBand.ERROR
+    assert severity_band("notice") is SeverityBand.INFO
+    assert severity_band("") is SeverityBand.OTHER and severity_band("WEIRD") is SeverityBand.OTHER
+
+    first = LogCount.of(["ERROR", "ALERT", "WARNING", "INFO", "DEBUG", "DEFAULT"])
+    assert (first.error, first.warning, first.info, first.other, first.total) == (2, 1, 1, 2, 6)
+    total = first + LogCount.of(["ERROR"], capped=True)
+    assert (total.error, total.total, total.capped) == (3, 7, True)
+    assert LogCount() + LogCount() == LogCount()

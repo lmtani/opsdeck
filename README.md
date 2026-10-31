@@ -3,7 +3,7 @@
 A personal devops dashboard with three tabs:
 
 - **GitHub**: activity feeds for an organization or a set of repositories.
-- **Logs**: saved Google Cloud Logging queries, with a severity histogram over the results, click-to-refine and trace drill-down.
+- **Logs**: saved Google Cloud Logging queries, with a severity histogram over the results, click-to-refine, trace drill-down and watched filters that count new entries in the background.
 - **Links**: cards for the consoles, dashboards and tools you open every day.
 
 FastAPI backend, vanilla JavaScript frontend with no build step, MySQL storage.
@@ -44,7 +44,7 @@ Clicking an event shows its details; **Full context →** opens a side panel wit
 
 To get desktop notifications of new events, hover a feed and click 🔔. The browser asks for permission once and a test notification confirms they reach your desktop (if it does not show up, check the system's notification settings, such as do-not-disturb, for the browser); a feed that notifies shows a bell next to its name. Notifications arrive while OpsDeck is open in some tab, even in the background (it checks every 2 minutes), and clicking one opens the feed. Browsers only allow them on `localhost` or HTTPS, and the choice is kept per browser.
 
-The **● live** switch at the top of the feed list pauses every background update: unread badges, notifications and the 60 s auto refresh. While paused, a feed only updates when you open it or click Refresh. The setting is saved with the theme.
+The **● live** switch at the top of the feed list pauses every background update: unread badges, notifications, the 60 s auto refresh and the count of watched log filters. While paused, a feed only updates when you open it or click Refresh. The setting is saved with the theme.
 
 ### Logs tab
 
@@ -56,7 +56,9 @@ cp ~/.config/gcloud/application_default_credentials.json secrets/gcp-adc.json
 chmod 644 secrets/gcp-adc.json
 ```
 
-Logs are read from **sources**, listed under the saved filters: a source is a Google Cloud project for now (other kinds of log backends can be added later), and each filter runs on one. Add a source with **+ Source**, then create filters on it. Clicking a severity, a resource or a field of an entry refines the results, and **Save as new filter** keeps the refined query. If the credentials are missing, unreadable, expired or lack access to a project, the top-bar `logs` dot turns red and the Logs tab says what to fix; the dot is hidden while there are no sources.
+Logs are read from **sources**, listed under the saved filters: a source is a Google Cloud project for now (other kinds of log backends can be added later), and each filter runs on one. Add a source with **+ Source**, then create filters on it. Clicking a severity, a resource or a field of an entry refines the results, and **Save as new filter** keeps the refined query. The eye button of a filter **watches** it: every few minutes the app counts the entries that arrived since you last opened the filter and shows them on its card, one chip per severity (error, warning, info, debug), with the total on the Logs tab. Opening the filter marks those entries with a dot and starts the count over. Each round reads only the minutes since the previous one, one API call per watched filter (Cloud Logging does not bill reads; its quota is 60 per minute per project), and a round that reaches 1000 entries shows the number as a lower bound, like `1000+`.
+
+If the credentials are missing, unreadable, expired or lack access to a project, the top-bar `logs` dot turns red and the Logs tab says what to fix; the dot is hidden while there are no sources.
 
 ## Run locally
 

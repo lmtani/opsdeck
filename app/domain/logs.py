@@ -7,7 +7,7 @@ it are written in that provider's query language.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
@@ -199,11 +199,14 @@ class LogFilter:
     limit: int = 50
     description: str = ""
     line_format: str = ""
+    watch: bool = False  # count new entries in the background
+    last_seen_at: datetime | None = None  # when the user last opened it; new entries come after
     position: int = 0
     created_at: datetime = field(default_factory=utc_now)
 
     def __post_init__(self):
         self.freshness = _freshness(self.freshness)
+        self.watch = bool(self.watch)
         _check_name(self.name)
         if not self.source_id.strip():
             raise ValidationError("A log source is required")
@@ -245,6 +248,77 @@ class LogFilter:
             expression=self.expression,
             freshness=self.freshness,
             limit=self.limit,
+        )
+
+    def mark_seen(self, at: datetime | None = None) -> bool:
+        """Move the last-seen mark forward (never back) to `at` or now."""
+        mark = at or utc_now()
+        if self.last_seen_at is not None and mark <= self.last_seen_at:
+            return False
+        self.last_seen_at = mark
+        return True
+
+    def set_watch(self, watch: bool, now: datetime | None = None) -> None:
+        """Turning the watch on starts counting from now, so it never
+        reports a backlog of entries nobody was waiting for."""
+        if watch and not self.watch:
+            self.mark_seen(now)
+        self.watch = bool(watch)
+
+
+class SeverityBand(StrEnum):
+    """The severities folded into the four bands the UI shows."""
+
+    ERROR = "error"  # ERROR, CRITICAL, ALERT, EMERGENCY
+    WARNING = "warning"
+    INFO = "info"  # INFO, NOTICE
+    OTHER = "other"  # DEBUG, DEFAULT and anything unknown
+
+
+_BANDS = {
+    "EMERGENCY": SeverityBand.ERROR,
+    "ALERT": SeverityBand.ERROR,
+    "CRITICAL": SeverityBand.ERROR,
+    "ERROR": SeverityBand.ERROR,
+    "WARNING": SeverityBand.WARNING,
+    "NOTICE": SeverityBand.INFO,
+    "INFO": SeverityBand.INFO,
+}
+
+
+def severity_band(severity: str) -> SeverityBand:
+    return _BANDS.get((severity or "").upper(), SeverityBand.OTHER)
+
+
+@dataclass(frozen=True)
+class LogCount:
+    """Entries per severity band. `capped` means the reading stopped at its
+    cap, so the numbers are a lower bound."""
+
+    error: int = 0
+    warning: int = 0
+    info: int = 0
+    other: int = 0
+    capped: bool = False
+
+    @classmethod
+    def of(cls, severities: Iterable[str], capped: bool = False) -> "LogCount":
+        counts = dict.fromkeys(SeverityBand, 0)
+        for severity in severities:
+            counts[severity_band(severity)] += 1
+        return cls(**{band.value: count for band, count in counts.items()}, capped=capped)
+
+    @property
+    def total(self) -> int:
+        return self.error + self.warning + self.info + self.other
+
+    def __add__(self, other: "LogCount") -> "LogCount":
+        return LogCount(
+            error=self.error + other.error,
+            warning=self.warning + other.warning,
+            info=self.info + other.info,
+            other=self.other + other.other,
+            capped=self.capped or other.capped,
         )
 
 
@@ -292,6 +366,12 @@ class LogProvider(ABC):
     @abstractmethod
     def describe(self, source: LogSource, query: LogQuery) -> str:
         """Human-readable equivalent command, shown in the UI for copy/paste."""
+
+    @abstractmethod
+    def count(self, source: LogSource, query: LogQuery, start: datetime, end: datetime, cap: int) -> LogCount:
+        """Entries per severity band with a timestamp in [start, end), the
+        query's freshness ignored. A backend that has to read the entries
+        stops after `cap` of them and flags the count as capped."""
 
     def console_url(self, source: LogSource, query: LogQuery) -> str:
         """The query in the backend's own web console; empty when there is none."""

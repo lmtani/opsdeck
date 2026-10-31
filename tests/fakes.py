@@ -26,6 +26,7 @@ from app.domain.github import (
 )
 from app.domain.links import CommandRunner, ImageStore, Link, LinkRepository
 from app.domain.logs import (
+    LogCount,
     LogEntry,
     LogFilter,
     LogFilterRepository,
@@ -128,6 +129,7 @@ class FakeLogProvider(LogProvider):
         self.available = available
         self.last_query: LogQuery | None = None
         self.last_source: LogSource | None = None
+        self.count_calls: list[tuple] = []
 
     def is_available(self):
         return self.available
@@ -144,6 +146,15 @@ class FakeLogProvider(LogProvider):
         if self.error:
             raise self.error
         return list(self.entries)
+
+    def count(self, source, query, start, end, cap):
+        """Counts its own entries with a timestamp in [start, end), like a
+        backend that reads them; every call is recorded."""
+        self.count_calls.append((source.id, query.expression, start, end))
+        if self.error:
+            raise self.error
+        inside = [e.severity for e in self.entries if start <= parse_timestamp(e.timestamp) < end]
+        return LogCount.of(inside[:cap], capped=len(inside) >= cap)
 
     def describe(self, source, query):
         return f"fake --project={source.config['project']}"
