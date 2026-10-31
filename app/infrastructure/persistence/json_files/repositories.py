@@ -10,10 +10,10 @@ from pathlib import Path
 
 from app.domain.github import GithubFeed, GithubFeedRepository
 from app.domain.links import Link, LinkRepository
-from app.domain.logs import LogFilter, LogFilterRepository, LogSource, LogSourceKind, LogSourceRepository
+from app.domain.logs import LogFilter, LogFilterRepository, LogSource, LogSourceRepository
 from app.domain.settings import AppSettings, SettingsRepository
-from app.infrastructure.json_store import JsonStore
-from app.infrastructure.rows import (
+from app.infrastructure.persistence.json_files.store import JsonStore
+from app.infrastructure.persistence.rows import (
     feed_to_row,
     filter_to_row,
     link_to_row,
@@ -121,31 +121,6 @@ class JsonLogSourceRepository(LogSourceRepository):
 
     def delete(self, source_id: str) -> bool:
         return self._collection.delete(source_id)
-
-
-def adopt_legacy_projects(filters_path: Path, sources: LogSourceRepository) -> int:
-    """Filters saved before log sources existed name a GCP project instead of
-    a source: give each such project a gcp source (reusing one that reads the
-    same project) and point the filters at it. Returns how many changed."""
-    store = JsonStore(filters_path)
-    records = store.read([])
-    legacy = [record for record in records if record.get("project") and not record.get("source_id")]
-    if not legacy:
-        return 0
-    by_project = {
-        source.config["project"]: source.id
-        for source in sources.list_all()
-        if source.kind is LogSourceKind.GCP
-    }
-    for record in legacy:
-        project = record.pop("project").strip()
-        if project not in by_project:
-            source = LogSource.new(name=project, kind=LogSourceKind.GCP, config={"project": project})
-            sources.save(source)
-            by_project[project] = source.id
-        record["source_id"] = by_project[project]
-    store.write(records)
-    return len(legacy)
 
 
 class JsonGithubFeedRepository(GithubFeedRepository):

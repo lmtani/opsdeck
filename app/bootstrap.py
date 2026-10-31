@@ -27,9 +27,10 @@ from app.domain.github import GithubFeedRepository
 from app.domain.links import CommandRunner, LinkRepository
 from app.domain.logs import LogFilterRepository, LogProvider, LogSourceKind, LogSourceRepository
 from app.domain.settings import SettingsRepository
-from app.infrastructure.cloud_logging_provider import CloudLoggingApiProvider
-from app.infrastructure.github_api_provider import GithubApiProvider, resolve_github_token
-from app.infrastructure.json_repositories import (
+from app.infrastructure.github import GithubApiProvider, resolve_github_token
+from app.infrastructure.host import DisabledCommandRunner, LocalImageStore, SubprocessCommandRunner
+from app.infrastructure.logs.gcp import CloudLoggingApiProvider
+from app.infrastructure.persistence.json_files import (
     JsonGithubFeedRepository,
     JsonLinkRepository,
     JsonLogFilterRepository,
@@ -37,17 +38,15 @@ from app.infrastructure.json_repositories import (
     JsonSettingsRepository,
     adopt_legacy_projects,
 )
-from app.infrastructure.local_image_store import LocalImageStore
-from app.infrastructure.migrations import run_migrations
-from app.infrastructure.mysql_connection import MySqlConnectionFactory
-from app.infrastructure.mysql_repositories import (
+from app.infrastructure.persistence.mysql import (
+    MySqlConnectionFactory,
     MySqlGithubFeedRepository,
     MySqlLinkRepository,
     MySqlLogFilterRepository,
     MySqlLogSourceRepository,
     MySqlSettingsRepository,
+    run_migrations,
 )
-from app.infrastructure.subprocess_command_runner import SubprocessCommandRunner
 from app.presentation.api import Services
 from app.presentation.api import create_app as _create_app
 
@@ -93,8 +92,6 @@ def _build_log_providers(settings: Settings) -> dict[LogSourceKind, LogProvider]
 
 def _build_command_runner(settings: Settings) -> CommandRunner:
     if not settings.commands_enabled:
-        from app.infrastructure.disabled_command_runner import DisabledCommandRunner
-
         return DisabledCommandRunner()
     return SubprocessCommandRunner()
 

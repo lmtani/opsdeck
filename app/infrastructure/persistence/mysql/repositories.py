@@ -7,8 +7,8 @@ from app.domain.github import GithubFeed, GithubFeedRepository
 from app.domain.links import Link, LinkRepository
 from app.domain.logs import LogFilter, LogFilterRepository, LogSource, LogSourceRepository
 from app.domain.settings import AppSettings, SettingsRepository
-from app.infrastructure.mysql_connection import MySqlConnectionFactory
-from app.infrastructure.rows import (
+from app.infrastructure.persistence.mysql.connection import MySqlConnectionFactory
+from app.infrastructure.persistence.rows import (
     feed_to_row,
     filter_to_row,
     link_to_row,

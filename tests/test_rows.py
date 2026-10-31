@@ -7,12 +7,12 @@ from app.domain.github import EventKind, GithubFeed
 from app.domain.links import Link, LinkKind
 from app.domain.logs import Freshness, LogFilter, LogSource, LogSourceKind
 from app.domain.settings import AppSettings
-from app.infrastructure.json_repositories import (
+from app.infrastructure.persistence.json_files import (
     JsonLogFilterRepository,
     JsonLogSourceRepository,
     adopt_legacy_projects,
 )
-from app.infrastructure.rows import (
+from app.infrastructure.persistence.rows import (
     feed_to_row,
     filter_to_row,
     link_to_row,

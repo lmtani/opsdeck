@@ -9,7 +9,8 @@ import pytest
 from app.domain.common import parse_timestamp
 from app.domain.errors import GithubError, GithubNotFoundError
 from app.domain.github import EventSubject, FeedSpec, Quota, ReviewState, SubjectType, TokenKind
-from app.infrastructure.github_api_provider import GithubApiProvider, search_queries
+from app.infrastructure.github.provider import GithubApiProvider
+from app.infrastructure.github.search import search_queries
 
 USER = {"login": "alice"}
 

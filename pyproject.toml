@@ -56,7 +56,7 @@ ignore = [
     "S105", "S106", "S107",   # fake tokens and passwords
 ]
 # column lists are module constants; values always go as query parameters
-"app/infrastructure/mysql_repositories.py" = ["S608"]
+"app/infrastructure/persistence/mysql/repositories.py" = ["S608"]
 
 [tool.mypy]
 python_version = "3.12"

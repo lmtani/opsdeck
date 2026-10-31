@@ -5,7 +5,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from app.infrastructure.mysql_connection import MySqlSettings
+from app.infrastructure.persistence.mysql.connection import MySqlSettings
 
 _OFF = ("0", "off", "false", "no")
 

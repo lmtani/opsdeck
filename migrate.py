@@ -12,20 +12,20 @@ from dataclasses import asdict
 from app.bootstrap import DATA_DIR
 from app.config import Settings
 from app.domain.settings import AppSettings
-from app.infrastructure.json_repositories import (
+from app.infrastructure.persistence.json_files import (
     JsonLinkRepository,
     JsonLogFilterRepository,
     JsonLogSourceRepository,
     JsonSettingsRepository,
     adopt_legacy_projects,
 )
-from app.infrastructure.migrations import run_migrations
-from app.infrastructure.mysql_connection import MySqlConnectionFactory
-from app.infrastructure.mysql_repositories import (
+from app.infrastructure.persistence.mysql import (
+    MySqlConnectionFactory,
     MySqlLinkRepository,
     MySqlLogFilterRepository,
     MySqlLogSourceRepository,
     MySqlSettingsRepository,
+    run_migrations,
 )
 
 
