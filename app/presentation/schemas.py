@@ -13,6 +13,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.application.sharing import Bundle, ImportAction, ImportStatus, ItemType
+from app.domain.errors import ValidationError
 from app.domain.github import (
     ContributionKind,
     EventKind,
@@ -25,7 +26,7 @@ from app.domain.github import (
     SubjectType,
 )
 from app.domain.links import LinkKind
-from app.domain.logs import Freshness, LogSourceKind, Refinement
+from app.domain.logs import Freshness, LogSourceKind, Refinement, SeverityBand, TimeRange
 
 
 class LinkIn(BaseModel):
@@ -123,9 +124,27 @@ class RefinementIn(BaseModel):
 
 
 class SavedQueryIn(BaseModel):
-    """Refinements ANDed onto a saved filter for one run (not saved)."""
+    """Refinements ANDed onto a saved filter for one run (not saved). `since`
+    and `until` (both or neither) replace its window with [since, until);
+    `bands` keeps only those severity bands."""
 
     refinements: list[RefinementIn] = Field(default_factory=list, max_length=20)
+    since: datetime | None = None
+    until: datetime | None = None
+    bands: list[SeverityBand] = Field(default_factory=list, max_length=4)
+
+    def time_range(self) -> TimeRange | None:
+        if self.since is None and self.until is None:
+            return None
+        if self.since is None or self.until is None:
+            raise ValidationError("Give both since and until, or neither")
+        return TimeRange(self.since, self.until)
+
+
+class SeenIn(BaseModel):
+    """Entries up to `seen_at` were seen; none = up to now."""
+
+    seen_at: datetime | None = None
 
 
 class LogQueryIn(BaseModel):

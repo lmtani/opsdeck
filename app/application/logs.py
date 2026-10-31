@@ -21,6 +21,8 @@ from app.domain.logs import (
     LogSourceKind,
     LogSourceRepository,
     Refinement,
+    SeverityBand,
+    TimeRange,
 )
 from app.domain.ordering import next_position, ordered
 
@@ -146,11 +148,21 @@ class LogQueryService:
             return None
         return all(self._provider(kind).is_available() for kind in kinds)
 
-    def run_saved_filter(self, filter_id: str, refinements: Sequence[Refinement] = ()) -> LogResult:
+    def run_saved_filter(
+        self,
+        filter_id: str,
+        refinements: Sequence[Refinement] = (),
+        time_range: TimeRange | None = None,
+        bands: Sequence[SeverityBand] = (),
+    ) -> LogResult:
+        """The saved query plus this run's refinements; a time range replaces
+        its freshness and bands narrow it to those severities (the new
+        entries a watched filter counted, which may be older than its window)."""
         log_filter = self._filters.get(filter_id)
         if log_filter is None:
             raise NotFoundError(f"Filter '{filter_id}' not found")
-        return self.run_query(log_filter.source_id, log_filter.query().refined(refinements))
+        query = replace(log_filter.query().refined(refinements), time_range=time_range, bands=tuple(bands))
+        return self.run_query(log_filter.source_id, query)
 
     def run_query(self, source_id: str, query: LogQuery) -> LogResult:
         source = self._sources.get(source_id)
@@ -240,10 +252,12 @@ class LogWatchService:
         self._filters.save(log_filter)
         return log_filter
 
-    def mark_seen(self, filter_id: str) -> LogFilter:
-        """The user opened the filter: what came before now is no longer new."""
+    def mark_seen(self, filter_id: str, at: datetime | None = None) -> LogFilter:
+        """The user saw the filter's entries up to `at` (never later than now,
+        the default): what came before is no longer new."""
         log_filter = self._get(filter_id)
-        if log_filter.mark_seen(self._clock()):
+        now = self._clock()
+        if log_filter.mark_seen(min(at, now) if at else now):
             self._filters.save(log_filter)
         return log_filter
 

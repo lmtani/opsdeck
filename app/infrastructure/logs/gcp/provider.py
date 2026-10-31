@@ -15,17 +15,17 @@ spelled as Cloud Logging clauses, come from expression.py.
 import shlex
 import threading
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from itertools import islice
 from pathlib import Path
 
 from app.domain.errors import LogProviderError
-from app.domain.logs import LogCount, LogEntry, LogProvider, LogQuery, LogSource
+from app.domain.logs import LogCount, LogEntry, LogProvider, LogQuery, LogSource, TimeRange
 from app.infrastructure.logs.gcp.entries import parse_entry
 from app.infrastructure.logs.gcp.expression import (
     api_filter,
     gcloud_args,
-    interval_filter,
     logs_explorer_url,
     refined_expression,
 )
@@ -101,7 +101,8 @@ class CloudLoggingApiProvider(LogProvider):
     def count(self, source: LogSource, query: LogQuery, start: datetime, end: datetime, cap: int) -> LogCount:
         """One page of up to `cap` entries, counted by severity. A full page
         counts as capped: asking for one more entry would cost a second call."""
-        items = self._read(source, interval_filter(query, start, end), cap)
+        counted = replace(query, time_range=TimeRange(start, end), bands=())
+        items = self._read(source, api_filter(counted, start), cap)
         return LogCount.of((item.get("severity") or "" for item in items), capped=len(items) >= cap)
 
     def _read(self, source: LogSource, filter_: str, limit: int) -> list[dict]:

@@ -183,8 +183,9 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
         return schemas.LogFilterOut.model_validate(services.watch.set_watch(filter_id, body.watch))
 
     @app.post("/api/filters/{filter_id}/seen", response_model=schemas.LogFilterOut)
-    def mark_filter_seen(filter_id: str):
-        return schemas.LogFilterOut.model_validate(services.watch.mark_seen(filter_id))
+    def mark_filter_seen(filter_id: str, body: schemas.SeenIn | None = None):
+        seen_at = body.seen_at if body else None
+        return schemas.LogFilterOut.model_validate(services.watch.mark_seen(filter_id, seen_at))
 
     @app.put("/api/filters/{filter_id}", response_model=schemas.LogFilterOut)
     def update_filter(filter_id: str, body: schemas.LogFilterIn):
@@ -208,8 +209,11 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
 
     @app.post("/api/filters/{filter_id}/query", response_model=schemas.LogQueryOut)
     def run_saved_filter(filter_id: str, body: schemas.SavedQueryIn | None = None):
-        refinements = [item.to_refinement() for item in body.refinements] if body else []
-        return _log_result(services.logs.run_saved_filter(filter_id, refinements))
+        if body is None:
+            return _log_result(services.logs.run_saved_filter(filter_id))
+        refinements = [item.to_refinement() for item in body.refinements]
+        result = services.logs.run_saved_filter(filter_id, refinements, body.time_range(), body.bands)
+        return _log_result(result)
 
     @app.post("/api/logs/query", response_model=schemas.LogQueryOut)
     def query_logs(body: schemas.LogQueryIn):

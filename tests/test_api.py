@@ -27,7 +27,7 @@ from app.domain.github import (
     SubjectType,
     ThreadComment,
 )
-from app.domain.logs import LogEntry, LogSourceKind
+from app.domain.logs import LogEntry, LogSourceKind, SeverityBand
 from app.presentation.api import Services, create_app
 from tests.fakes import (
     FakeCommandRunner,
@@ -227,6 +227,10 @@ def test_watched_filters_report_new_entries_until_opened(world):
     bundle = client.post("/api/share/export", json={"filters": [saved["id"]]}).json()
     assert "watch" not in bundle["log_filters"][0] and "last_seen_at" not in bundle["log_filters"][0]
 
+    world.now += timedelta(minutes=1)
+    up_to = client.post(f"/api/filters/{saved['id']}/seen", json={"seen_at": "2026-10-31T12:04:30Z"})
+    assert up_to.json()["last_seen_at"] == "2026-10-31T12:04:30Z"
+
     assert client.put("/api/filters/ghost/watch", json={"watch": True}).status_code == 404
     assert client.post("/api/filters/ghost/seen").status_code == 404
 
@@ -254,6 +258,18 @@ def test_log_query_saved_refined_ad_hoc_and_failures(world):
     assert (refinement.path, refinement.value, refinement.negate) == (("httpRequest", "status"), 500, True)
     bad = client.post(f"/api/filters/{saved['id']}/query", json={"refinements": [{"path": [], "value": "x"}]})
     assert bad.status_code == 422
+
+    # the new entries of a watched filter: an explicit range and bands
+    span = {"since": "2026-10-29T14:00:00Z", "until": "2026-10-31T12:00:00Z"}
+    client.post(f"/api/filters/{saved['id']}/query", json={**span, "bands": ["warning", "error"]})
+    assert world.logs.last_query.bands == (SeverityBand.ERROR, SeverityBand.WARNING)
+    assert world.logs.last_query.time_range.start.isoformat() == "2026-10-29T14:00:00+00:00"
+    half = client.post(f"/api/filters/{saved['id']}/query", json={"since": span["since"]})
+    backwards = client.post(
+        f"/api/filters/{saved['id']}/query", json={"since": span["until"], "until": span["since"]}
+    )
+    unknown = client.post(f"/api/filters/{saved['id']}/query", json={"bands": ["fatal"]})
+    assert (half.status_code, backwards.status_code, unknown.status_code) == (422, 422, 422)
 
     assert client.post("/api/filters/ghost/query").status_code == 404
     ad_hoc = client.post("/api/logs/query", json={"source_id": source, "expression": "x"})

@@ -17,6 +17,7 @@ from app.domain.logs import (
     LogSourceKind,
     Refinement,
     SeverityBand,
+    TimeRange,
     severity_band,
 )
 from tests.fakes import ts
@@ -86,6 +87,20 @@ def test_log_query_normalizes_validates_and_stacks_refinements():
     refined = query.refined([first]).refined([second])
     assert refined.refinements == (first, second) and query.refinements == ()
     assert first.path == ("severity",)  # lists become tuples, so refinements compare by value
+
+
+def test_log_query_bands_and_time_range():
+    query = LogQuery(bands=["warning", SeverityBand.ERROR, "warning"])
+    assert query.bands == (SeverityBand.ERROR, SeverityBand.WARNING)  # distinct, error first
+    with pytest.raises(ValidationError):
+        LogQuery(bands=["fatal"])
+
+    start = ts("2026-10-31T10:00:00Z")
+    assert TimeRange(start, start + timedelta(minutes=1)).end > start
+    with pytest.raises(ValidationError):
+        TimeRange(start, start)
+    with pytest.raises(ValidationError):
+        TimeRange(start.replace(tzinfo=None), start + timedelta(minutes=1))
 
 
 @pytest.mark.parametrize(("path", "value"), [((), "x"), (("a", " "), "x"), (("a",), None), (("a",), [1])])

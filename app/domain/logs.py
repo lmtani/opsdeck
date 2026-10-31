@@ -151,6 +151,45 @@ class Refinement:
         object.__setattr__(self, "path", path)
 
 
+class SeverityBand(StrEnum):
+    """The severities folded into the four bands the UI shows."""
+
+    ERROR = "error"  # ERROR, CRITICAL, ALERT, EMERGENCY
+    WARNING = "warning"
+    INFO = "info"  # INFO, NOTICE
+    OTHER = "other"  # DEBUG, DEFAULT and anything unknown
+
+
+_BANDS = {
+    "EMERGENCY": SeverityBand.ERROR,
+    "ALERT": SeverityBand.ERROR,
+    "CRITICAL": SeverityBand.ERROR,
+    "ERROR": SeverityBand.ERROR,
+    "WARNING": SeverityBand.WARNING,
+    "NOTICE": SeverityBand.INFO,
+    "INFO": SeverityBand.INFO,
+}
+
+
+def severity_band(severity: str) -> SeverityBand:
+    return _BANDS.get((severity or "").upper(), SeverityBand.OTHER)
+
+
+@dataclass(frozen=True)
+class TimeRange:
+    """An explicit interval [start, end) of entry timestamps, which a query
+    reads instead of its freshness."""
+
+    start: datetime
+    end: datetime
+
+    def __post_init__(self):
+        if self.start.tzinfo is None or self.end.tzinfo is None:
+            raise ValidationError("A time range needs timestamps with a time zone")
+        if self.end <= self.start:
+            raise ValidationError("A time range must end after it starts")
+
+
 @dataclass
 class LogQuery:
     """Parameters for a single log read, saved or ad hoc, on some source."""
@@ -159,15 +198,27 @@ class LogQuery:
     freshness: Freshness = Freshness.H1
     limit: int = 50
     refinements: tuple[Refinement, ...] = ()
+    time_range: TimeRange | None = None  # replaces the freshness when set
+    bands: tuple[SeverityBand, ...] = ()  # only entries of these bands; empty = all
 
     def __post_init__(self):
         self.expression = _clean(self.expression)
         self.freshness = _freshness(self.freshness)
         self.refinements = tuple(self.refinements)
+        self.bands = _bands(self.bands)
         _check_limit(self.limit)
 
     def refined(self, refinements: Sequence[Refinement]) -> "LogQuery":
         return replace(self, refinements=(*self.refinements, *refinements))
+
+
+def _bands(values: Iterable) -> tuple[SeverityBand, ...]:
+    """Distinct bands in their canonical order, error first."""
+    try:
+        wanted = {SeverityBand(value) for value in values}
+    except ValueError:
+        raise ValidationError("Unknown severity band") from None
+    return tuple(band for band in SeverityBand if band in wanted)
 
 
 def _fields(name, source_id, expression, freshness, limit, description, line_format) -> dict:
@@ -266,30 +317,6 @@ class LogFilter:
         self.watch = bool(watch)
 
 
-class SeverityBand(StrEnum):
-    """The severities folded into the four bands the UI shows."""
-
-    ERROR = "error"  # ERROR, CRITICAL, ALERT, EMERGENCY
-    WARNING = "warning"
-    INFO = "info"  # INFO, NOTICE
-    OTHER = "other"  # DEBUG, DEFAULT and anything unknown
-
-
-_BANDS = {
-    "EMERGENCY": SeverityBand.ERROR,
-    "ALERT": SeverityBand.ERROR,
-    "CRITICAL": SeverityBand.ERROR,
-    "ERROR": SeverityBand.ERROR,
-    "WARNING": SeverityBand.WARNING,
-    "NOTICE": SeverityBand.INFO,
-    "INFO": SeverityBand.INFO,
-}
-
-
-def severity_band(severity: str) -> SeverityBand:
-    return _BANDS.get((severity or "").upper(), SeverityBand.OTHER)
-
-
 @dataclass(frozen=True)
 class LogCount:
     """Entries per severity band. `capped` means the reading stopped at its
@@ -361,11 +388,14 @@ class LogProvider(ABC):
         backend's language: what a refined view saves as a new filter."""
 
     @abstractmethod
-    def query(self, source: LogSource, query: LogQuery) -> list[LogEntry]: ...
+    def query(self, source: LogSource, query: LogQuery) -> list[LogEntry]:
+        """The newest `limit` entries: within the query's time range when it
+        has one (else its freshness), of its bands when it names some."""
 
     @abstractmethod
     def describe(self, source: LogSource, query: LogQuery) -> str:
-        """Human-readable equivalent command, shown in the UI for copy/paste."""
+        """Human-readable equivalent command, shown in the UI for copy/paste;
+        like `console_url`, it reads the same time range and bands as `query`."""
 
     @abstractmethod
     def count(self, source: LogSource, query: LogQuery, start: datetime, end: datetime, cap: int) -> LogCount:

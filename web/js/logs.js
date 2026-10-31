@@ -44,7 +44,9 @@ const EYE_ICON =
 // "trace" (entries correlated with one row, over one or more `sources`). A
 // query's result sets `expression` (what ran, refinements included) and
 // `consoleUrl`. A trace view keeps `parent` — the previous view plus its
-// entries — so "back" needs no query.
+// entries — so "back" needs no query. A filter view with `unseen` shows the
+// new entries of a watched filter instead of its window: what its count
+// covered, [status.since, status.until), in the chosen severity `bands`.
 let view = { mode: "idle" };
 
 const TRACE_WINDOW_MS = 60 * 60 * 1000; // ±1 h around the origin entry
@@ -161,11 +163,12 @@ function renderFilterList() {
     item.tabIndex = 0;
     const source = sourceById(filter.source_id);
     item.innerHTML = `
-      <span class="filter-name">${escapeHtml(filter.name)}${watchMarks(filter)}</span>
+      <span class="filter-name">${escapeHtml(filter.name)}${watchEye(filter)}</span>
       <span class="filter-meta">
         <span title="${escapeHtml(source ? `${kindOf(source).label}: ${sourcePlace(source)}` : "")}">${escapeHtml(source?.name || "no source")}</span>
         <span>· ${FRESHNESS_LABELS[filter.freshness] || filter.freshness}</span>
         <span>· ${filter.limit}</span>
+        ${unseenChips(filter)}
       </span>
       <span class="filter-edit">
         <button class="card-action${filter.watch ? " is-on" : ""}" data-watch
@@ -175,7 +178,11 @@ function renderFilterList() {
       </span>`;
 
     const run = () => runFilter(filter);
-    item.addEventListener("click", run);
+    item.addEventListener("click", (event) => {
+      const chip = event.target.closest("[data-band]");
+      if (chip) openUnseen(filter, chip.dataset.band);
+      else run();
+    });
     item.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
@@ -213,35 +220,43 @@ function renderFilterList() {
 
 // ----- watched filters -------------------------------------------------
 
-const compactCount = (count) => (count >= 1000 ? `${Math.floor(count / 1000)}k` : String(count));
-
-// The eye of a watched filter plus one chip per severity band that caught
-// something since the filter was last opened ("+" when a read hit its cap).
-function watchMarks(filter) {
-  if (!filter.watch) return "";
-  const eye = polling
-    ? `<span class="log-watching" title="Watching: new entries are counted every few minutes">${EYE_ICON}</span>`
-    : `<span class="log-watching is-paused" title="Watching, waiting for live updates to resume">${EYE_ICON}</span>`;
-  const status = unseen[filter.id];
-  if (!status) return eye;
-  const plus = status.capped ? "+" : "";
-  const since = new Date(status.since).toLocaleString(LOCALE, {
+const shortStamp = (iso) =>
+  new Date(iso).toLocaleString(LOCALE, {
     hourCycle: "h23",
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
   });
+
+const compactCount = (count) => (count >= 1000 ? `${Math.floor(count / 1000)}k` : String(count));
+
+// The eye next to a watched filter's name.
+function watchEye(filter) {
+  if (!filter.watch) return "";
+  return polling
+    ? `<span class="log-watching" title="Watching: new entries are counted every few minutes">${EYE_ICON}</span>`
+    : `<span class="log-watching is-paused" title="Watching, waiting for live updates to resume">${EYE_ICON}</span>`;
+}
+
+// One chip per severity band that caught something since the filter was last
+// opened ("+" when a read hit its cap); clicking one shows those entries. They
+// sit at the end of the meta line, clear of the hover buttons over the name.
+function unseenChips(filter) {
+  const status = filter.watch && unseen[filter.id];
+  if (!status) return "";
+  const plus = status.capped ? "+" : "";
+  const since = shortStamp(status.since);
   const chips = SEVERITY_BANDS.filter(({ band }) => status[band] > 0)
     .map(
       ({ band, label }) =>
-        `<span class="log-unseen lsev-${band}" title="${status[band]}${plus} new ${escapeHtml(label)} since ${since}">${compactCount(status[band])}${plus}</span>`
+        `<span class="log-unseen lsev-${band}" data-band="${band}" title="${status[band]}${plus} new ${escapeHtml(label)} since ${since}\nClick to show them">${compactCount(status[band])}${plus}</span>`
     )
     .join("");
   const problem = status.problem
     ? `<span class="log-unseen is-problem" title="${escapeHtml(`Count failed: ${status.problem}`)}">!</span>`
     : "";
-  return eye + chips + problem;
+  return chips || problem ? `<span class="filter-unseen">${chips}${problem}</span>` : "";
 }
 
 // The Logs tab shows the new entries of every watched filter, colored by the
@@ -272,6 +287,7 @@ async function refreshUnseen() {
     const statuses = await api.logsUnseen();
     unseen = Object.fromEntries(statuses.map((status) => [status.filter_id, status]));
     renderFilterList();
+    renderUnseenBar();
   } catch {
     /* the counts are best effort: try again on the next round */
   }
@@ -307,15 +323,133 @@ async function toggleWatch(filter) {
   }
 }
 
-// Opening a watched filter is seeing what it caught: its count starts over.
-async function markSeen(filterId) {
+// Seeing what a watched filter caught, up to `seenAt` (default now): its
+// count starts over from there.
+async function markSeen(filterId, seenAt = null) {
   try {
-    replaceFilter(await api.markFilterSeen(filterId));
+    replaceFilter(await api.markFilterSeen(filterId, seenAt));
     delete unseen[filterId];
+    if (view.unseen && view.filter?.id === filterId) view.unseen.seen = true;
     renderFilterList();
+    renderUnseenBar();
   } catch {
     /* the chips clear on the next round */
   }
+}
+
+// The new entries of a watched filter in one band, whatever its window:
+// exactly what its count covered, so the list matches the chip. From the
+// filter's own window view, "back" returns to it.
+function openUnseen(filter, band) {
+  const status = unseen[filter.id];
+  if (!status?.[band]) return;
+  const fromWindow = view.mode === "filter" && view.filter?.id === filter.id && !view.unseen;
+  activeFilterId = filter.id;
+  renderFilterList();
+  showResultsPanel();
+  if (!fromWindow) {
+    liveTemplate = filter.line_format || "";
+    document.getElementById("format-input").value = liveTemplate;
+  }
+  view = {
+    mode: "filter",
+    filter,
+    source: sourceById(filter.source_id),
+    refinements: [],
+    title: `${filter.name} · new`,
+    newSince: null,
+    unseen: { status, bands: [band], seen: false },
+    parent: fromWindow ? { view, entries: lastEntries } : null,
+  };
+  loadFilter();
+}
+
+const bandLabel = (band) => SEVERITY_BANDS.find((item) => item.band === band)?.label || band;
+const bandsWithNews = (status) => SEVERITY_BANDS.filter(({ band }) => status[band] > 0);
+
+// Above the entries of a watched filter with new entries. In its window view:
+// what is new, per band, each a way into the new-entries view, saying when
+// some of it is older than the window. In the new-entries view: the bands as
+// toggles, the way back to the window and "mark seen".
+function renderUnseenBar() {
+  const bar = document.getElementById("unseen-bar");
+  const inUnseen = view.mode === "filter" && view.unseen;
+  const status = inUnseen
+    ? view.unseen.status
+    : view.mode === "filter" && view.filter.watch && unseen[view.filter.id];
+  if (!status || !bandsWithNews(status).length) {
+    bar.hidden = true;
+    bar.innerHTML = "";
+    return;
+  }
+  const plus = status.capped ? "+" : "";
+  const chip = ({ band, label }) => {
+    const on = inUnseen && view.unseen.bands.includes(band);
+    const title = inUnseen
+      ? on
+        ? "Shown: click to hide"
+        : "Click to show these too"
+      : `Show only the new ${label} entries`;
+    return (
+      `<button type="button" class="log-unseen unseen-band lsev-${band}${on ? " is-on" : ""}" ` +
+      `data-band="${band}" title="${title}">${status[band]}${plus} ${escapeHtml(label)}</button>`
+    );
+  };
+  const chips = bandsWithNews(status).map(chip).join("");
+  const windowLabel = FRESHNESS_LABELS[view.filter.freshness] || view.filter.freshness;
+  let lead;
+  let actions;
+  if (inUnseen) {
+    lead = `new since ${shortStamp(status.since)}`;
+    const seen = view.unseen.seen;
+    actions =
+      (view.parent
+        ? ""
+        : `<button type="button" class="btn btn-ghost btn-sm" data-window>◷ ${escapeHtml(windowLabel)} window</button>`) +
+      `<button type="button" class="btn btn-ghost btn-sm" data-seen ${seen ? "disabled" : ""} ` +
+      `title="Every new entry up to ${shortStamp(status.until)}, in every band, stops being new">` +
+      `${seen ? "✓ seen" : "✓ mark seen"}</button>`;
+  } else {
+    lead = view.outside
+      ? `new since ${shortStamp(status.since)}, some older than this ${escapeHtml(windowLabel)} window`
+      : `new since ${shortStamp(status.since)}`;
+    actions = "";
+  }
+  bar.classList.toggle("is-outside", !inUnseen && Boolean(view.outside));
+  bar.innerHTML =
+    `<span class="format-fields-label">${lead}</span>` +
+    `<div class="unseen-bands">${chips}</div>${actions}`;
+  bar.hidden = false;
+}
+
+function onUnseenBarClick(event) {
+  if (view.mode !== "filter") return;
+  const band = event.target.closest("[data-band]")?.dataset.band;
+  if (band && !view.unseen) {
+    openUnseen(view.filter, band);
+  } else if (band) {
+    const bands = view.unseen.bands;
+    const next = bands.includes(band) ? bands.filter((item) => item !== band) : [...bands, band];
+    if (!next.length) return; // at least one band
+    view.unseen.bands = next;
+    loadFilter();
+  } else if (event.target.closest("[data-window]")) {
+    runFilter(view.filter);
+  } else if (event.target.closest("[data-seen]") && !view.unseen.seen) {
+    markSeen(view.filter.id, view.unseen.status.until);
+  }
+}
+
+// Whether the window view showed every entry the filter's count may hold, so
+// opening it is seeing them: the mark falls inside the window and the list
+// reaches back to it (else the newest `limit` entries left some out).
+function windowCoversNew(filter, entries) {
+  if (!filter.last_seen_at) return true;
+  const since = Date.parse(filter.last_seen_at);
+  const start = view.queriedAt - (FRESHNESS_MS[filter.freshness] || 0);
+  if (since < start) return false;
+  if (entries.length < filter.limit) return true;
+  return Math.min(...entries.map((entry) => Date.parse(entry.timestamp))) <= since;
 }
 
 function renderSourceList() {
@@ -690,6 +824,7 @@ function syncChrome() {
     consoleButton.title = `Open this query in ${kind.label}`;
   }
   renderRefineBar();
+  renderUnseenBar();
 }
 
 function showResultsPanel() {
@@ -727,16 +862,23 @@ async function runFilter(filter) {
 
 async function loadFilter() {
   const current = view;
-  const { filter, refinements } = view;
+  const { filter, refinements, unseen: news, title } = view;
   const place = view.source?.name || "no source";
   const windowLabel = FRESHNESS_LABELS[filter.freshness] || filter.freshness;
+  const scope = news
+    ? `new since ${shortStamp(news.status.since)} · ${news.bands.map(bandLabel).join(" + ")}`
+    : `window ${windowLabel}`;
   view.expression = undefined;
   view.consoleUrl = "";
-  setHeader(filter.name, `${place} · window ${windowLabel} · querying…`);
+  view.outside = false;
+  setHeader(title, `${place} · ${scope} · querying…`);
   showSkeleton();
 
   try {
-    const result = await api.runFilter(filter.id, refinements);
+    const range = news
+      ? { since: news.status.since, until: news.status.until, bands: news.bands }
+      : {};
+    const result = await api.runFilter(filter.id, refinements, range);
     if (view !== current) return; // the user moved on while this ran
     view.queriedAt = Date.now();
     view.expression = result.expression;
@@ -744,18 +886,44 @@ async function loadFilter() {
     lastEntries = result.entries;
     paintEntries({ rise: true });
     renderFieldChips();
-    if (filters.find((item) => item.id === filter.id)?.watch) markSeen(filter.id);
+    markSeenIfShown(filter, refinements, news);
     const refined = refinements.length ? ` · ${plural(refinements.length, "refinement")}` : "";
+    const clipped =
+      news && lastEntries.length >= filter.limit ? ` (newest ${filter.limit} shown)` : "";
     setHeader(
-      filter.name,
-      `${place} · window ${windowLabel} · ${plural(lastEntries.length, "entry", "entries")}${refined} · ` +
+      title,
+      `${place} · ${scope} · ${plural(lastEntries.length, "entry", "entries")}${clipped}${refined} · ` +
         new Date().toLocaleTimeString(LOCALE, { hourCycle: "h23" })
     );
   } catch (error) {
     if (view !== current) return;
     lastEntries = [];
-    setHeader(filter.name, `${place} · failed`);
+    setHeader(title, `${place} · failed`);
     showError(error);
+  }
+}
+
+// A watched filter's new entries stop being new only once they were all on
+// screen. The window view marks them seen (up to now) when it covered them;
+// otherwise the bar says some are older and leads to them. The new-entries
+// view marks seen up to the end of its range when it showed every band with
+// news, unrefined and under the limit; else "mark seen" does it on request.
+function markSeenIfShown(filter, refinements, news) {
+  const current = filters.find((item) => item.id === filter.id);
+  if (!current?.watch || refinements.length) return;
+  if (news) {
+    const all = bandsWithNews(news.status).every(({ band }) => news.bands.includes(band));
+    if (all && lastEntries.length < filter.limit) markSeen(filter.id, news.status.until);
+    return;
+  }
+  const status = unseen[filter.id];
+  const start = view.queriedAt - (FRESHNESS_MS[filter.freshness] || 0);
+  const nothingNew = status && status.total === 0 && Date.parse(status.until) >= start;
+  if (nothingNew || windowCoversNew(filter, lastEntries)) {
+    markSeen(filter.id);
+  } else {
+    view.outside = true;
+    renderUnseenBar();
   }
 }
 
@@ -935,7 +1103,12 @@ function histogramRange(times) {
   let start = oldest;
   let end = newest;
   let clipped = false;
-  if (view.mode === "filter") {
+  if (view.mode === "filter" && view.unseen) {
+    // the new entries cover their count's range, whatever the window
+    clipped = times.length >= view.filter.limit;
+    end = Math.max(Date.parse(view.unseen.status.until), newest);
+    if (!clipped) start = Math.min(Date.parse(view.unseen.status.since), oldest);
+  } else if (view.mode === "filter") {
     const queriedAt = view.queriedAt || Date.now();
     const freshness = FRESHNESS_MS[view.filter.freshness];
     end = Math.max(queriedAt, newest);
@@ -1477,6 +1650,7 @@ export async function initLogs() {
     loadFilter();
   });
   document.getElementById("refine-save-btn").addEventListener("click", saveRefinedAsFilter);
+  document.getElementById("unseen-bar").addEventListener("click", onUnseenBarClick);
 
   // Esc leaves the trace view. Capture phase so it runs before the shared
   // modal-dismiss handler, and steps aside when a modal is the one open.

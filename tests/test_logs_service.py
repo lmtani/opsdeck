@@ -6,7 +6,16 @@ import pytest
 
 from app.application.logs import LogFilterService, LogQueryService, LogSourceService, LogWatchService
 from app.domain.errors import LogProviderError, NotFoundError, ValidationError
-from app.domain.logs import LogCount, LogEntry, LogFilter, LogQuery, LogSourceKind, Refinement
+from app.domain.logs import (
+    LogCount,
+    LogEntry,
+    LogFilter,
+    LogQuery,
+    LogSourceKind,
+    Refinement,
+    SeverityBand,
+    TimeRange,
+)
 from tests.fakes import FakeLogProvider, InMemoryFilterRepository, InMemorySourceRepository, gcp_source, ts
 
 
@@ -43,6 +52,19 @@ def test_run_saved_filter_with_refinements_reports_the_refined_expression():
 
     assert provider.last_query.refinements == (refinement,)
     assert result.expression == "severity>=ERROR AND resource.type!=gae_app"
+
+
+def test_run_saved_filter_over_a_time_range_and_bands():
+    """What a watched filter counted, even when it is older than the window."""
+    saved = LogFilter(id="f1", name="erros", source_id="s1", expression="e", freshness="1h", limit=25)
+    provider = FakeLogProvider()
+    span = TimeRange(ts("2026-10-29T14:00:00Z"), ts("2026-10-31T10:00:00Z"))
+
+    query_service(provider, [gcp_source(id_="s1")], [saved]).run_saved_filter(
+        "f1", time_range=span, bands=[SeverityBand.WARNING, SeverityBand.ERROR]
+    )
+    assert provider.last_query.time_range == span and provider.last_query.limit == 25
+    assert provider.last_query.bands == (SeverityBand.ERROR, SeverityBand.WARNING)
 
 
 def test_run_saved_filter_or_query_on_unknown_ids():
@@ -312,6 +334,23 @@ def test_opening_a_filter_restarts_its_count_and_unwatching_drops_it():
 
     service.set_watch("f1", False)
     assert service.unseen() == []
+
+
+def test_seen_up_to_an_instant_keeps_counting_what_came_after_it():
+    """The new-entries view marks seen up to the end of what it showed."""
+    service, _, _, clock = watch_world([entry("2026-10-31T10:01:00Z"), entry("2026-10-31T10:03:30Z")])
+    service.set_watch("f1", True)
+    clock.advance(minutes=5)
+    [status] = service.unseen()
+    assert status.count.total == 2 and status.until == ts("2026-10-31T10:04:00Z")
+
+    assert service.mark_seen("f1", ts("2026-10-31T10:02:00Z")).last_seen_at == ts("2026-10-31T10:02:00Z")
+    clock.advance(minutes=1)
+    [status] = service.unseen()
+    assert status.count.total == 1 and status.since == ts("2026-10-31T10:02:00Z")
+    # never later than now, and never backwards
+    assert service.mark_seen("f1", ts("2099-01-01T00:00:00Z")).last_seen_at == clock.now
+    assert service.mark_seen("f1", ts("2026-10-31T10:00:00Z")).last_seen_at == clock.now
 
 
 def test_a_failed_round_keeps_the_numbers_and_says_why():
