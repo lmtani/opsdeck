@@ -548,6 +548,8 @@ body {
   backdrop-filter: blur(6px);
   color: var(--text);
   font-size: 13px;
+  /* by the middle, not the text baseline: an icon-only button has none */
+  vertical-align: middle;
   cursor: pointer;
   transition: all var(--speed) ease;
 }
