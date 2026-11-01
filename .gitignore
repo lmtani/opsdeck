@@ -9,7 +9,7 @@ wheels/
 # Virtual environments
 .venv
 
-# Runtime data (legacy JSON records, uploaded images)
+# Where a clone kept its data before OpsDeck became a package (now copied to the user data directory)
 data/
 
 # Local configuration for docker compose

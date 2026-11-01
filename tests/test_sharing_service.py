@@ -5,10 +5,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.application.github import GithubFeedService
-from app.application.links import ImageService, LinkService
-from app.application.logs import LogFilterService, LogSourceService
-from app.application.sharing import (
+from opsdeck.application.github import GithubFeedService
+from opsdeck.application.links import ImageService, LinkService
+from opsdeck.application.logs import LogFilterService, LogSourceService
+from opsdeck.application.sharing import (
     Bundle,
     ImportAction,
     ImportChoice,
@@ -16,7 +16,7 @@ from app.application.sharing import (
     ItemType,
     SharingService,
 )
-from app.domain.errors import NotFoundError, ValidationError
+from opsdeck.domain.errors import NotFoundError, ValidationError
 from tests.fakes import (
     FakeImageStore,
     InMemoryFeedRepository,

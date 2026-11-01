@@ -6,11 +6,11 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 
-from app.domain.common import parse_timestamp
-from app.domain.errors import GithubError, GithubNotFoundError
-from app.domain.github import EventSubject, FeedSpec, Quota, ReviewState, SubjectType, TokenKind
-from app.infrastructure.github.provider import GithubApiProvider
-from app.infrastructure.github.search import search_queries
+from opsdeck.domain.common import parse_timestamp
+from opsdeck.domain.errors import GithubError, GithubNotFoundError
+from opsdeck.domain.github import EventSubject, FeedSpec, Quota, ReviewState, SubjectType, TokenKind
+from opsdeck.infrastructure.github.provider import GithubApiProvider
+from opsdeck.infrastructure.github.search import search_queries
 
 USER = {"login": "alice"}
 

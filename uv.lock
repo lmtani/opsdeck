@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -1186,7 +1186,7 @@ wheels = [
 [[package]]
 name = "opsdeck"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "cryptography" },
@@ -1194,6 +1194,7 @@ dependencies = [
     { name = "google-cloud-logging" },
     { name = "httpx" },
     { name = "nh3" },
+    { name = "platformdirs" },
     { name = "pymysql" },
     { name = "python-multipart" },
     { name = "sqlalchemy" },
@@ -1219,6 +1220,7 @@ requires-dist = [
     { name = "google-cloud-logging", specifier = ">=3.17.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "nh3", specifier = ">=0.3.7" },
+    { name = "platformdirs", specifier = ">=4" },
     { name = "pymysql", specifier = ">=1.2.3" },
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "sqlalchemy", specifier = ">=2.0" },

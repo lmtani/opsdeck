@@ -4,9 +4,9 @@ from datetime import timedelta
 
 import pytest
 
-from app.application.logs import LogFilterService, LogQueryService, LogSourceService, LogWatchService
-from app.domain.errors import LogProviderError, NotFoundError, ValidationError
-from app.domain.logs import (
+from opsdeck.application.logs import LogFilterService, LogQueryService, LogSourceService, LogWatchService
+from opsdeck.domain.errors import LogProviderError, NotFoundError, ValidationError
+from opsdeck.domain.logs import (
     LogCount,
     LogEntry,
     LogFilter,

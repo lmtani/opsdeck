@@ -80,6 +80,43 @@ jobs:
       - name: Lock is up to date
         run: uv lock --check
 
+  # What `uv tool install` gets: the wheel must carry the web assets and the
+  # migrations, and run outside the clone. Like `uv tool install`, it resolves
+  # the dependencies afresh (no lock), on Linux and on Apple silicon macOS.
+  package:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - name: Build
+        run: uv build
+
+      - name: Install and serve
+        working-directory: ${{ runner.temp }}
+        env:
+          OPSDECK_DATA_DIR: ${{ runner.temp }}/opsdeck-data
+          WHEEL_DIR: ${{ github.workspace }}/dist
+        run: |
+          uv tool install "$WHEEL_DIR"/*.whl
+          opsdeck --version
+          opsdeck info
+          python3 -c "import platform; print(platform.system(), platform.machine())"
+          opsdeck &
+          for _ in $(seq 60); do curl -sf http://127.0.0.1:8765/api/health && break; sleep 1; done
+          for path in / /js/main.js /css/app.css /manifest.json; do
+            curl -sf -o /dev/null "http://127.0.0.1:8765$path" || { echo "missing $path"; exit 1; }
+          done
+          test -f "$OPSDECK_DATA_DIR/opsdeck.db"
+
   # The image must build and start on both architectures. arm64 runs under
   # QEMU emulation; once the repository is public it can move to the native
   # `ubuntu-24.04-arm` runners, which are free for public repositories.
@@ -118,4 +155,12 @@ jobs:
         run: |
           docker run --rm --platform ${{ matrix.platform }} \
             --entrypoint /app/.venv/bin/python opsdeck:ci -c \
-            "import platform, ssl, sqlite3, ctypes, grpc, cryptography.hazmat.bindings._rust, pydantic_core, app.bootstrap; print('ok', platform.machine())"
+            "import platform, ssl, sqlite3, ctypes, grpc, cryptography.hazmat.bindings._rust, pydantic_core, opsdeck.bootstrap; print('ok', platform.machine())"
+
+      # The entrypoint starts the server, which creates its SQLite file in the
+      # data directory and serves the page.
+      - name: Start
+        run: |
+          docker run -d --name opsdeck --platform ${{ matrix.platform }} -p 127.0.0.1:8080:8080 opsdeck:ci
+          for _ in $(seq 120); do curl -sf http://127.0.0.1:8080/api/health && break; sleep 1; done
+          curl -sf -o /dev/null http://127.0.0.1:8080/ || { docker logs opsdeck; exit 1; }

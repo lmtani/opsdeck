@@ -4,9 +4,9 @@ Service and API tests use these instead of MySQL, subprocess, Cloud Logging or
 HTTP. Each fake records what it was asked, so tests can assert on it.
 """
 
-from app.domain.common import parse_timestamp
-from app.domain.errors import GithubNotFoundError
-from app.domain.github import (
+from opsdeck.domain.common import parse_timestamp
+from opsdeck.domain.errors import GithubNotFoundError
+from opsdeck.domain.github import (
     ActivitySnapshot,
     CodeCommentDetails,
     ContributionsSnapshot,
@@ -24,8 +24,8 @@ from app.domain.github import (
     ReviewState,
     SubjectType,
 )
-from app.domain.links import CommandRunner, ImageStore, Link, LinkRepository
-from app.domain.logs import (
+from opsdeck.domain.links import CommandRunner, ImageStore, Link, LinkRepository
+from opsdeck.domain.logs import (
     LogCount,
     LogEntry,
     LogFilter,
@@ -35,7 +35,7 @@ from app.domain.logs import (
     LogSource,
     LogSourceRepository,
 )
-from app.domain.settings import AppSettings, SettingsRepository
+from opsdeck.domain.settings import AppSettings, SettingsRepository
 
 
 def ts(text: str):

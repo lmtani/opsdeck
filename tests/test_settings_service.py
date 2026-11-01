@@ -2,9 +2,9 @@
 
 import pytest
 
-from app.application.settings import SettingsService
-from app.domain.errors import ValidationError
-from app.domain.settings import AppSettings
+from opsdeck.application.settings import SettingsService
+from opsdeck.domain.errors import ValidationError
+from opsdeck.domain.settings import AppSettings
 from tests.fakes import InMemorySettingsRepository
 
 

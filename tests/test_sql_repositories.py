@@ -13,11 +13,11 @@ from alembic.runtime.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 
-from app.domain.github import EventKind, GithubFeed
-from app.domain.links import Link, LinkKind
-from app.domain.logs import Freshness, LogFilter, LogSource
-from app.domain.settings import AppSettings
-from app.infrastructure.persistence.sql import (
+from opsdeck.domain.github import EventKind, GithubFeed
+from opsdeck.domain.links import Link, LinkKind
+from opsdeck.domain.logs import Freshness, LogFilter, LogSource
+from opsdeck.domain.settings import AppSettings
+from opsdeck.infrastructure.persistence.sql import (
     SqlGithubFeedRepository,
     SqlLinkRepository,
     SqlLogFilterRepository,
@@ -26,7 +26,7 @@ from app.infrastructure.persistence.sql import (
     create_database_engine,
     run_migrations,
 )
-from app.infrastructure.persistence.sql.tables import metadata
+from opsdeck.infrastructure.persistence.sql.tables import metadata
 from tests.fakes import ts
 
 MYSQL_URL = os.environ.get("OPSDECK_TEST_MYSQL_URL", "")

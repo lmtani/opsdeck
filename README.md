@@ -8,15 +8,21 @@ A personal devops dashboard that runs on your machine:
 
 What each tab does is described in [docs/features.md](docs/features.md).
 
-## Quick start
+## Install
 
-Requirements: Python 3.12 and [uv](https://docs.astral.sh/uv/).
+Works on Linux and macOS (Intel or Apple silicon). Requirements: [uv](https://docs.astral.sh/uv/), which fetches Python 3.12 if needed; no compiler or Xcode is needed.
 
 ```bash
-uv run main.py      # http://127.0.0.1:8765
+curl -LsSf https://astral.sh/uv/install.sh | sh   # or, on macOS: brew install uv
+uv tool install git+https://github.com/lmtani/opsdeck
+opsdeck             # http://127.0.0.1:8765
 ```
 
-Data goes to a SQLite file, `data/opsdeck.db`, created on the first run; the box button in the top bar downloads a backup of everything and restores one, here or on another machine. The Links tab works right away; the other two need credentials. OpsDeck can also be installed as an app from Chrome or Edge (the install icon in the address bar).
+If the shell does not find `opsdeck`, run `uv tool update-shell` once and open a new terminal.
+
+Update with `uv tool upgrade opsdeck`; the database migrates itself on the next start. `opsdeck info` shows the version and where the data is: a SQLite file in the user's data directory (`~/.local/share/opsdeck` on Linux, `~/Library/Application Support/opsdeck` on macOS), created on the first run. The box button in the top bar downloads a backup of everything and restores one, here or on another machine.
+
+The Links tab works right away; the other two need credentials. Command cards run in the local shell (`/bin/sh`), so a card made on Linux (`xdg-open`, a Linux path) needs its command adjusted on macOS (`open -a IGV`, for example). OpsDeck can also be installed as an app from Chrome or Edge (the install icon in the address bar).
 
 ## Credentials
 
@@ -43,19 +49,23 @@ docker compose up -d --build    # http://127.0.0.1:8765
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DASHBOARD_DB_URL` | SQLite in `data/` | Database URL, e.g. `mysql+pymysql://user:password@host:3306/opsdeck` (the database is created if missing) |
+| `OPSDECK_DATA_DIR` | the user's data directory | Where the SQLite file and the uploaded card images live |
+| `DASHBOARD_DB_URL` | SQLite in the data directory | Database URL, e.g. `mysql+pymysql://user:password@host:3306/opsdeck` (the database is created if missing) |
 | `DASHBOARD_DB_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_NAME` | empty, `3306`, `root`, empty, `opsdeck` | MySQL by parts, as Compose sets it |
 | `GITHUB_TOKEN` | the `gh` login | Token for the GitHub tab |
 | `GOOGLE_APPLICATION_CREDENTIALS` | the gcloud location | Credentials file for the Logs tab |
 | `DASHBOARD_COMMANDS` | `on` | `off` disables cards that run local commands |
-| `DASHBOARD_HOST`, `DASHBOARD_PORT` | `127.0.0.1`, `8765` | Address the server listens on |
+| `DASHBOARD_HOST`, `DASHBOARD_PORT` | `127.0.0.1`, `8765` | Address the server listens on (or `opsdeck --host … --port …`) |
 
 ## Contributing
 
 FastAPI backend in ports-and-adapters layers, vanilla JavaScript frontend with no build step; the architecture notes are in [CLAUDE.md](CLAUDE.md).
 
 ```bash
+uv run opsdeck                      # run from the clone (same data directory as the installed one)
 uv run pre-commit install           # once per clone: ruff, mypy, Biome, gitleaks, pip-audit, zizmor
 uv run pytest -q
-uv run migrate.py revision "add x"  # after editing tables.py: draft the next migration, then review it
+uv run opsdeck revision "add x"     # after editing tables.py: draft the next migration, then review it
 ```
+
+A clone that kept its data in `data/` (before OpsDeck was a package) has it copied to the data directory on the first start, as long as that directory does not exist yet.

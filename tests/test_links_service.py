@@ -2,8 +2,8 @@
 
 import pytest
 
-from app.application.links import CommandService, ImageService, LinkService
-from app.domain.errors import NotFoundError, ValidationError
+from opsdeck.application.links import CommandService, ImageService, LinkService
+from opsdeck.domain.errors import NotFoundError, ValidationError
 from tests.fakes import FakeCommandRunner, FakeImageStore, InMemoryLinkRepository
 
 

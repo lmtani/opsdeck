@@ -20,12 +20,16 @@ ENV UV_PYTHON_DOWNLOADS=never \
 
 WORKDIR /build
 
-# Dependencies get their own layer, invalidated only when the lock changes.
-# The project is not a package (no build-system), so the sync installs only
-# the dependencies and the code is copied straight into /app below.
+# Dependencies get their own layer, invalidated only when the lock changes;
+# then the opsdeck package itself (code and web assets) is installed into the
+# same environment, not editable, so the runtime needs nothing but /app/.venv.
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+    uv sync --frozen --no-dev --no-install-project
+COPY README.md ./
+COPY opsdeck ./opsdeck
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-editable
 
 # Empty directory for uploaded card images. Copied with the runtime user as
 # owner, so a fresh volume mounted there starts writable.
@@ -55,15 +59,12 @@ COPY --from=dependencies --chown=65532:65532 /seed/data /app/data
 
 WORKDIR /app
 
-COPY app ./app
-COPY web ./web
-COPY main.py migrate.py ./
-
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     # uid 65532 has no writable home; tempfile and caches write here.
     HOME=/tmp \
     XDG_CACHE_HOME=/tmp \
+    OPSDECK_DATA_DIR=/app/data \
     DASHBOARD_HOST=0.0.0.0 \
     DASHBOARD_PORT=8080
 
@@ -71,4 +72,4 @@ EXPOSE 8080
 
 # No shell: exec form is required. Single-process uvicorn: scale by replica,
 # not by worker.
-ENTRYPOINT ["/app/.venv/bin/python", "main.py"]
+ENTRYPOINT ["/app/.venv/bin/python", "-m", "opsdeck"]

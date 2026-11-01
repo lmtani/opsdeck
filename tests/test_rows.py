@@ -1,10 +1,10 @@
 """Row mapping of the SQL repositories."""
 
-from app.domain.github import EventKind, GithubFeed
-from app.domain.links import Link, LinkKind
-from app.domain.logs import Freshness, LogFilter, LogSource, LogSourceKind
-from app.domain.settings import AppSettings
-from app.infrastructure.persistence.rows import (
+from opsdeck.domain.github import EventKind, GithubFeed
+from opsdeck.domain.links import Link, LinkKind
+from opsdeck.domain.logs import Freshness, LogFilter, LogSource, LogSourceKind
+from opsdeck.domain.settings import AppSettings
+from opsdeck.infrastructure.persistence.rows import (
     feed_to_row,
     filter_to_row,
     link_to_row,
