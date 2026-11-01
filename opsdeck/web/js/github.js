@@ -6,7 +6,7 @@
 // Seen marks: the server flags each event of a saved feed as `is_new` when
 // it is newer than the feed's last_seen_at, and counts them in `unseen`.
 // Leaving the feed (another feed, another tab, closing the page) or
-// "✓ visto" moves the mark to the newest event shown.
+// "✓ seen" moves the mark to the newest event shown.
 
 import { api } from "./api.js";
 import { makeSortable } from "./dnd.js";
@@ -747,7 +747,7 @@ function binTooltip(index, bin, note) {
 
 // `coverageStart` (ms, or null): before it the feed is incomplete because the
 // events API capped a source (activity.coverage_start, computed server-side).
-// Those half hours are "sem dados", not silence.
+// Those half hours are "no data", not silence.
 function histogramNode(date, bins, peak, coverageStart) {
   const dayStart = new Date(date);
   dayStart.setHours(0, 0, 0, 0);

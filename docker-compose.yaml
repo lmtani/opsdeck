@@ -1,7 +1,10 @@
 # OpsDeck with its own MySQL. Configuration comes from a `.env` file next to
 # this one (see `.env.example`); every variable has a working default.
 #
-#   docker compose up -d --build    # http://127.0.0.1:8765
+#   docker compose pull && docker compose up -d   # the released image, http://127.0.0.1:8765
+#   docker compose up -d --build                  # or an image built from this checkout
+#
+# OPSDECK_VERSION in .env pins a release (e.g. 0.2.0); the default is latest.
 #
 # Command cards are off: they would launch programs inside the container.
 
@@ -21,6 +24,7 @@ services:
     restart: unless-stopped
 
   app:
+    image: ghcr.io/lmtani/opsdeck:${OPSDECK_VERSION:-latest}
     build: .
     depends_on:
       db:

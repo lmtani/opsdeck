@@ -220,6 +220,14 @@ class HealthOut(BaseModel):
     github: bool = False  # GitHub credentials are configured
 
 
+class VersionOut(BaseModel):
+    current: str
+    latest: str | None  # the newest release; None when unknown or turned off
+    newer: bool  # latest is newer than current
+    url: str | None  # its release notes
+    published_at: datetime | None
+
+
 class GithubFeedIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     org: str = Field(min_length=1, max_length=39)

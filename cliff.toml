@@ -1,0 +1,58 @@
+# git-cliff: release notes and CHANGELOG.md from the Conventional Commits.
+#
+#   uv run git-cliff --unreleased                     # preview the next release's notes
+#   uv run git-cliff --tag v0.3.0 -o CHANGELOG.md     # in the pull request that raises the version
+#
+# The Release workflow publishes `git-cliff --latest --strip header` as the
+# GitHub Release body.
+
+[changelog]
+header = """
+# Changelog
+
+Every release of OpsDeck, from its Conventional Commits. Install with `uv tool install git+https://github.com/lmtani/opsdeck@stable` and update with `uv tool upgrade opsdeck`; images are at `ghcr.io/lmtani/opsdeck`.
+"""
+body = """
+{%- macro commit_url(id) -%}https://github.com/lmtani/opsdeck/commit/{{ id }}{%- endmacro -%}
+{% if version %}
+## {{ version | trim_start_matches(pat="v") }} ({{ timestamp | date(format="%Y-%m-%d") }})
+{% else %}
+## Unreleased
+{% endif %}
+{%- for group, commits in commits | group_by(attribute="group") %}
+
+### {{ group | striptags | trim }}
+{% for commit in commits %}
+- {% if commit.scope and commit.scope != "deps" %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }}{% if commit.breaking %} (**breaking**){% endif %} ([{{ commit.id | truncate(length=7, end="") }}]({{ self::commit_url(id=commit.id) }}))
+{%- endfor %}
+{%- endfor %}
+"""
+footer = ""
+trim = true
+# one blank line between blocks, whatever the template's whitespace
+postprocessors = [{ pattern = "\n{3,}", replace = "\n\n" }]
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+protect_breaking_commits = true
+filter_commits = true
+# the repository's first commit predates its English-only rule
+commit_preprocessors = [
+  { pattern = "OpsDeck, painel pessoal de devops", replace = "OpsDeck, a personal devops dashboard" },
+]
+sort_commits = "oldest"
+tag_pattern = "v[0-9]+\\.[0-9]+\\.[0-9]+"
+# the HTML comments only order the groups; striptags drops them from the output
+commit_parsers = [
+  { message = "^Merge ", skip = true },
+  { message = "^chore\\(release\\)", skip = true },
+  { message = "^feat", group = "<!-- 0 -->Features" },
+  { message = "^fix", group = "<!-- 1 -->Bug fixes" },
+  { message = "^perf", group = "<!-- 2 -->Performance" },
+  { message = "^refactor", group = "<!-- 3 -->Refactoring" },
+  { message = "^docs", group = "<!-- 4 -->Documentation" },
+  { message = "^chore\\(deps\\)", group = "<!-- 6 -->Dependencies" },
+  { message = "^(chore|ci|build|test|style)", group = "<!-- 5 -->Maintenance" },
+]

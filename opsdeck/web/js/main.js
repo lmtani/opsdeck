@@ -8,6 +8,7 @@ import { initLogs } from "./logs.js";
 import { initShare } from "./share.js";
 import { initTheme } from "./theme.js";
 import { LOCALE, setupConfirmModal, setupModalDismissal, toast } from "./ui.js";
+import { initUpdate } from "./update.js";
 
 // The tab in use is remembered, so a reload reopens it.
 const TAB_KEY = "opsdeck.tab";
@@ -124,6 +125,7 @@ async function start() {
   setupConfirmModal();
   initShare();
   initBackup();
+  initUpdate();
   const announceTab = setupTabs();
   setupClock();
   checkHealth();

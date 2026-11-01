@@ -5,7 +5,7 @@ HTTP. Each fake records what it was asked, so tests can assert on it.
 """
 
 from opsdeck.domain.common import parse_timestamp
-from opsdeck.domain.errors import GithubNotFoundError
+from opsdeck.domain.errors import ExternalServiceError, GithubNotFoundError
 from opsdeck.domain.github import (
     ActivitySnapshot,
     CodeCommentDetails,
@@ -36,6 +36,7 @@ from opsdeck.domain.logs import (
     LogSourceRepository,
 )
 from opsdeck.domain.settings import AppSettings, SettingsRepository
+from opsdeck.domain.updates import Release, ReleaseFeed
 
 
 def ts(text: str):
@@ -364,3 +365,18 @@ class FakeGithubProvider(GithubProvider):
         if isinstance(value, Exception):
             raise value
         return value
+
+
+class FakeReleaseFeed(ReleaseFeed):
+    """Answers `release` (None = no release yet) or raises `error`; counts reads."""
+
+    def __init__(self, release: Release | None = None):
+        self.release = release
+        self.error: ExternalServiceError | None = None
+        self.reads = 0
+
+    def latest(self) -> Release | None:
+        self.reads += 1
+        if self.error:
+            raise self.error
+        return self.release
