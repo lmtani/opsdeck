@@ -34,6 +34,7 @@ packages = ["opsdeck"]
 
 [dependency-groups]
 dev = [
+    "git-cliff>=2",
     "mypy>=2.4.1",
     "pip-audit>=2.10.1",
     "pre-commit>=4.7.0",

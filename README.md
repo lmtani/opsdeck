@@ -71,6 +71,8 @@ uv run pytest -q
 uv run opsdeck revision "add x"     # after editing tables.py: draft the next migration, then review it
 ```
 
-To release: raise `version` in `pyproject.toml` (and run `uv lock`) in a pull request; once it is merged, tag main with that version and push the tag (`git tag v0.3.0 && git push origin v0.3.0`). The Release workflow checks that the tag matches the version and is on main, runs the tests, pushes the image to GHCR as `0.3.0`, `0.3` and `latest`, and publishes a GitHub Release with the wheel and generated notes.
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat(logs): …`, `fix(web): …`): the release notes are written from them by [git-cliff](https://git-cliff.org/) (`cliff.toml`; `uv run git-cliff --unreleased` previews the next ones).
+
+To release, open a pull request that raises `version` in `pyproject.toml`, runs `uv lock` and, as its last commit (`chore(release): 0.3.0`), regenerates the changelog with `uv run git-cliff --tag v0.3.0 -o CHANGELOG.md`. Once it is merged, tag main and push the tag (`git tag v0.3.0 && git push origin v0.3.0`). The Release workflow checks that the tag matches the version and is on main, runs the tests, pushes the image to GHCR as `0.3.0`, `0.3` and `latest`, and publishes a GitHub Release with the wheel and the notes of the commits since the previous tag.
 
 A clone that kept its data in `data/` (before OpsDeck was a package) has it copied to the data directory on the first start, as long as that directory does not exist yet.
