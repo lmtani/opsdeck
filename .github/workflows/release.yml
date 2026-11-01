@@ -3,8 +3,11 @@ name: Release
 # Pushing a tag vX.Y.Z (the version in pyproject.toml, on main) publishes:
 # the wheel and sdist on a GitHub Release whose notes git-cliff writes from
 # the Conventional Commits since the previous tag (cliff.toml), and the
-# multi-arch image at ghcr.io/lmtani/opsdeck as X.Y.Z, X.Y and latest.
-# Running OpsDeck instances see the release through /api/version.
+# multi-arch image at ghcr.io/lmtani/opsdeck as X.Y.Z, X.Y and latest. It
+# then moves the `stable` branch to the tag: installs from
+# git+https://github.com/lmtani/opsdeck@stable follow releases with
+# `uv tool upgrade opsdeck`. Running OpsDeck instances see the release
+# through /api/version.
 on:
   push:
     tags: ["v*"]
@@ -139,3 +142,16 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: gh release create "$TAG" dist/* --verify-tag --notes-file "$RUNNER_TEMP/notes.md" --title "OpsDeck $TAG"
+
+      # fast-forward only (force=false): stable never moves back or sideways
+      - name: Move stable to this release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          if gh api "repos/$GH_REPO/git/ref/heads/stable" > /dev/null 2>&1; then
+            gh api -X PATCH "repos/$GH_REPO/git/refs/heads/stable" -f sha="$SHA" -F force=false
+          else
+            gh api -X POST "repos/$GH_REPO/git/refs" -f ref=refs/heads/stable -f sha="$SHA"
+          fi

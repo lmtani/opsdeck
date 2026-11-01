@@ -9,6 +9,7 @@ import { escapeHtml, LOCALE, toast } from "./ui.js";
 
 const RECHECK_MS = 60 * 60 * 1000;
 const UPGRADE = "uv tool upgrade opsdeck";
+const REINSTALL = "uv tool install --force git+https://github.com/lmtani/opsdeck@stable";
 const IMAGE = "ghcr.io/lmtani/opsdeck:latest";
 
 function render(info) {
@@ -27,7 +28,11 @@ function render(info) {
     <button type="button" class="update-command" data-copy="${UPGRADE}" title="Copy">
       <code>${UPGRADE}</code><span aria-hidden="true">⧉</span>
     </button>
-    <p class="update-note">Then restart <code>opsdeck</code>; the database migrates itself. In a container, pull <code>${IMAGE}</code> instead.</p>`;
+    <p class="update-note">Then restart <code>opsdeck</code>; the database migrates itself. Installed from a release tag, which <code>upgrade</code> keeps? Switch to <code>@stable</code> once:</p>
+    <button type="button" class="update-command" data-copy="${REINSTALL}" title="Copy">
+      <code>…/opsdeck@stable --force</code><span aria-hidden="true">⧉</span>
+    </button>
+    <p class="update-note">In a container, pull <code>${IMAGE}</code> instead.</p>`;
 }
 
 async function check() {

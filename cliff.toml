@@ -10,7 +10,7 @@
 header = """
 # Changelog
 
-Every release of OpsDeck, from its Conventional Commits. Install or update with `uv tool upgrade opsdeck`; images are at `ghcr.io/lmtani/opsdeck`.
+Every release of OpsDeck, from its Conventional Commits. Install with `uv tool install git+https://github.com/lmtani/opsdeck@stable` and update with `uv tool upgrade opsdeck`; images are at `ghcr.io/lmtani/opsdeck`.
 """
 body = """
 {%- macro commit_url(id) -%}https://github.com/lmtani/opsdeck/commit/{{ id }}{%- endmacro -%}
