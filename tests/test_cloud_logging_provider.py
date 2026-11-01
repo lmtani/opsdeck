@@ -11,9 +11,9 @@ import pytest
 from google.api_core import exceptions as api_exceptions
 from google.auth import exceptions as auth_exceptions
 
-from app.domain.errors import LogProviderError
-from app.domain.logs import LogQuery, Refinement, SeverityBand, TimeRange
-from app.infrastructure.logs.gcp.provider import CloudLoggingApiProvider
+from opsdeck.domain.errors import LogProviderError
+from opsdeck.domain.logs import LogQuery, Refinement, SeverityBand, TimeRange
+from opsdeck.infrastructure.logs.gcp.provider import CloudLoggingApiProvider
 from tests.fakes import gcp_source
 
 SOURCE = gcp_source("proj-x")

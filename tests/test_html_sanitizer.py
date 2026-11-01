@@ -1,6 +1,6 @@
 """The second allowlist over GitHub's rendered Markdown."""
 
-from app.infrastructure.github.html_sanitizer import sanitize_html
+from opsdeck.infrastructure.github.html_sanitizer import sanitize_html
 
 
 def test_scripts_handlers_and_javascript_urls_are_dropped():

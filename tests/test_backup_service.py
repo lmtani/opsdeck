@@ -4,13 +4,13 @@ import json
 
 import pytest
 
-from app.application.backup import BackupService
-from app.application.links import ImageService
-from app.domain.errors import ValidationError
-from app.domain.github import GithubFeed
-from app.domain.links import Link
-from app.domain.logs import LogFilter, LogSource
-from app.domain.settings import AppSettings
+from opsdeck.application.backup import BackupService
+from opsdeck.application.links import ImageService
+from opsdeck.domain.errors import ValidationError
+from opsdeck.domain.github import GithubFeed
+from opsdeck.domain.links import Link
+from opsdeck.domain.logs import LogFilter, LogSource
+from opsdeck.domain.settings import AppSettings
 from tests.fakes import (
     FakeImageStore,
     InMemoryFeedRepository,

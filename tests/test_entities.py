@@ -4,11 +4,11 @@ from datetime import timedelta
 
 import pytest
 
-from app.domain.common import utc_now
-from app.domain.errors import ValidationError
-from app.domain.github import EventKind, EventSubject, FeedSpec, GithubFeed, SubjectType
-from app.domain.links import Link, LinkKind
-from app.domain.logs import (
+from opsdeck.domain.common import utc_now
+from opsdeck.domain.errors import ValidationError
+from opsdeck.domain.github import EventKind, EventSubject, FeedSpec, GithubFeed, SubjectType
+from opsdeck.domain.links import Link, LinkKind
+from opsdeck.domain.logs import (
     Freshness,
     LogCount,
     LogFilter,
@@ -20,7 +20,7 @@ from app.domain.logs import (
     TimeRange,
     severity_band,
 )
-from app.domain.settings import EVERY_CHOICES, AppSettings
+from opsdeck.domain.settings import EVERY_CHOICES, AppSettings
 from tests.fakes import ts
 
 # ----- links -----------------------------------------------------------------

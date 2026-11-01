@@ -12,5 +12,4 @@ tests/
 Dockerfile
 .dockerignore
 docker-compose.yaml
-README.md
 CLAUDE.md

@@ -4,8 +4,8 @@ daily contributions."""
 from datetime import UTC, date
 from zoneinfo import ZoneInfo
 
-from app.domain.github import Contribution, ContributionKind, FeedSpec
-from app.domain.github_rules import (
+from opsdeck.domain.github import Contribution, ContributionKind, FeedSpec
+from opsdeck.domain.github_rules import (
     collapse_bursts,
     contribution_kinds,
     contributions_on,

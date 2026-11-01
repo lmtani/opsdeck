@@ -1,6 +1,6 @@
 """Parsing tests for the Cloud Logging entry normalization."""
 
-from app.infrastructure.logs.gcp.entries import format_latency, parse_entry
+from opsdeck.infrastructure.logs.gcp.entries import format_latency, parse_entry
 
 
 def test_parse_text_payload():

@@ -7,15 +7,15 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from app.application.backup import BackupService
-from app.application.github import GithubActivityService, GithubFeedService
-from app.application.links import CommandService, ImageService, LinkService
-from app.application.logs import LogFilterService, LogQueryService, LogSourceService, LogWatchService
-from app.application.settings import SettingsService
-from app.application.sharing import SharingService
-from app.domain.common import utc_now
-from app.domain.errors import CommandError, GithubError, LogProviderError
-from app.domain.github import (
+from opsdeck.application.backup import BackupService
+from opsdeck.application.github import GithubActivityService, GithubFeedService
+from opsdeck.application.links import CommandService, ImageService, LinkService
+from opsdeck.application.logs import LogFilterService, LogQueryService, LogSourceService, LogWatchService
+from opsdeck.application.settings import SettingsService
+from opsdeck.application.sharing import SharingService
+from opsdeck.domain.common import utc_now
+from opsdeck.domain.errors import CommandError, GithubError, LogProviderError
+from opsdeck.domain.github import (
     Contribution,
     ContributionKind,
     EventContext,
@@ -28,8 +28,8 @@ from app.domain.github import (
     SubjectType,
     ThreadComment,
 )
-from app.domain.logs import LogEntry, LogSourceKind, SeverityBand
-from app.presentation.api import Services, create_app
+from opsdeck.domain.logs import LogEntry, LogSourceKind, SeverityBand
+from opsdeck.presentation.api import Services, create_app
 from tests.fakes import (
     FakeCommandRunner,
     FakeGithubProvider,

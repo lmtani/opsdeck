@@ -2,8 +2,8 @@
 
 import pytest
 
-from app.domain.common import parse_timestamp
-from app.domain.github import (
+from opsdeck.domain.common import parse_timestamp
+from opsdeck.domain.github import (
     CodeCommentDetails,
     ContributionKind,
     EventKind,
@@ -17,8 +17,8 @@ from app.domain.github import (
     ReviewState,
     SubjectType,
 )
-from app.domain.github_rules import compare_url, is_bot
-from app.infrastructure.github.parsing import (
+from opsdeck.domain.github_rules import compare_url, is_bot
+from opsdeck.infrastructure.github.parsing import (
     commit_contributions,
     context_from_api,
     events_from_search_pull,

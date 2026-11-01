@@ -5,10 +5,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from app.application.github import GithubActivityService, GithubFeedService
-from app.domain.common import utc_now
-from app.domain.errors import GithubError, GithubNotFoundError, NotFoundError, ValidationError
-from app.domain.github import (
+from opsdeck.application.github import GithubActivityService, GithubFeedService
+from opsdeck.domain.common import utc_now
+from opsdeck.domain.errors import GithubError, GithubNotFoundError, NotFoundError, ValidationError
+from opsdeck.domain.github import (
     Contribution,
     ContributionKind,
     EventContext,

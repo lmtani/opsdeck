@@ -11,12 +11,26 @@ dependencies = [
     "google-cloud-logging>=3.17.0",
     "httpx>=0.28.1",
     "nh3>=0.3.7",
+    "platformdirs>=4",
     "pymysql>=1.2.3",
     "python-multipart>=0.0.32",
     "sqlalchemy>=2.0",
     "tzdata>=2026.6",
     "uvicorn[standard]>=0.54.0",
 ]
+
+[project.scripts]
+opsdeck = "opsdeck.cli:main"
+
+[project.urls]
+Repository = "https://github.com/lmtani/opsdeck"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["opsdeck"]
 
 [dependency-groups]
 dev = [
@@ -58,12 +72,10 @@ ignore = [
     "S101",                   # assert is how pytest works
     "S105", "S106", "S107",   # fake tokens and passwords
 ]
-# column lists are module constants; values always go as query parameters
-"app/infrastructure/persistence/mysql/repositories.py" = ["S608"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["app"]
+files = ["opsdeck"]
 ignore_missing_imports = true
 warn_unused_ignores = true
 warn_redundant_casts = true
