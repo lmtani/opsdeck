@@ -46,6 +46,21 @@ repos:
         language: system
         files: ^(pyproject\.toml|uv\.lock)$
         pass_filenames: false
+      # known vulnerabilities in the locked dependencies (needs the network, so
+      # only when the lock changes; CI also runs it every week)
+      - id: pip-audit
+        name: pip-audit (dependency vulnerabilities)
+        entry: bash -c 'uv export --frozen --all-groups --no-emit-project -q | uv run --frozen pip-audit --disable-pip --require-hashes -r /dev/stdin --progress-spinner off'
+        language: system
+        files: ^uv\.lock$
+        pass_filenames: false
+      # GitHub Actions: actions pinned to commits, least privilege, no injection
+      - id: zizmor
+        name: zizmor (workflow security)
+        entry: uv run --frozen zizmor --offline .github/workflows
+        language: system
+        files: ^\.github/workflows/
+        pass_filenames: false
 
   # frontend: lint and format the static JS and CSS
   - repo: https://github.com/biomejs/pre-commit
