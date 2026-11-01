@@ -6,7 +6,7 @@ Every release of OpsDeck, from its Conventional Commits. Install or update with 
 
 ### Features
 
-- OpsDeck, painel pessoal de devops ([5155685](https://github.com/lmtani/opsdeck/commit/51556854d3a18a97aa866413725a8854b5bcda51))
+- OpsDeck, a personal devops dashboard ([5155685](https://github.com/lmtani/opsdeck/commit/51556854d3a18a97aa866413725a8854b5bcda51))
 - English UI, API messages and event wording ([9ff77e4](https://github.com/lmtani/opsdeck/commit/9ff77e4099efdb96d08f2932d790ed72774f395f))
 - Build the image for arm64 as well as amd64 ([027b396](https://github.com/lmtani/opsdeck/commit/027b3962349b15e75e94bbbc7663c69855e1b980))
 - Explain why a GitHub token does not work ([764ebed](https://github.com/lmtani/opsdeck/commit/764ebed448217f2fe05ce92cec672d7c41db7241))

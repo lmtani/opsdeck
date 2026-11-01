@@ -38,6 +38,10 @@ filter_unconventional = true
 split_commits = false
 protect_breaking_commits = true
 filter_commits = true
+# the repository's first commit predates its English-only rule
+commit_preprocessors = [
+  { pattern = "OpsDeck, painel pessoal de devops", replace = "OpsDeck, a personal devops dashboard" },
+]
 sort_commits = "oldest"
 tag_pattern = "v[0-9]+\\.[0-9]+\\.[0-9]+"
 # the HTML comments only order the groups; striptags drops them from the output
