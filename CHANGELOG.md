@@ -38,6 +38,7 @@ Every release of OpsDeck, from its Conventional Commits. Install with `uv tool i
 - Release workflow and an in-app notice of new releases ([be75ff3](https://github.com/lmtani/opsdeck/commit/be75ff31dc1f0400e2f894c6441c87cc5e05360f))
 - **release:** Release notes and changelog written by git-cliff from the Conventional Commits ([a133a6b](https://github.com/lmtani/opsdeck/commit/a133a6b7710eda96ce52f420d6fd8214ea8df627))
 - **release:** A stable branch that follows releases, for uv tool upgrade ([2910fff](https://github.com/lmtani/opsdeck/commit/2910fff0833779411400a6e81645fd81ecc07865))
+- **links:** Remove command cards (**breaking**) ([5d03815](https://github.com/lmtani/opsdeck/commit/5d038154de731060c505599d3dac9b17cfa83670))
 
 ### Bug fixes
 

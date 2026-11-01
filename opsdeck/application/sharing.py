@@ -23,7 +23,7 @@ from opsdeck.application.links import ImageService
 from opsdeck.domain.common import utc_now
 from opsdeck.domain.errors import NotFoundError, ValidationError
 from opsdeck.domain.github import GithubFeed, GithubFeedRepository
-from opsdeck.domain.links import Link, LinkKind, LinkRepository
+from opsdeck.domain.links import COMMAND_CARDS_REMOVED, Link, LinkRepository, is_command_card
 from opsdeck.domain.logs import LogFilter, LogFilterRepository, LogSource, LogSourceKind, LogSourceRepository
 from opsdeck.domain.ordering import next_position, ordered
 from opsdeck.domain.repository import Repository
@@ -69,10 +69,9 @@ class ImportCheck:
     type: ItemType
     index: int  # position in its bundle list
     name: str
-    detail: str  # URL or command, log source, org and repos
+    detail: str  # URL, log source, org and repos
     status: ImportStatus
     error: str = ""
-    command: str = ""  # a command card's command line, shown before it is imported
 
 
 @dataclass(frozen=True)
@@ -115,7 +114,7 @@ class _Prepared:
 
 
 def _link_detail(link: Link) -> str:
-    return link.command if link.kind is LinkKind.COMMAND else link.url
+    return link.url
 
 
 def _feed_detail(feed: GithubFeed) -> str:
@@ -202,9 +201,7 @@ class SharingService:
                 key="links",
                 fields=dict(
                     title=str,
-                    kind=str,
                     url=str,
-                    command=str,
                     description=str,
                     image_url=str,
                     category=str,
@@ -293,9 +290,6 @@ class SharingService:
             else:
                 status = ImportStatus.NEW
             entity = prepared.entity
-            is_command = (
-                section.type is ItemType.LINK and entity is not None and entity.kind is LinkKind.COMMAND
-            )
             checks.append(
                 ImportCheck(
                     type=section.type,
@@ -304,7 +298,6 @@ class SharingService:
                     detail=prepared.detail or (section.detail(entity) if entity is not None else ""),
                     status=status,
                     error=prepared.error,
-                    command=entity.command if is_command else "",
                 )
             )
         return checks
@@ -385,6 +378,8 @@ class SharingService:
         name = raw.get(section.name_field) if isinstance(raw, dict) else None
         prepared = _Prepared(section, index, name.strip() if isinstance(name, str) else "")
         try:
+            if section.type is ItemType.LINK and is_command_card(raw):
+                raise ValidationError(COMMAND_CARDS_REMOVED)
             prepared.fields = _portable_fields(section, raw)
             if section.type is ItemType.LINK:
                 prepared.image = self._prepare_image(prepared.fields, raw)

@@ -10,7 +10,6 @@ let activeCategory = "";
 let searchTerm = "";
 let editingId = null;
 let selectedAccent = "";
-let selectedKind = "url";
 
 const grid = () => document.getElementById("link-grid");
 
@@ -76,17 +75,11 @@ function render() {
       : `${items.length} of ${links.length} shortcut${links.length === 1 ? "" : "s"}`;
 
   items.forEach((link, index) => {
-    const isCommand = link.kind === "command";
     const card = document.createElement("a");
-    card.className = isCommand ? "card is-command" : "card";
-    if (isCommand) {
-      card.setAttribute("role", "button");
-      card.tabIndex = 0;
-    } else {
-      card.href = link.url;
-      card.target = "_blank";
-      card.rel = "noopener";
-    }
+    card.className = "card";
+    card.href = link.url;
+    card.target = "_blank";
+    card.rel = "noopener";
     card.dataset.id = link.id;
     card.draggable = true;
     card.style.setProperty("--i", index);
@@ -96,7 +89,6 @@ function render() {
     const media = link.image_url
       ? `<img src="${escapeHtml(link.image_url)}" alt="" loading="lazy">`
       : monogram;
-    const footText = isCommand ? `▸ ${link.command}` : hostOf(link.url);
 
     card.innerHTML = `
       <div class="card-media">${media}</div>
@@ -104,14 +96,8 @@ function render() {
         <h3 class="card-title">${escapeHtml(link.title)}</h3>
         ${link.description ? `<p class="card-desc">${escapeHtml(link.description)}</p>` : ""}
         <div class="card-foot">
-          <span class="card-host${isCommand ? " is-cmd" : ""}">${escapeHtml(footText)}</span>
-          ${
-            link.category
-              ? `<span class="card-tag">${escapeHtml(link.category)}</span>`
-              : isCommand
-                ? `<span class="card-tag">command</span>`
-                : ""
-          }
+          <span class="card-host">${escapeHtml(hostOf(link.url))}</span>
+          ${link.category ? `<span class="card-tag">${escapeHtml(link.category)}</span>` : ""}
         </div>
       </div>
       <div class="card-actions">
@@ -140,25 +126,6 @@ function render() {
         await load();
       });
     });
-
-    if (isCommand) {
-      card.addEventListener("click", (event) => {
-        if (event.target.closest(".card-action")) return;
-        event.preventDefault();
-        confirmDanger(
-          `Run the command of “${link.title}”?`,
-          async () => {
-            try {
-              const { message } = await api.runLink(link.id);
-              toast(message || "Command started", "success");
-            } catch (error) {
-              toast(error.message, "error");
-            }
-          },
-          { title: "Run command?", confirmLabel: "Run", danger: false }
-        );
-      });
-    }
 
     container.appendChild(card);
   });
@@ -231,22 +198,6 @@ function renderCoverSwatches() {
   }
 }
 
-// Toggle between a URL link and a local-command link, keeping native
-// `required` validation on whichever field is actually visible.
-function setKind(kind) {
-  selectedKind = kind === "command" ? "command" : "url";
-  const isCommand = selectedKind === "command";
-  for (const chip of document.querySelectorAll("#link-kind .chip")) {
-    chip.classList.toggle("is-active", chip.dataset.kind === selectedKind);
-  }
-  const urlField = document.getElementById("link-url-field");
-  const commandField = document.getElementById("link-command-field");
-  urlField.hidden = isCommand;
-  commandField.hidden = !isCommand;
-  urlField.querySelector("input").required = !isCommand;
-  commandField.querySelector("input").required = isCommand;
-}
-
 function openLinkModal(link = null) {
   editingId = link ? link.id : null;
   selectedAccent = link ? link.accent || "" : "";
@@ -256,12 +207,10 @@ function openLinkModal(link = null) {
   if (link) {
     form.title.value = link.title;
     form.url.value = link.url;
-    form.command.value = link.command || "";
     form.description.value = link.description;
     form.category.value = link.category;
     form.image_url.value = link.image_url;
   }
-  setKind(link ? link.kind || "url" : "url");
   renderCoverSwatches();
   updatePreview();
   openModal("link-modal");
@@ -272,9 +221,7 @@ async function submitLink(event) {
   const form = event.target;
   const payload = {
     title: form.title.value.trim(),
-    kind: selectedKind,
-    url: selectedKind === "url" ? form.url.value.trim() : "",
-    command: selectedKind === "command" ? form.command.value.trim() : "",
+    url: form.url.value.trim(),
     description: form.description.value.trim(),
     category: form.category.value.trim(),
     image_url: form.image_url.value.trim(),
@@ -337,10 +284,6 @@ export async function initLinks() {
   document.getElementById("link-new-btn").addEventListener("click", () => openLinkModal());
   document.getElementById("link-empty-btn").addEventListener("click", () => openLinkModal());
   document.getElementById("link-form").addEventListener("submit", submitLink);
-
-  for (const chip of document.querySelectorAll("#link-kind .chip")) {
-    chip.addEventListener("click", () => setKind(chip.dataset.kind));
-  }
 
   document.getElementById("link-search").addEventListener("input", (event) => {
     searchTerm = event.target.value;

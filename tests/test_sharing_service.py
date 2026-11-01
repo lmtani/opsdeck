@@ -135,11 +135,13 @@ def test_check_reports_new_conflicts_and_invalid_items(deck):
     assert checks[1].detail == "p"
 
 
-def test_check_shows_the_command_of_a_command_card(deck):
+def test_a_command_card_from_an_older_export_cannot_be_imported(deck):
     bundle = Bundle(links=[{"title": "deploy", "kind": "command", "command": "make deploy"}])
     [check] = deck.sharing.check(bundle)
-    assert check.status is ImportStatus.NEW
-    assert check.command == "make deploy" and check.detail == "make deploy"
+    assert check.status is ImportStatus.INVALID
+    assert check.error == "Command cards were removed from OpsDeck"
+    with pytest.raises(ValidationError, match="Command cards were removed"):
+        deck.sharing.import_bundle(bundle, [create(ItemType.LINK, 0)])
 
 
 def test_check_rejects_a_file_that_is_not_an_export(deck):

@@ -8,13 +8,14 @@ import os
 from datetime import timedelta
 
 import pytest
+from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 
 from opsdeck.domain.github import EventKind, GithubFeed
-from opsdeck.domain.links import Link, LinkKind
+from opsdeck.domain.links import Link
 from opsdeck.domain.logs import Freshness, LogFilter, LogSource
 from opsdeck.domain.settings import AppSettings
 from opsdeck.infrastructure.persistence.sql import (
@@ -26,6 +27,7 @@ from opsdeck.infrastructure.persistence.sql import (
     create_database_engine,
     run_migrations,
 )
+from opsdeck.infrastructure.persistence.sql.migrations import _config
 from opsdeck.infrastructure.persistence.sql.tables import metadata
 from tests.fakes import ts
 
@@ -50,7 +52,7 @@ def engine(request, tmp_path):
     else:
         url = f"sqlite:///{tmp_path / 'nested' / 'opsdeck.db'}"
     engine = create_database_engine(url)
-    assert run_migrations(engine) == ["0001"]
+    assert run_migrations(engine) == ["0001", "0002"]
     yield engine
     engine.dispose()
     if request.param == "mysql":
@@ -61,24 +63,51 @@ def test_migrations_build_exactly_the_declared_schema(engine):
     assert run_migrations(engine) == []  # nothing pending the second time
     with engine.connect() as connection:
         assert compare_metadata(MigrationContext.configure(connection), metadata) == []
-        assert MigrationContext.configure(connection).get_current_revision() == "0001"
+        assert MigrationContext.configure(connection).get_current_revision() == "0002"
 
 
 def test_a_database_of_the_plain_sql_migrations_is_adopted(tmp_path):
-    """Built by 0001-0008: stamped at the baseline, nothing recreated."""
+    """Built by 0001-0008: stamped at the baseline, nothing recreated, then
+    brought to the head."""
     engine = create_database_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
     metadata.create_all(engine)
     with engine.begin() as connection:
+        # the baseline links table still had the command card columns
+        connection.execute(text("ALTER TABLE links ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'url'"))
+        connection.execute(text("ALTER TABLE links ADD COLUMN command VARCHAR(1024) NOT NULL DEFAULT ''"))
         connection.execute(text("CREATE TABLE schema_migrations (version VARCHAR(255) PRIMARY KEY)"))
         for number in range(1, 9):
             connection.execute(text("INSERT INTO schema_migrations VALUES (:v)"), {"v": f"000{number}_x.sql"})
         connection.execute(text("DELETE FROM schema_migrations WHERE version = '0008_x.sql'"))
         connection.execute(text("INSERT INTO schema_migrations VALUES ('0008_add_log_filter_watch.sql')"))
-    SqlLinkRepository(engine).save(Link.new(title="kept", url="https://x"))
+        connection.execute(
+            text("INSERT INTO links (id, title, url, image_url) VALUES (:id, 'kept', 'https://x', '')"),
+            {"id": "k" * 32},
+        )
 
-    assert run_migrations(engine) == []
+    assert run_migrations(engine) == ["0002"]
     assert [link.title for link in SqlLinkRepository(engine).list_all()] == ["kept"]
     assert "schema_migrations" not in inspect(engine).get_table_names()
+
+
+def test_command_cards_are_deleted_with_their_columns(tmp_path, caplog):
+    """0002: OpsDeck no longer runs commands, so command cards go."""
+    engine = create_database_engine(f"sqlite:///{tmp_path / 'cards.db'}")
+    with engine.begin() as connection:
+        command.upgrade(_config(connection), "0001")
+        for id_, title, kind in (("a", "Console", "url"), ("b", "IGV", "command")):
+            connection.execute(
+                text(
+                    "INSERT INTO links (id, title, url, kind, command, image_url)"
+                    " VALUES (:id, :title, 'https://x', :kind, 'igv.sh', '')"
+                ),
+                {"id": id_ * 32, "title": title, "kind": kind},
+            )
+    with caplog.at_level("WARNING", logger="opsdeck.migrations"):
+        assert run_migrations(engine) == ["0002"]
+    assert "IGV" in caplog.text
+    assert [link.title for link in SqlLinkRepository(engine).list_all()] == ["Console"]
+    assert {"kind", "command"}.isdisjoint(c["name"] for c in inspect(engine).get_columns("links"))
 
 
 def test_a_database_left_at_an_older_plain_sql_migration_is_refused(tmp_path):
@@ -92,23 +121,18 @@ def test_a_database_left_at_an_older_plain_sql_migration_is_refused(tmp_path):
 
 def test_links_save_updates_in_place_and_delete_reports_a_hit(engine):
     links = SqlLinkRepository(engine)
-    first = Link.new(title="IGV", kind="command", command="igv.sh")
+    first = Link.new(title="Wiki", url="https://wiki.example")
     second = Link.new(title="Console", url="https://console.cloud.google.com")
     second.created_at = first.created_at + timedelta(seconds=1)
     links.save(first)
     links.save(second)
 
-    first.title, first.position = "IGV 2", 3
+    first.title, first.position = "Wiki 2", 3
     original = first.created_at
     first.created_at = original + timedelta(days=1)  # an upsert never rewrites created_at
     links.save(first)
     stored = links.get(first.id)
-    assert (stored.title, stored.kind, stored.position, stored.created_at) == (
-        "IGV 2",
-        LinkKind.COMMAND,
-        3,
-        original,
-    )
+    assert (stored.title, stored.position, stored.created_at) == ("Wiki 2", 3, original)
     assert [link.id for link in links.list_all()] == [first.id, second.id]  # by created_at
     assert links.delete(first.id) is True and links.delete(first.id) is False
     assert links.get(first.id) is None

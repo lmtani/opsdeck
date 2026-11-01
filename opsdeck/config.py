@@ -34,9 +34,6 @@ class Settings:
     # Application Default Credentials file for the Cloud Logging client; empty
     # = the well-known location `gcloud auth application-default login` writes
     gcp_credentials_file: str = ""
-    # command cards launch programs on the host: meaningless, and unsafe to
-    # expose, inside a container, where this is turned off
-    commands_enabled: bool = True
     # GitHub API token; empty = use the local `gh` login
     github_token: str = ""
     # where the SQLite file and the uploaded images live; empty = the user's
@@ -54,7 +51,6 @@ class Settings:
         return cls(
             database_url=_database_url(env),
             gcp_credentials_file=env.get("GOOGLE_APPLICATION_CREDENTIALS", ""),
-            commands_enabled=env.get("DASHBOARD_COMMANDS", "").lower() not in _OFF,
             github_token=env.get("GITHUB_TOKEN") or env.get("GH_TOKEN") or "",
             data_dir=env.get("OPSDECK_DATA_DIR", ""),
             host=env.get("DASHBOARD_HOST") or "127.0.0.1",

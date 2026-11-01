@@ -22,7 +22,7 @@ If the shell does not find `opsdeck`, run `uv tool update-shell` once and open a
 
 `stable` is the latest [release](https://github.com/lmtani/opsdeck/releases), so `uv tool upgrade opsdeck` updates to the next one; the database migrates itself on the next start. When a new release is out, OpsDeck shows it in the top bar with the notes and that command (`OPSDECK_UPDATE_CHECK=off` turns that off). To stay on one release, install its tag instead (`…/opsdeck@v0.2.0`); to follow every merged change, install without `@stable`. `opsdeck info` shows the version and where the data is: a SQLite file in the user's data directory (`~/.local/share/opsdeck` on Linux, `~/Library/Application Support/opsdeck` on macOS), created on the first run. The box button in the top bar downloads a backup of everything and restores one, here or on another machine.
 
-The Links tab works right away; the other two need credentials. Command cards run in the local shell (`/bin/sh`), so a card made on Linux (`xdg-open`, a Linux path) needs its command adjusted on macOS (`open -a IGV`, for example). OpsDeck can also be installed as an app from Chrome or Edge (the install icon in the address bar).
+The Links tab works right away; the other two need credentials. OpsDeck can also be installed as an app from Chrome or Edge (the install icon in the address bar).
 
 ## Credentials
 
@@ -36,7 +36,7 @@ gcloud auth application-default login
 
 ## Docker Compose
 
-Runs the released image, `ghcr.io/lmtani/opsdeck` (amd64 and arm64), with its own MySQL; command cards are off inside the container.
+Runs the released image, `ghcr.io/lmtani/opsdeck` (amd64 and arm64), with its own MySQL.
 
 ```bash
 cp .env.example .env    # set GITHUB_TOKEN here, e.g. echo "GITHUB_TOKEN=$(gh auth token)" >> .env
@@ -56,7 +56,6 @@ Run the same pull and up to update. `OPSDECK_VERSION=0.2.0` in `.env` pins a rel
 | `DASHBOARD_DB_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_NAME` | empty, `3306`, `root`, empty, `opsdeck` | MySQL by parts, as Compose sets it |
 | `GITHUB_TOKEN` | the `gh` login | Token for the GitHub tab |
 | `GOOGLE_APPLICATION_CREDENTIALS` | the gcloud location | Credentials file for the Logs tab |
-| `DASHBOARD_COMMANDS` | `on` | `off` disables cards that run local commands |
 | `OPSDECK_UPDATE_CHECK` | `on` | `off` stops looking for newer releases on GitHub |
 | `DASHBOARD_HOST`, `DASHBOARD_PORT` | `127.0.0.1`, `8765` | Address the server listens on (or `opsdeck --host … --port …`) |
 

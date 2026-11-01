@@ -2,7 +2,7 @@
 
 This is the only place that knows both sides — domain interfaces and the
 concrete implementations — and the only place that reads the environment
-(through Settings.from_env). Storage and command runner are chosen here:
+(through Settings.from_env). The adapters are chosen here:
 
 - storage: a SQL database through SQLAlchemy: a SQLite file in the data
   directory by default, MySQL with DASHBOARD_DB_URL or DASHBOARD_DB_HOST.
@@ -10,7 +10,6 @@ concrete implementations — and the only place that reads the environment
   directory, or OPSDECK_DATA_DIR.
 - logs: one provider per kind of log source; GCP sources read Cloud Logging
   through its API client with Application Default Credentials.
-- commands: real subprocess by default, disabled with DASHBOARD_COMMANDS=off.
 - github: REST/GraphQL API with GITHUB_TOKEN or, locally, the
   token of the `gh` CLI login.
 - updates: the latest GitHub release of OpsDeck itself, unless
@@ -28,18 +27,18 @@ from platformdirs import user_data_path
 
 from opsdeck.application.backup import BackupService
 from opsdeck.application.github import GithubActivityService, GithubFeedService
-from opsdeck.application.links import CommandService, ImageService, LinkService
+from opsdeck.application.links import ImageService, LinkService
 from opsdeck.application.logs import LogFilterService, LogQueryService, LogSourceService, LogWatchService
 from opsdeck.application.settings import SettingsService
 from opsdeck.application.sharing import SharingService
 from opsdeck.application.updates import UpdateService
 from opsdeck.config import Settings
 from opsdeck.domain.github import GithubFeedRepository
-from opsdeck.domain.links import CommandRunner, LinkRepository
+from opsdeck.domain.links import LinkRepository
 from opsdeck.domain.logs import LogFilterRepository, LogProvider, LogSourceKind, LogSourceRepository
 from opsdeck.domain.settings import SettingsRepository
 from opsdeck.infrastructure.github import GithubApiProvider, GithubReleaseFeed, resolve_github_token
-from opsdeck.infrastructure.host import DisabledCommandRunner, LocalImageStore, SubprocessCommandRunner
+from opsdeck.infrastructure.host import LocalImageStore
 from opsdeck.infrastructure.logs.gcp import CloudLoggingApiProvider
 from opsdeck.infrastructure.persistence.sql import (
     SqlGithubFeedRepository,
@@ -115,12 +114,6 @@ def _build_log_providers(settings: Settings) -> dict[LogSourceKind, LogProvider]
     return {LogSourceKind.GCP: CloudLoggingApiProvider(credentials_file=settings.gcp_credentials_file)}
 
 
-def _build_command_runner(settings: Settings) -> CommandRunner:
-    if not settings.commands_enabled:
-        return DisabledCommandRunner()
-    return SubprocessCommandRunner()
-
-
 def prepare_data_dir(settings: Settings) -> Path:
     """The data directory, created if missing; the default one first takes a
     clone's old data/ folder, if there is one."""
@@ -139,7 +132,6 @@ def build_services(data_dir: Path, settings: Settings) -> Services:
     log_providers = _build_log_providers(settings)
     return Services(
         links=LinkService(repositories.links),
-        commands=CommandService(_build_command_runner(settings), repositories.links),
         sources=LogSourceService(repositories.sources, repositories.filters),
         filters=LogFilterService(repositories.filters, repositories.sources),
         logs=LogQueryService(log_providers, repositories.sources, repositories.filters),

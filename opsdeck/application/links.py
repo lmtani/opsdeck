@@ -1,8 +1,8 @@
-"""Use cases of the links context: cards, command cards and their images."""
+"""Use cases of the links context: cards and their images."""
 
 from opsdeck.application.common import apply_order
 from opsdeck.domain.errors import NotFoundError, ValidationError
-from opsdeck.domain.links import CommandRunner, ImageStore, Link, LinkKind, LinkRepository
+from opsdeck.domain.links import ImageStore, Link, LinkRepository
 from opsdeck.domain.ordering import next_position, ordered
 
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "svg"}
@@ -35,22 +35,6 @@ class LinkService:
     def delete_link(self, link_id: str) -> None:
         if not self._repository.delete(link_id):
             raise NotFoundError(f"Link '{link_id}' not found")
-
-
-class CommandService:
-    """Runs the local command stored on a command-type link."""
-
-    def __init__(self, runner: CommandRunner, links: LinkRepository):
-        self._runner = runner
-        self._links = links
-
-    def run_link(self, link_id: str) -> str:
-        link = self._links.get(link_id)
-        if link is None:
-            raise NotFoundError(f"Link '{link_id}' not found")
-        if link.kind != LinkKind.COMMAND or not link.command.strip():
-            raise ValidationError("This card is not a command")
-        return self._runner.run(link.command)
 
 
 class ImageService:

@@ -31,7 +31,6 @@ export const api = {
   updateLink: (id, data) => request(`/api/links/${id}`, json("PUT", data)),
   deleteLink: (id) => request(`/api/links/${id}`, { method: "DELETE" }),
   reorderLinks: (ids) => request("/api/links/order", json("PUT", { ids })),
-  runLink: (id) => request(`/api/links/${id}/run`, { method: "POST" }),
 
   listFilters: () => request("/api/filters"),
   createFilter: (data) => request("/api/filters", json("POST", data)),

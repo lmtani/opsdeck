@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from opsdeck.application.backup import BackupService
 from opsdeck.application.github import GithubActivityService, GithubFeedService
-from opsdeck.application.links import CommandService, ImageService, LinkService
+from opsdeck.application.links import ImageService, LinkService
 from opsdeck.application.logs import (
     LogFilterService,
     LogQueryService,
@@ -34,7 +34,6 @@ class Services:
     def __init__(
         self,
         links: LinkService,
-        commands: CommandService,
         sources: LogSourceService,
         filters: LogFilterService,
         logs: LogQueryService,
@@ -48,7 +47,6 @@ class Services:
         updates: UpdateService,
     ):
         self.links = links
-        self.commands = commands
         self.sources = sources
         self.filters = filters
         self.logs = logs
@@ -134,10 +132,6 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
     def update_link(link_id: str, body: schemas.LinkIn):
         link = services.links.update_link(link_id, **body.model_dump())
         return schemas.LinkOut.model_validate(link)
-
-    @app.post("/api/links/{link_id}/run", response_model=schemas.CommandResultOut)
-    def run_link_command(link_id: str):
-        return schemas.CommandResultOut(message=services.commands.run_link(link_id))
 
     @app.delete("/api/links/{link_id}", status_code=204)
     def delete_link(link_id: str):

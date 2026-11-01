@@ -7,7 +7,7 @@ from opsdeck.infrastructure.github.token import resolve_github_token
 def test_defaults_use_the_sqlite_file_and_local_tools():
     settings = Settings.from_env({})
     assert settings.database_url == ""  # bootstrap puts a SQLite file in the data directory
-    assert settings.commands_enabled is True and settings.github_token == ""
+    assert settings.github_token == ""
 
 
 def test_a_database_host_means_mysql():
@@ -16,12 +16,10 @@ def test_a_database_host_means_mysql():
         {
             "DASHBOARD_DB_HOST": "db",
             "DASHBOARD_DB_PASSWORD": "s3cr@t/x",
-            "DASHBOARD_COMMANDS": "off",
             "GITHUB_TOKEN": "ghp_x",
         }
     )
     assert settings.database_url == "mysql+pymysql://root:s3cr%40t%2Fx@db:3306/opsdeck"
-    assert settings.commands_enabled is False
     assert settings.github_token == "ghp_x"
     assert Settings.from_env({"GH_TOKEN": "gho_y"}).github_token == "gho_y"
     full = Settings.from_env(

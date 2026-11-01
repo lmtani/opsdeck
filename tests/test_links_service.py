@@ -1,10 +1,10 @@
-"""Links context use cases: cards, command cards. In-memory fakes only."""
+"""Links context use cases: cards and their images. In-memory fakes only."""
 
 import pytest
 
-from opsdeck.application.links import CommandService, ImageService, LinkService
+from opsdeck.application.links import ImageService, LinkService
 from opsdeck.domain.errors import NotFoundError, ValidationError
-from tests.fakes import FakeCommandRunner, FakeImageStore, InMemoryLinkRepository
+from tests.fakes import FakeImageStore, InMemoryLinkRepository
 
 
 def test_create_link_generates_id_and_persists():
@@ -61,51 +61,10 @@ def test_new_link_lands_at_the_end_after_reorder():
     assert [link.id for link in service.list_links()] == [second.id, first.id, third.id]
 
 
-def test_create_command_link_requires_command_not_url():
+def test_a_card_needs_a_url():
     service = LinkService(InMemoryLinkRepository())
-    link = service.create_link(title="IGV", kind="command", command=" igv.sh ")
-    assert link.kind == "command"
-    assert link.command == "igv.sh"
-    assert link.url == ""
-
-
-def test_create_command_link_without_command_raises():
-    service = LinkService(InMemoryLinkRepository())
-    with pytest.raises(ValidationError):
-        service.create_link(title="IGV", kind="command", command="  ")
-
-
-def test_create_link_rejects_unknown_kind():
-    service = LinkService(InMemoryLinkRepository())
-    with pytest.raises(ValidationError):
-        service.create_link(title="x", url="https://x", kind="exec")
-
-
-def test_run_link_executes_command():
-    repository = InMemoryLinkRepository()
-    links = LinkService(repository)
-    link = links.create_link(title="IGV", kind="command", command="bash igv.sh")
-    runner = FakeCommandRunner()
-    service = CommandService(runner, repository)
-
-    message = service.run_link(link.id)
-
-    assert message == "Program started"
-    assert runner.ran == ["bash igv.sh"]
-
-
-def test_run_link_rejects_url_links():
-    repository = InMemoryLinkRepository()
-    link = LinkService(repository).create_link(title="Console", url="https://x")
-    service = CommandService(FakeCommandRunner(), repository)
-    with pytest.raises(ValidationError):
-        service.run_link(link.id)
-
-
-def test_run_link_unknown_id():
-    service = CommandService(FakeCommandRunner(), InMemoryLinkRepository())
-    with pytest.raises(NotFoundError):
-        service.run_link("ghost")
+    with pytest.raises(ValidationError, match="URL"):
+        service.create_link(title="IGV", url="  ")
 
 
 def test_reorder_ignores_unknown_ids():
