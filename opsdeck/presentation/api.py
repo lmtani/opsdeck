@@ -21,6 +21,7 @@ from opsdeck.application.logs import (
 )
 from opsdeck.application.settings import SettingsService
 from opsdeck.application.sharing import ImportChoice, SharingService
+from opsdeck.application.updates import UpdateService
 from opsdeck.domain.errors import ExternalServiceError, NotFoundError, ValidationError
 from opsdeck.domain.github import EventSubject, FeedSpec
 from opsdeck.domain.logs import LogQuery
@@ -44,6 +45,7 @@ class Services:
         github: GithubActivityService,
         sharing: SharingService,
         backup: BackupService,
+        updates: UpdateService,
     ):
         self.links = links
         self.commands = commands
@@ -57,6 +59,7 @@ class Services:
         self.github = github
         self.sharing = sharing
         self.backup = backup
+        self.updates = updates
 
 
 def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
@@ -98,6 +101,18 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
         return schemas.HealthOut(
             logs=services.logs.providers_available(),
             github=services.github.provider_available(),
+        )
+
+    @app.get("/api/version", response_model=schemas.VersionOut)
+    def version():
+        """The running version and, when a newer release is out, that release."""
+        status = services.updates.status()
+        return schemas.VersionOut(
+            current=status.current,
+            latest=status.latest.version if status.latest else None,
+            newer=status.newer,
+            url=status.latest.url if status.latest else None,
+            published_at=status.latest.published_at if status.latest else None,
         )
 
     # ----- Links -------------------------------------------------------

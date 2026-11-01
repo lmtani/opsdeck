@@ -294,9 +294,48 @@ body {
 .icon-btn-still { display: inline-grid; place-items: center; }
 .icon-btn-still:hover { transform: none; }
 /* backup menu: same look as the theme picker */
-.backup-pop { min-width: 250px; }
+.theme-pop.backup-pop { min-width: 250px; } /* beats .theme-pop, declared below */
 .backup-pop a.theme-option { text-decoration: none; }
 .backup-note { margin: 6px 12px 6px; font-size: 11.5px; line-height: 1.45; color: var(--text-dim); }
+/* update notice: a pill that only shows when a newer release is out */
+.update-btn {
+  padding: 5px 11px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--speed) ease;
+}
+.update-btn:hover { background: var(--accent); color: var(--accent-contrast); }
+/* the pill is the first item of the top bar's right side: its menu opens rightwards */
+.theme-pop.update-pop { width: min(320px, calc(100vw - 32px)); left: 0; right: auto; }
+.update-pop a.theme-option { text-decoration: none; }
+.update-title { margin: 6px 12px 2px; font-weight: 600; font-size: 13.5px; }
+.update-sub { margin: 0 12px 6px; font-size: 11.5px; color: var(--text-dim); }
+.update-command {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: calc(100% - 12px);
+  margin: 4px 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.update-command:hover { border-color: var(--accent); }
+.update-note { margin: 6px 12px 6px; font-size: 11.5px; line-height: 1.45; color: var(--text-dim); }
+.update-note code { font-size: 11px; }
 .theme-pop {
   position: absolute;
   right: 0;

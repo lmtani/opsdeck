@@ -24,6 +24,7 @@ function json(method, payload) {
 
 export const api = {
   health: () => request("/api/health"),
+  version: () => request("/api/version"),
 
   listLinks: () => request("/api/links"),
   createLink: (data) => request("/api/links", json("POST", data)),

@@ -13,11 +13,14 @@ concrete implementations — and the only place that reads the environment
 - commands: real subprocess by default, disabled with DASHBOARD_COMMANDS=off.
 - github: REST/GraphQL API with GITHUB_TOKEN or, locally, the
   token of the `gh` CLI login.
+- updates: the latest GitHub release of OpsDeck itself, unless
+  OPSDECK_UPDATE_CHECK=off.
 """
 
 import logging
 import shutil
 from dataclasses import dataclass
+from importlib.metadata import version
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -29,12 +32,13 @@ from opsdeck.application.links import CommandService, ImageService, LinkService
 from opsdeck.application.logs import LogFilterService, LogQueryService, LogSourceService, LogWatchService
 from opsdeck.application.settings import SettingsService
 from opsdeck.application.sharing import SharingService
+from opsdeck.application.updates import UpdateService
 from opsdeck.config import Settings
 from opsdeck.domain.github import GithubFeedRepository
 from opsdeck.domain.links import CommandRunner, LinkRepository
 from opsdeck.domain.logs import LogFilterRepository, LogProvider, LogSourceKind, LogSourceRepository
 from opsdeck.domain.settings import SettingsRepository
-from opsdeck.infrastructure.github import GithubApiProvider, resolve_github_token
+from opsdeck.infrastructure.github import GithubApiProvider, GithubReleaseFeed, resolve_github_token
 from opsdeck.infrastructure.host import DisabledCommandRunner, LocalImageStore, SubprocessCommandRunner
 from opsdeck.infrastructure.logs.gcp import CloudLoggingApiProvider
 from opsdeck.infrastructure.persistence.sql import (
@@ -50,6 +54,7 @@ from opsdeck.presentation.api import Services
 from opsdeck.presentation.api import create_app as _create_app
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
+RELEASES_REPO = "lmtani/opsdeck"
 # where a clone kept its data before OpsDeck became an installable package
 _LEGACY_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _DATA_FILES = ("opsdeck.db", "opsdeck.db-wal", "opsdeck.db-shm")
@@ -153,6 +158,9 @@ def build_services(data_dir: Path, settings: Settings) -> Services:
             repositories.feeds,
             repositories.settings,
             images,
+        ),
+        updates=UpdateService(
+            GithubReleaseFeed(RELEASES_REPO), current=version("opsdeck"), enabled=settings.update_check
         ),
     )
 

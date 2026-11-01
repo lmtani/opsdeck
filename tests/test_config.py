@@ -52,3 +52,8 @@ def test_data_directory_and_address():
     assert (settings.data_dir, settings.host, settings.port) == ("", "127.0.0.1", 8765)
     env = {"OPSDECK_DATA_DIR": "~/od", "DASHBOARD_HOST": "10.0.0.5", "DASHBOARD_PORT": "8080"}
     assert (Settings.from_env(env).data_dir, Settings.from_env(env).port) == ("~/od", 8080)
+
+
+def test_the_update_check_can_be_turned_off():
+    assert Settings.from_env({}).update_check is True
+    assert Settings.from_env({"OPSDECK_UPDATE_CHECK": "off"}).update_check is False

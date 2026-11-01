@@ -20,7 +20,7 @@ opsdeck             # http://127.0.0.1:8765
 
 If the shell does not find `opsdeck`, run `uv tool update-shell` once and open a new terminal.
 
-Update with `uv tool upgrade opsdeck`; the database migrates itself on the next start. `opsdeck info` shows the version and where the data is: a SQLite file in the user's data directory (`~/.local/share/opsdeck` on Linux, `~/Library/Application Support/opsdeck` on macOS), created on the first run. The box button in the top bar downloads a backup of everything and restores one, here or on another machine.
+Update with `uv tool upgrade opsdeck`; the database migrates itself on the next start. When a new [release](https://github.com/lmtani/opsdeck/releases) is out, OpsDeck shows it in the top bar with the notes and this command (`OPSDECK_UPDATE_CHECK=off` turns that off). To stay on one release, install its tag: `uv tool install git+https://github.com/lmtani/opsdeck@v0.2.0`. `opsdeck info` shows the version and where the data is: a SQLite file in the user's data directory (`~/.local/share/opsdeck` on Linux, `~/Library/Application Support/opsdeck` on macOS), created on the first run. The box button in the top bar downloads a backup of everything and restores one, here or on another machine.
 
 The Links tab works right away; the other two need credentials. Command cards run in the local shell (`/bin/sh`), so a card made on Linux (`xdg-open`, a Linux path) needs its command adjusted on macOS (`open -a IGV`, for example). OpsDeck can also be installed as an app from Chrome or Edge (the install icon in the address bar).
 
@@ -36,14 +36,16 @@ gcloud auth application-default login
 
 ## Docker Compose
 
-Runs the app with its own MySQL; command cards are off inside the container.
+Runs the released image, `ghcr.io/lmtani/opsdeck` (amd64 and arm64), with its own MySQL; command cards are off inside the container.
 
 ```bash
 cp .env.example .env    # set GITHUB_TOKEN here, e.g. echo "GITHUB_TOKEN=$(gh auth token)" >> .env
 cp ~/.config/gcloud/application_default_credentials.json secrets/gcp-adc.json
 chmod 644 secrets/gcp-adc.json
-docker compose up -d --build    # http://127.0.0.1:8765
+docker compose pull && docker compose up -d    # http://127.0.0.1:8765
 ```
+
+Run the same pull and up to update. `OPSDECK_VERSION=0.2.0` in `.env` pins a release, and `docker compose up -d --build` builds the image from the checkout instead.
 
 ## Configuration
 
@@ -55,6 +57,7 @@ docker compose up -d --build    # http://127.0.0.1:8765
 | `GITHUB_TOKEN` | the `gh` login | Token for the GitHub tab |
 | `GOOGLE_APPLICATION_CREDENTIALS` | the gcloud location | Credentials file for the Logs tab |
 | `DASHBOARD_COMMANDS` | `on` | `off` disables cards that run local commands |
+| `OPSDECK_UPDATE_CHECK` | `on` | `off` stops looking for newer releases on GitHub |
 | `DASHBOARD_HOST`, `DASHBOARD_PORT` | `127.0.0.1`, `8765` | Address the server listens on (or `opsdeck --host … --port …`) |
 
 ## Contributing
@@ -67,5 +70,7 @@ uv run pre-commit install           # once per clone: ruff, mypy, Biome, gitleak
 uv run pytest -q
 uv run opsdeck revision "add x"     # after editing tables.py: draft the next migration, then review it
 ```
+
+To release: raise `version` in `pyproject.toml` (and run `uv lock`) in a pull request; once it is merged, tag main with that version and push the tag (`git tag v0.3.0 && git push origin v0.3.0`). The Release workflow checks that the tag matches the version and is on main, runs the tests, pushes the image to GHCR as `0.3.0`, `0.3` and `latest`, and publishes a GitHub Release with the wheel and generated notes.
 
 A clone that kept its data in `data/` (before OpsDeck was a package) has it copied to the data directory on the first start, as long as that directory does not exist yet.

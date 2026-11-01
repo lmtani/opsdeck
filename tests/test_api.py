@@ -13,6 +13,7 @@ from opsdeck.application.links import CommandService, ImageService, LinkService
 from opsdeck.application.logs import LogFilterService, LogQueryService, LogSourceService, LogWatchService
 from opsdeck.application.settings import SettingsService
 from opsdeck.application.sharing import SharingService
+from opsdeck.application.updates import UpdateService
 from opsdeck.domain.common import utc_now
 from opsdeck.domain.errors import CommandError, GithubError, LogProviderError
 from opsdeck.domain.github import (
@@ -29,12 +30,14 @@ from opsdeck.domain.github import (
     ThreadComment,
 )
 from opsdeck.domain.logs import LogEntry, LogSourceKind, SeverityBand
+from opsdeck.domain.updates import Release
 from opsdeck.presentation.api import Services, create_app
 from tests.fakes import (
     FakeCommandRunner,
     FakeGithubProvider,
     FakeImageStore,
     FakeLogProvider,
+    FakeReleaseFeed,
     InMemoryFeedRepository,
     InMemoryFilterRepository,
     InMemoryLinkRepository,
@@ -58,6 +61,7 @@ def world(tmp_path):
         logs=FakeLogProvider(),
         github=FakeGithubProvider(),
         images=FakeImageStore(),
+        releases=FakeReleaseFeed(),
         now=datetime(2026, 10, 31, 12, 0, tzinfo=UTC),
     )
     services = Services(
@@ -79,6 +83,7 @@ def world(tmp_path):
         backup=BackupService(
             fakes.links, fakes.sources, fakes.filters, fakes.feeds, fakes.settings, ImageService(fakes.images)
         ),
+        updates=UpdateService(fakes.releases, current="0.2.0"),
     )
     web = tmp_path / "web"
     web.mkdir()
@@ -606,3 +611,24 @@ def test_share_errors_map_to_http(world):
     rejected = client.post("/api/share/import", json={"bundle": bad, "choices": [choice]})
     assert rejected.status_code == 422
     assert rejected.json()["detail"] == "Link 'x': URL is required"
+
+
+def test_version_without_a_release(world):
+    assert world.client.get("/api/version").json() == {
+        "current": "0.2.0",
+        "latest": None,
+        "newer": False,
+        "url": None,
+        "published_at": None,
+    }
+
+
+def test_version_with_a_release(tmp_path):
+    feed = FakeReleaseFeed(Release("0.3.0", "https://github.com/lmtani/opsdeck/releases/tag/v0.3.0"))
+    services = SimpleNamespace(updates=UpdateService(feed, current="0.2.0"))
+    web = tmp_path / "web"
+    web.mkdir()
+    client = TestClient(create_app(services, web_dir=web, images_dir=tmp_path / "images"))  # type: ignore[arg-type]
+    body = client.get("/api/version").json()
+    assert (body["latest"], body["newer"]) == ("0.3.0", True)
+    assert body["url"].endswith("/v0.3.0")
