@@ -117,6 +117,23 @@ jobs:
           done
           test -f "$OPSDECK_DATA_DIR/opsdeck.db"
 
+      # the launchd agent, for real: installed, answering, then removed without a trace
+      - name: Service (macOS)
+        if: runner.os == 'macOS'
+        working-directory: ${{ runner.temp }}
+        env:
+          OPSDECK_DATA_DIR: ${{ runner.temp }}/opsdeck-service-data
+        run: |
+          opsdeck service install --port 8766
+          curl -sf http://127.0.0.1:8766/api/version | grep -q '"service":true'
+          opsdeck service status
+          opsdeck service restart
+          for _ in $(seq 30); do curl -sf http://127.0.0.1:8766/api/health && break; sleep 1; done
+          opsdeck service uninstall
+          test ! -e ~/Library/LaunchAgents/io.github.lmtani.opsdeck.plist
+          sleep 2
+          ! curl -sf http://127.0.0.1:8766/api/health
+
   # The image must build and start on both architectures. arm64 runs under
   # QEMU emulation; once the repository is public it can move to the native
   # `ubuntu-24.04-arm` runners, which are free for public repositories.

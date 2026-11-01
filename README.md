@@ -24,6 +24,21 @@ If the shell does not find `opsdeck`, run `uv tool update-shell` once and open a
 
 The Links tab works right away; the other two need credentials. OpsDeck can also be installed as an app from Chrome or Edge (the install icon in the address bar).
 
+## Start at login
+
+To keep OpsDeck running in the background, started whenever you log in and restarted if it stops unexpectedly:
+
+```bash
+opsdeck service install      # a systemd user service on Linux, a launchd agent on macOS; no sudo
+opsdeck service status       # whether it runs, and where its logs are
+opsdeck service restart      # after `uv tool upgrade opsdeck`
+opsdeck service uninstall    # stop it and remove it; your data stays
+```
+
+`install` takes `--host` and `--port`, and keeps the OpsDeck variables set in your shell (`GITHUB_TOKEN`, `DASHBOARD_DB_URL`, `OPSDECK_DATA_DIR`…) and its `PATH` in the service definition, readable only by you; run it again after changing them. On Linux it starts when you log in; `loginctl enable-linger` makes it start at boot instead.
+
+To remove OpsDeck completely: `opsdeck service uninstall`, then `uv tool uninstall opsdeck`, then delete the data directory that `opsdeck info` shows.
+
 ## Credentials
 
 **GitHub**: if the `gh` CLI is logged in, nothing else is needed. Otherwise set `GITHUB_TOKEN` to a [classic token](https://github.com/settings/tokens) with the `repo` and `read:org` scopes. A [fine-grained token](https://github.com/settings/personal-access-tokens) also works for one organization: set its resource owner to the organization and grant *Events* (organization), *Metadata*, *Pull requests* and *Contents* (repository) read access; some organizations must approve it or do not allow it. When the token falls short, the GitHub tab says what to change.

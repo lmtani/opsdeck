@@ -9,6 +9,7 @@ import { escapeHtml, LOCALE, toast } from "./ui.js";
 
 const RECHECK_MS = 60 * 60 * 1000;
 const UPGRADE = "uv tool upgrade opsdeck";
+const UPGRADE_SERVICE = `${UPGRADE} && opsdeck service restart`;
 const REINSTALL = "uv tool install --force git+https://github.com/lmtani/opsdeck@stable";
 const IMAGE = "ghcr.io/lmtani/opsdeck:latest";
 
@@ -21,14 +22,18 @@ function render(info) {
   const when = info.published_at
     ? ` · released ${new Date(info.published_at).toLocaleDateString(LOCALE, { dateStyle: "medium" })}`
     : "";
+  const upgrade = info.service ? UPGRADE_SERVICE : UPGRADE;
+  const after = info.service
+    ? "The service restarts on the new version; the database migrates itself."
+    : "Then restart <code>opsdeck</code>; the database migrates itself.";
   document.getElementById("update-pop").innerHTML = `
     <p class="update-title">OpsDeck ${escapeHtml(info.latest)} is out</p>
     <p class="update-sub">You have ${escapeHtml(info.current)}${escapeHtml(when)}</p>
     <a class="theme-option" href="${escapeHtml(info.url)}" target="_blank" rel="noopener">Release notes ↗</a>
-    <button type="button" class="update-command" data-copy="${UPGRADE}" title="Copy">
-      <code>${UPGRADE}</code><span aria-hidden="true">⧉</span>
+    <button type="button" class="update-command" data-copy="${upgrade}" title="Copy">
+      <code>${upgrade}</code><span aria-hidden="true">⧉</span>
     </button>
-    <p class="update-note">Then restart <code>opsdeck</code>; the database migrates itself. Installed from a release tag, which <code>upgrade</code> keeps? Switch to <code>@stable</code> once:</p>
+    <p class="update-note">${after} Installed from a release tag, which <code>upgrade</code> keeps? Switch to <code>@stable</code> once:</p>
     <button type="button" class="update-command" data-copy="${REINSTALL}" title="Copy">
       <code>…/opsdeck@stable --force</code><span aria-hidden="true">⧉</span>
     </button>
