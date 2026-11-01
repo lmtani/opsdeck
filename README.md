@@ -10,16 +10,19 @@ What each tab does is described in [docs/features.md](docs/features.md).
 
 ## Install
 
-Requirements: [uv](https://docs.astral.sh/uv/) (it fetches Python 3.12 if needed).
+Works on Linux and macOS (Intel or Apple silicon). Requirements: [uv](https://docs.astral.sh/uv/), which fetches Python 3.12 if needed; no compiler or Xcode is needed.
 
 ```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh   # or, on macOS: brew install uv
 uv tool install git+https://github.com/lmtani/opsdeck
 opsdeck             # http://127.0.0.1:8765
 ```
 
+If the shell does not find `opsdeck`, run `uv tool update-shell` once and open a new terminal.
+
 Update with `uv tool upgrade opsdeck`; the database migrates itself on the next start. `opsdeck info` shows the version and where the data is: a SQLite file in the user's data directory (`~/.local/share/opsdeck` on Linux, `~/Library/Application Support/opsdeck` on macOS), created on the first run. The box button in the top bar downloads a backup of everything and restores one, here or on another machine.
 
-The Links tab works right away; the other two need credentials. OpsDeck can also be installed as an app from Chrome or Edge (the install icon in the address bar).
+The Links tab works right away; the other two need credentials. Command cards run in the local shell (`/bin/sh`), so a card made on Linux (`xdg-open`, a Linux path) needs its command adjusted on macOS (`open -a IGV`, for example). OpsDeck can also be installed as an app from Chrome or Edge (the install icon in the address bar).
 
 ## Credentials
 
