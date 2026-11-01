@@ -102,14 +102,14 @@ def test_a_failing_systemctl_says_what_failed(tmp_path):
 
 
 def test_launchd_install_replaces_a_loaded_agent_and_uninstall_boots_it_out(tmp_path):
-    run = FakeRun(stdout="state = running\npid = 42\n")
+    run = FakeRun(stdout="state = running\npid = 42\n\tendpoints = {\n\t\tstate = active\n")
     agent = LaunchdAgent(run, tmp_path, uid=501)
     agent.install(spec_for("127.0.0.1", 8765, {}, executable=PYTHON))
     plist = tmp_path / "Library" / "LaunchAgents" / f"{LABEL}.plist"
     assert plistlib.loads(plist.read_bytes())["Label"] == LABEL
     assert ["launchctl", "bootout", f"gui/501/{LABEL}"] in run.calls  # was loaded: reloaded
     assert run.calls[-1] == ["launchctl", "bootstrap", "gui/501", str(plist)]
-    assert agent.running() and "pid = 42" in agent.status()
+    assert agent.running() and agent.status() == "state = running\npid = 42\n"
 
     agent.uninstall()
     assert not plist.exists()

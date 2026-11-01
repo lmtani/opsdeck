@@ -235,10 +235,14 @@ class LaunchdAgent(ServiceManager):
         result = self._run(["launchctl", "print", self._target])
         if result.returncode != 0:
             return "not loaded\n"
-        keep = ("state =", "pid =", "last exit code =")
-        return "".join(
-            line.strip() + "\n" for line in result.stdout.splitlines() if line.strip().startswith(keep)
-        )
+        found: dict[str, str] = {}  # the agent's own fields come first; nested blocks repeat them
+        for line in result.stdout.splitlines():
+            key = next(
+                (k for k in ("state =", "pid =", "last exit code =") if line.strip().startswith(k)), None
+            )
+            if key and key not in found:
+                found[key] = line.strip()
+        return "".join(f"{line}\n" for line in found.values())
 
 
 def manager_for(
