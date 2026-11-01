@@ -81,9 +81,14 @@ jobs:
         run: uv lock --check
 
   # What `uv tool install` gets: the wheel must carry the web assets and the
-  # migrations, and run outside the clone.
+  # migrations, and run outside the clone. Like `uv tool install`, it resolves
+  # the dependencies afresh (no lock), on Linux and on Apple silicon macOS.
   package:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -104,6 +109,7 @@ jobs:
           uv tool install "$WHEEL_DIR"/*.whl
           opsdeck --version
           opsdeck info
+          python3 -c "import platform; print(platform.system(), platform.machine())"
           opsdeck &
           for _ in $(seq 60); do curl -sf http://127.0.0.1:8765/api/health && break; sleep 1; done
           for path in / /js/main.js /css/app.css /manifest.json; do
