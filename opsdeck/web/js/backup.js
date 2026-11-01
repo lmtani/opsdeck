@@ -39,8 +39,11 @@ async function restoreFrom(file) {
   const when = summary.created_at
     ? ` from ${new Date(summary.created_at).toLocaleString(LOCALE, { hourCycle: "h23", dateStyle: "medium", timeStyle: "short" })}`
     : "";
+  const skipped = summary.command_cards
+    ? ` ${plural(summary.command_cards, "command card")} in it will be left out: OpsDeck no longer runs commands.`
+    : "";
   confirmDanger(
-    `The backup${when} holds ${describe(summary)}. Restoring it replaces every card, log source, filter, feed and setting here. Download a backup first if you may want them back.`,
+    `The backup${when} holds ${describe(summary)}.${skipped} Restoring it replaces every card, log source, filter, feed and setting here. Download a backup first if you may want them back.`,
     async () => {
       try {
         const restored = await api.restoreBackup(backup);

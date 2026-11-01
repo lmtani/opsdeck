@@ -27,10 +27,6 @@ class LogProviderError(ExternalServiceError):
     """The log backend (the Cloud Logging API) failed."""
 
 
-class CommandError(ExternalServiceError):
-    """Launching a local command shortcut failed."""
-
-
 class GithubError(ExternalServiceError):
     """The GitHub API failed, rejected the token or is rate limited."""
 

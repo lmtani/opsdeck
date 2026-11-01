@@ -7,7 +7,7 @@ import pytest
 from opsdeck.domain.common import utc_now
 from opsdeck.domain.errors import ValidationError
 from opsdeck.domain.github import EventKind, EventSubject, FeedSpec, GithubFeed, SubjectType
-from opsdeck.domain.links import Link, LinkKind
+from opsdeck.domain.links import Link, is_command_card
 from opsdeck.domain.logs import (
     Freshness,
     LogCount,
@@ -26,19 +26,22 @@ from tests.fakes import ts
 # ----- links -----------------------------------------------------------------
 
 
-def test_link_new_trims_and_parses_kind():
-    link = Link.new(title="  IGV ", kind="command", command=" igv.sh ")
-    assert (link.title, link.kind, link.command, link.url) == ("IGV", LinkKind.COMMAND, "igv.sh", "")
+def test_link_new_trims():
+    link = Link.new(title="  Console ", url=" https://x ")
+    assert (link.title, link.url) == ("Console", "https://x")
     assert link.id and link.created_at.tzinfo is not None
+
+
+def test_command_cards_are_recognized_in_old_files():
+    assert is_command_card({"kind": "command", "command": "igv.sh"})
+    assert not is_command_card({"kind": "url"}) and not is_command_card({}) and not is_command_card("x")
 
 
 @pytest.mark.parametrize(
     ("fields", "message"),
     [
         (dict(title=" ", url="https://x"), "Title"),
-        (dict(title="x", kind="url", url=" "), "URL"),
-        (dict(title="x", kind="command", command=""), "Command"),
-        (dict(title="x", kind="exec", url="https://x"), "Invalid card type"),
+        (dict(title="x", url=" "), "URL"),
     ],
 )
 def test_invalid_links_cannot_be_built(fields, message):
@@ -50,12 +53,12 @@ def test_invalid_links_cannot_be_built(fields, message):
 
 def test_link_update_keeps_identity_and_rejects_invalid_changes_untouched():
     link = Link.new(title="Console", url="https://x", position=3)
-    link.update(title=" Painel ", url="https://y", category=" GCP ")
-    assert (link.title, link.url, link.category, link.position) == ("Painel", "https://y", "GCP", 3)
+    link.update(title=" Panel ", url="https://y", category=" GCP ")
+    assert (link.title, link.url, link.category, link.position) == ("Panel", "https://y", "GCP", 3)
 
     with pytest.raises(ValidationError):
-        link.update(title="Painel", kind="command", command="")
-    assert (link.kind, link.url) == (LinkKind.URL, "https://y")  # nothing changed
+        link.update(title="Panel 2", url=" ")
+    assert (link.title, link.url) == ("Panel", "https://y")  # nothing changed
 
 
 # ----- logs ------------------------------------------------------------------

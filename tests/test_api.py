@@ -9,13 +9,13 @@ from fastapi.testclient import TestClient
 
 from opsdeck.application.backup import BackupService
 from opsdeck.application.github import GithubActivityService, GithubFeedService
-from opsdeck.application.links import CommandService, ImageService, LinkService
+from opsdeck.application.links import ImageService, LinkService
 from opsdeck.application.logs import LogFilterService, LogQueryService, LogSourceService, LogWatchService
 from opsdeck.application.settings import SettingsService
 from opsdeck.application.sharing import SharingService
 from opsdeck.application.updates import UpdateService
 from opsdeck.domain.common import utc_now
-from opsdeck.domain.errors import CommandError, GithubError, LogProviderError
+from opsdeck.domain.errors import GithubError, LogProviderError
 from opsdeck.domain.github import (
     Contribution,
     ContributionKind,
@@ -33,7 +33,6 @@ from opsdeck.domain.logs import LogEntry, LogSourceKind, SeverityBand
 from opsdeck.domain.updates import Release
 from opsdeck.presentation.api import Services, create_app
 from tests.fakes import (
-    FakeCommandRunner,
     FakeGithubProvider,
     FakeImageStore,
     FakeLogProvider,
@@ -57,7 +56,6 @@ def world(tmp_path):
         sources=InMemorySourceRepository(),
         feeds=InMemoryFeedRepository(),
         settings=InMemorySettingsRepository(),
-        runner=FakeCommandRunner(),
         logs=FakeLogProvider(),
         github=FakeGithubProvider(),
         images=FakeImageStore(),
@@ -66,7 +64,6 @@ def world(tmp_path):
     )
     services = Services(
         links=LinkService(fakes.links),
-        commands=CommandService(fakes.runner, fakes.links),
         sources=LogSourceService(fakes.sources, fakes.filters),
         filters=LogFilterService(fakes.filters, fakes.sources),
         logs=LogQueryService({LogSourceKind.GCP: fakes.logs}, fakes.sources, fakes.filters),
@@ -144,19 +141,11 @@ def test_links_order_route_wins_over_the_id_route(world):
     assert [item["id"] for item in client.get("/api/links").json()] == [ids[2], ids[0], ids[1]]
 
 
-def test_run_command_link(world):
-    client = world.client
-    command = client.post("/api/links", json={"title": "IGV", "kind": "command", "command": "igv.sh"}).json()
-    url = client.post("/api/links", json={"title": "Console", "url": "https://x"}).json()
-
-    assert client.post(f"/api/links/{command['id']}/run").json() == {"message": "Program started"}
-    assert world.runner.ran == ["igv.sh"]
-    assert client.post(f"/api/links/{url['id']}/run").status_code == 422
-    assert client.post("/api/links/ghost/run").status_code == 404
-
-    world.runner.error = CommandError("did not open")
-    failed = client.post(f"/api/links/{command['id']}/run")
-    assert failed.status_code == 502 and failed.json()["detail"] == "did not open"
+def test_links_have_no_command_route(world):
+    """Command cards are gone: nothing on the server launches programs."""
+    link = world.client.post("/api/links", json={"title": "Console", "url": "https://x"}).json()
+    assert "kind" not in link and "command" not in link
+    assert world.client.post(f"/api/links/{link['id']}/run").status_code in (404, 405)
 
 
 # ----- logs ------------------------------------------------------------------
@@ -590,7 +579,6 @@ def test_share_export_check_and_import_round_trip(world):
             "detail": "p",
             "status": "conflict",
             "error": "",
-            "command": "",
         }
     ]
 

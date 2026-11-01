@@ -213,11 +213,7 @@ async function readText(text) {
   try {
     const checks = await api.checkShare(bundle);
     const choices = new Map(
-      checks.map((check) => [
-        keyOf(check),
-        // a command card runs on this machine: the user opts in explicitly
-        { on: check.status !== "invalid" && !check.command, action: "create" },
-      ])
+      checks.map((check) => [keyOf(check), { on: check.status !== "invalid", action: "create" }])
     );
     review = { bundle, checks, choices };
     if (document.getElementById("share-modal").hidden) openModal("share-modal");
@@ -250,13 +246,7 @@ function rowHtml(check) {
         <input type="checkbox" ${choice.on ? "checked" : ""} ${invalid ? "disabled" : ""} />
         <span class="share-main">
           <span class="share-name">${escapeHtml(check.name || `#${check.index + 1}`)}</span>
-          ${check.detail && !check.command ? `<span class="share-detail">${escapeHtml(check.detail)}</span>` : ""}
-          ${
-            check.command
-              ? `<span class="share-warn">⚠ runs a command on this machine:
-                  <code>${escapeHtml(check.command)}</code></span>`
-              : ""
-          }
+          ${check.detail ? `<span class="share-detail">${escapeHtml(check.detail)}</span>` : ""}
           ${invalid ? `<span class="share-error">${escapeHtml(check.error)}</span>` : ""}
         </span>
       </label>

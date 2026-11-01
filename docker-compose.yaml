@@ -5,8 +5,6 @@
 #   docker compose up -d --build                  # or an image built from this checkout
 #
 # OPSDECK_VERSION in .env pins a release (e.g. 0.2.0); the default is latest.
-#
-# Command cards are off: they would launch programs inside the container.
 
 services:
   db:
@@ -37,7 +35,6 @@ services:
       DASHBOARD_DB_USER: root
       DASHBOARD_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-opsdeck}
       DASHBOARD_DB_NAME: opsdeck
-      DASHBOARD_COMMANDS: "off"
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp-adc.json
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
     volumes:

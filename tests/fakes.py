@@ -24,7 +24,7 @@ from opsdeck.domain.github import (
     ReviewState,
     SubjectType,
 )
-from opsdeck.domain.links import CommandRunner, ImageStore, Link, LinkRepository
+from opsdeck.domain.links import ImageStore, Link, LinkRepository
 from opsdeck.domain.logs import (
     LogCount,
     LogEntry,
@@ -103,18 +103,6 @@ def gcp_source(project: str = "proj-x", name: str | None = None, id_: str | None
     if id_:
         source.id = id_
     return source
-
-
-class FakeCommandRunner(CommandRunner):
-    def __init__(self, error: Exception | None = None):
-        self.ran: list[str] = []
-        self.error = error
-
-    def run(self, command):
-        self.ran.append(command)
-        if self.error:
-            raise self.error
-        return "Program started"
 
 
 class FakeLogProvider(LogProvider):

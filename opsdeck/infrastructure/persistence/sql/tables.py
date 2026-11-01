@@ -34,8 +34,6 @@ links = Table(
     _id(),
     Column("title", String(80), nullable=False),
     Column("url", Text, nullable=False),
-    _text("kind", 16, "url"),
-    _text("command", 1024),
     _text("description", 240),
     Column("image_url", Text, nullable=False),
     _text("category", 40),

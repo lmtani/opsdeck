@@ -11,7 +11,7 @@ from dataclasses import asdict, fields
 
 from opsdeck.domain.common import EPOCH, format_timestamp, parse_timestamp
 from opsdeck.domain.github import EventKind, GithubFeed
-from opsdeck.domain.links import Link, LinkKind
+from opsdeck.domain.links import Link
 from opsdeck.domain.logs import Freshness, LogFilter, LogSource, LogSourceKind
 from opsdeck.domain.settings import AppSettings
 
@@ -27,14 +27,12 @@ def _created_at(row: dict):
 
 def link_to_row(link: Link) -> dict:
     row = asdict(link)
-    row["kind"] = link.kind.value
     row["created_at"] = _text(link.created_at)
     return row
 
 
 def row_to_link(row: dict) -> Link:
     values = dict(row)
-    values["kind"] = LinkKind(values.get("kind") or LinkKind.URL)
     values["created_at"] = _created_at(row)
     return Link(**values)
 

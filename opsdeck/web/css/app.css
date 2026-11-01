@@ -560,8 +560,6 @@ body {
   color: var(--text-dim);
 }
 .card-host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card.is-command { cursor: pointer; }
-.card-host.is-cmd { color: var(--accent); }
 .card-tag {
   margin-left: auto;
   flex-shrink: 0;
@@ -2565,8 +2563,6 @@ body {
 .share-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .share-name { font-weight: 600; font-size: 13.5px; }
 .share-detail { font: 11px var(--font-mono); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.share-warn { font-size: 12px; color: var(--warn); }
-.share-warn code { font: 11.5px var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
 .share-error { font-size: 12px; color: var(--danger); }
 .share-side { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .share-badge { padding: 2px 8px; border: 1px solid var(--accent-soft); border-radius: 999px; font: 10.5px var(--font-mono); color: var(--accent); }

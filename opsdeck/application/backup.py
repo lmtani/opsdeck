@@ -7,7 +7,8 @@ creation times and reading marks (watched filters, feed marks). Uploaded card
 images travel inside it as data URIs. A restore replaces what is there: it
 builds and checks every entity first, writes the backup's items over the
 current ones and only then removes what the backup does not have, so a
-failure halfway leaves a mix rather than an empty dashboard.
+failure halfway leaves a mix rather than an empty dashboard. Command cards,
+which older OpsDecks had, are left out of a restore and counted.
 """
 
 import types
@@ -22,7 +23,7 @@ from opsdeck.application.sharing import decode_image_uri, encode_image_uri
 from opsdeck.domain.common import format_timestamp, parse_timestamp, utc_now
 from opsdeck.domain.errors import ValidationError
 from opsdeck.domain.github import GithubFeed, GithubFeedRepository
-from opsdeck.domain.links import Link, LinkRepository
+from opsdeck.domain.links import Link, LinkRepository, is_command_card
 from opsdeck.domain.logs import LogFilter, LogFilterRepository, LogSource, LogSourceRepository
 from opsdeck.domain.repository import Repository
 from opsdeck.domain.settings import AppSettings, SettingsRepository
@@ -41,6 +42,7 @@ class BackupSummary:
     log_filters: int
     github_feeds: int
     images: int
+    command_cards: int = 0  # left out: OpsDeck no longer has command cards
 
 
 def _plain(value: Any) -> Any:
@@ -128,6 +130,7 @@ class _Plan:
     settings: AppSettings
     images: dict[str, tuple[bytes, str]]  # upload URL in the backup -> (content, extension)
     created_at: datetime | None
+    command_cards: int = 0
 
     def summary(self) -> BackupSummary:
         return BackupSummary(
@@ -137,6 +140,7 @@ class _Plan:
             log_filters=len(self.filters),
             github_feeds=len(self.feeds),
             images=len(self.images),
+            command_cards=self.command_cards,
         )
 
 
@@ -218,6 +222,12 @@ class BackupService:
         if version > BACKUP_VERSION:
             raise ValidationError("This backup comes from a newer OpsDeck; update this one to restore it")
         created = backup.get("created_at")
+        links = backup.get("links", [])
+        command_cards = 0
+        if isinstance(links, list):
+            kept = [item for item in links if not is_command_card(item)]
+            command_cards = len(links) - len(kept)
+            backup = {**backup, "links": kept}
         plan = _Plan(
             links=self._entities(backup, "links", Link, "card"),
             sources=self._entities(backup, "log_sources", LogSource, "log source"),
@@ -226,7 +236,10 @@ class BackupService:
             settings=self._settings_of(backup.get("settings")),
             images=self._images_of(backup.get("images")),
             created_at=parse_timestamp(created) if isinstance(created, str) else None,
+            command_cards=command_cards,
         )
+        used = {link.image_url for link in plan.links}
+        plan.images = {url: image for url, image in plan.images.items() if url in used}
         source_ids = {source.id for source in plan.sources}
         for log_filter in plan.filters:
             if log_filter.source_id not in source_ids:

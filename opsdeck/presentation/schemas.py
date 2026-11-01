@@ -25,7 +25,6 @@ from opsdeck.domain.github import (
     ReviewState,
     SubjectType,
 )
-from opsdeck.domain.links import LinkKind
 from opsdeck.domain.logs import Freshness, LogSourceKind, Refinement, SeverityBand, TimeRange
 from opsdeck.domain.settings import EVERY_CHOICES
 
@@ -33,8 +32,6 @@ from opsdeck.domain.settings import EVERY_CHOICES
 class LinkIn(BaseModel):
     title: str = Field(min_length=1)
     url: str = ""
-    kind: LinkKind = LinkKind.URL
-    command: str = ""
     description: str = ""
     image_url: str = ""
     category: str = ""
@@ -47,10 +44,6 @@ class LinkOut(LinkIn):
     id: str
     position: int = 0
     created_at: datetime
-
-
-class CommandResultOut(BaseModel):
-    message: str
 
 
 class ReorderIn(BaseModel):
@@ -540,6 +533,7 @@ class BackupSummaryOut(BaseModel):
     log_filters: int
     github_feeds: int
     images: int
+    command_cards: int = 0  # left out of the restore: OpsDeck no longer has command cards
 
 
 class ShareExportIn(BaseModel):
@@ -557,7 +551,6 @@ class ImportCheckOut(BaseModel):
     detail: str
     status: ImportStatus
     error: str = ""
-    command: str = ""
 
 
 class ImportChoiceIn(BaseModel):

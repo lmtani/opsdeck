@@ -53,7 +53,7 @@ def filled() -> Install:
     install = Install()
     image_url = install.images.save_image(PNG, "cover.png")
     install.links.save(Link.new(title="Console", url="https://console.cloud.google.com", position=2))
-    install.links.save(Link.new(title="IGV", kind="command", command="igv.sh", image_url=image_url))
+    install.links.save(Link.new(title="Wiki", url="https://wiki.example", image_url=image_url))
     source = LogSource.new(name="Prod", kind="gcp", config={"project": "proj-x"})
     install.sources.save(source)
     log_filter = LogFilter.new(
@@ -108,8 +108,8 @@ def test_a_backup_restores_everything_exactly_on_another_install():
     assert feeds[0].last_seen_at == ts("2026-10-29T08:00:00Z")
     by_id = {link.id: link for link in links}
     assert set(by_id) == {link.id for link in origin_links}  # the stale card is gone
-    igv = next(link for link in links if link.title == "IGV")
-    assert igv.image_url == "/images/2.png" and target.store.load(igv.image_url) == (PNG, "png")
+    wiki = next(link for link in links if link.title == "Wiki")
+    assert wiki.image_url == "/images/2.png" and target.store.load(wiki.image_url) == (PNG, "png")
     console = next(link for link in links if link.title == "Console")
     assert console == next(link for link in origin_links if link.title == "Console")
 
@@ -150,5 +150,30 @@ def test_an_upload_missing_from_the_backup_leaves_the_card_without_image():
     backup["images"] = {}
     target = Install()
     target.backup.restore(backup)
-    igv = next(link for link in target.links.list_all() if link.title == "IGV")
-    assert igv.image_url == ""
+    wiki = next(link for link in target.links.list_all() if link.title == "Wiki")
+    assert wiki.image_url == ""
+
+
+def test_command_cards_of_an_older_backup_are_left_out():
+    backup = through_a_file(filled().backup.create())
+    image_url = backup["links"][1]["image_url"]
+    backup["links"].append(
+        {
+            **backup["links"][0],
+            "id": "c" * 32,
+            "title": "IGV",
+            "url": "",
+            "kind": "command",
+            "command": "igv.sh",
+        }
+    )
+    backup["links"].append({**backup["links"][1], "id": "d" * 32, "image_url": "/images/gone.png"})
+    backup["links"][-1].update(kind="command", command="x", url="", title="Deploy")
+    backup["images"]["/images/gone.png"] = backup["images"][image_url]
+
+    target = Install()
+    summary = target.backup.check(backup)
+    assert (summary.links, summary.command_cards, summary.images) == (2, 2, 1)
+    target.backup.restore(backup)
+    assert [link.title for link in target.links.list_all()] == ["Console", "Wiki"]
+    assert len(target.store.saved) == 1  # the command card's image is not saved

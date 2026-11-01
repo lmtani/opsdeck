@@ -1,7 +1,7 @@
 """Row mapping of the SQL repositories."""
 
 from opsdeck.domain.github import EventKind, GithubFeed
-from opsdeck.domain.links import Link, LinkKind
+from opsdeck.domain.links import Link
 from opsdeck.domain.logs import Freshness, LogFilter, LogSource, LogSourceKind
 from opsdeck.domain.settings import AppSettings
 from opsdeck.infrastructure.persistence.rows import (
@@ -18,8 +18,8 @@ from opsdeck.infrastructure.persistence.rows import (
 
 
 def test_link_and_filter_enums_become_plain_values_and_back():
-    link = Link(id="l" * 32, title="IGV", kind=LinkKind.COMMAND, command="igv.sh")
-    assert link_to_row(link)["kind"] == "command"
+    link = Link(id="l" * 32, title="Console", url="https://x")
+    assert set(link_to_row(link)) >= {"title", "url", "created_at"} and "kind" not in link_to_row(link)
     assert row_to_link(link_to_row(link)) == link
 
     log_filter = LogFilter(

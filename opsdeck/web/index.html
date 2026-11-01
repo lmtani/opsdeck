@@ -270,21 +270,9 @@
             <datalist id="category-list"></datalist>
           </label>
         </div>
-        <div class="field">
-          <span>Type</span>
-          <div class="chips" id="link-kind" style="margin-bottom:0">
-            <button type="button" class="chip is-active" data-kind="url">Open URL</button>
-            <button type="button" class="chip" data-kind="command">Run command</button>
-          </div>
-        </div>
         <label class="field" id="link-url-field">
           <span>URL *</span>
           <input name="url" required placeholder="https://console.cloud.google.com/home?project=…" />
-        </label>
-        <label class="field" id="link-command-field" hidden>
-          <span>Command *</span>
-          <input name="command" class="mono" placeholder="bash ~/Downloads/IGV_Linux_2.19.7/igv.sh" />
-          <small class="field-hint">Runs locally through your shell. Asks for confirmation when the card is clicked.</small>
         </label>
         <label class="field">
           <span>Description</span>
@@ -298,7 +286,7 @@
               <input name="image_url" id="image-url-input" placeholder="https://… or upload a file" />
               <div class="image-buttons">
                 <label class="btn btn-ghost btn-sm upload-btn">
-                  ⬆ Enviar arquivo
+                  ⬆ Upload file
                   <input type="file" id="image-file" accept=".png,.jpg,.jpeg,.gif,.webp,.svg" hidden />
                 </label>
                 <button type="button" class="btn btn-ghost btn-sm" id="image-clear-btn">Clear</button>
