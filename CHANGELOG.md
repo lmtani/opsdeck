@@ -1,6 +1,6 @@
 # Changelog
 
-Every release of OpsDeck, from its Conventional Commits. Install or update with `uv tool upgrade opsdeck`; images are at `ghcr.io/lmtani/opsdeck`.
+Every release of OpsDeck, from its Conventional Commits. Install with `uv tool install git+https://github.com/lmtani/opsdeck@stable` and update with `uv tool upgrade opsdeck`; images are at `ghcr.io/lmtani/opsdeck`.
 
 ## 0.2.0 (2026-11-01)
 
@@ -37,6 +37,7 @@ Every release of OpsDeck, from its Conventional Commits. Install or update with 
 - Install OpsDeck with `uv tool install` and keep its data in the user's data directory ([08f657c](https://github.com/lmtani/opsdeck/commit/08f657cebe0f03543fbf8f356d49575a18f9df4c))
 - Release workflow and an in-app notice of new releases ([be75ff3](https://github.com/lmtani/opsdeck/commit/be75ff31dc1f0400e2f894c6441c87cc5e05360f))
 - **release:** Release notes and changelog written by git-cliff from the Conventional Commits ([a133a6b](https://github.com/lmtani/opsdeck/commit/a133a6b7710eda96ce52f420d6fd8214ea8df627))
+- **release:** A stable branch that follows releases, for uv tool upgrade ([2910fff](https://github.com/lmtani/opsdeck/commit/2910fff0833779411400a6e81645fd81ecc07865))
 
 ### Bug fixes
 
