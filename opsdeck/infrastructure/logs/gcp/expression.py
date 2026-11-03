@@ -35,6 +35,10 @@ def _quote(text: str) -> str:
     return f'"{escaped}"'
 
 
+def string_literal(text: str) -> str:
+    return _quote(text)
+
+
 def _field(path: tuple[str, ...]) -> str:
     """labels."k8s-pod/app": segments that are not identifiers are quoted."""
     return ".".join(part if _PLAIN_SEGMENT.match(part) else _quote(part) for part in path)

@@ -9,19 +9,23 @@ Credentials are refreshed before the first query, so expired or revoked ones
 fail at once with instructions instead of after a minute of gRPC retries.
 `describe` returns the equivalent gcloud command for the UI copy button and
 `console_url` the query in the Logs Explorer; both, and the refinements
-spelled as Cloud Logging clauses, come from expression.py.
+spelled as Cloud Logging clauses, come from expression.py. It is also the
+DeployFeed of GCP sources: the Cloud Run and App Engine deploys of the
+project's audit log (deploys.py).
 """
 
 import shlex
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from itertools import islice
 from pathlib import Path
 
+from opsdeck.domain.deploys import Deploy, DeployFeed, DeployTarget, DeployWindow
 from opsdeck.domain.errors import LogProviderError
 from opsdeck.domain.logs import LogCount, LogEntry, LogProvider, LogQuery, LogSource, TimeRange
+from opsdeck.infrastructure.logs.gcp.deploys import deploy_targets, deploys_filter, parse_deploys
 from opsdeck.infrastructure.logs.gcp.entries import parse_entry
 from opsdeck.infrastructure.logs.gcp.expression import (
     api_filter,
@@ -31,6 +35,7 @@ from opsdeck.infrastructure.logs.gcp.expression import (
 )
 
 SCOPES = ("https://www.googleapis.com/auth/logging.read",)
+MAX_AUDIT_ENTRIES = 300  # a week of busy deploys, each App Engine one counting twice
 LOGIN_HINT = (
     "Run `gcloud auth application-default login`; with Docker, copy the new"
     " ~/.config/gcloud/application_default_credentials.json to secrets/gcp-adc.json"
@@ -62,7 +67,7 @@ def _default_client(project: str, credentials):
     return cloud_logging.Client(project=project, credentials=credentials)
 
 
-class CloudLoggingApiProvider(LogProvider):
+class CloudLoggingApiProvider(LogProvider, DeployFeed):
     def __init__(
         self,
         credentials_file: str = "",
@@ -104,6 +109,15 @@ class CloudLoggingApiProvider(LogProvider):
         counted = replace(query, time_range=TimeRange(start, end), bands=())
         items = self._read(source, api_filter(counted, start), cap)
         return LogCount.of((item.get("severity") or "" for item in items), capped=len(items) >= cap)
+
+    def targets(self, entries: Sequence[LogEntry]) -> list[DeployTarget]:
+        return deploy_targets(entries)
+
+    def deploys(self, source: LogSource, window: DeployWindow) -> list[Deploy]:
+        if not window.targets:
+            return []
+        filter_ = deploys_filter(source.config["project"], window)
+        return parse_deploys(self._read(source, filter_, MAX_AUDIT_ENTRIES), window)
 
     def _read(self, source: LogSource, filter_: str, limit: int) -> list[dict]:
         """Up to `limit` entries, newest first, as API records; the library's

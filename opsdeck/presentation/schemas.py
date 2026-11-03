@@ -13,6 +13,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from opsdeck.application.sharing import Bundle, ImportAction, ImportStatus, ItemType
+from opsdeck.domain.deploys import DeployKind, DeployPlatform, DeployTarget
 from opsdeck.domain.errors import ValidationError
 from opsdeck.domain.github import (
     ContributionKind,
@@ -168,12 +169,56 @@ class LogEntryOut(BaseModel):
     fields: dict = {}
 
 
+class DeployTargetModel(BaseModel):
+    """A deployable thing: a Cloud Run service or job, an App Engine service."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    platform: DeployPlatform
+    name: str = Field(min_length=1, max_length=100)
+
+    def to_target(self) -> DeployTarget:
+        return DeployTarget(self.platform, self.name)
+
+
 class LogQueryOut(BaseModel):
     source_id: str
     expression: str  # what ran, refinements included, in the source's language
     command: str
     console_url: str = ""
     entries: list[LogEntryOut]
+    deploy_targets: list[DeployTargetModel] = []  # what the entries came from, for POST /api/deploys
+
+
+class DeploysIn(BaseModel):
+    """The deploys of some targets of a source over [start, end)."""
+
+    source_id: str = Field(min_length=1)
+    targets: list[DeployTargetModel] = Field(default_factory=list, max_length=20)
+    start: datetime
+    end: datetime
+
+
+class TrafficShareOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    target: str  # the revision or version; "" = the latest revision
+    percent: int
+
+
+class DeployOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    target: DeployTargetModel
+    at: datetime
+    kind: DeployKind
+    revision: str = ""
+    image: str = ""
+    actor: str = ""
+    failed: bool = False
+    message: str = ""
+    traffic: list[TrafficShareOut] = []
+    live: bool = True
 
 
 def _every_choices() -> dict[str, list[int]]:

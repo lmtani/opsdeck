@@ -1031,9 +1031,14 @@ async function loadFilter() {
     view.expression = result.expression;
     view.consoleUrl = result.console_url;
     lastEntries = result.entries;
+    view.deployTargets = result.deploy_targets || [];
+    view.deploys = [];
+    view.deploysProblem = "";
+    view.deploysLoading = view.deployTargets.length > 0; // loadDeploys clears it
     paintEntries({ rise: true });
     renderFieldChips();
     markSeenIfShown(filter, refinements, news);
+    loadDeploys(current);
     const refined = refinements.length ? ` · ${plural(refinements.length, "refinement")}` : "";
     const clipped =
       news && lastEntries.length >= filter.limit ? ` (newest ${filter.limit} shown)` : "";
@@ -1325,6 +1330,7 @@ function renderHistogram(entries, { rise = false } = {}) {
 
   const { start, end, clipped } = histogramRange(dated.map((item) => item.time));
   const span = end - start;
+  view.histRange = { start, end };
   const width = span / HIST_BINS;
   const bins = Array.from({ length: HIST_BINS }, () => ({
     count: 0,
@@ -1373,11 +1379,38 @@ function renderHistogram(entries, { rise = false } = {}) {
       `only since ${escapeHtml(absoluteTime(new Date(start).toISOString()))}</span>`
     : "";
 
+  const deploys = deploysInside(start, end);
+  const marks = deploys
+    .map(
+      ({ deploy, index }) =>
+        `<button type="button" class="log-deploy-mark ${deployClass(deploy)}" data-tooltip data-deploy="${index}" ` +
+        `style="left:${(((Date.parse(deploy.at) - start) / span) * 100).toFixed(2)}%" aria-label="${escapeHtml(deployTitle(deploy))}"></button>`
+    )
+    .join("");
+  const deployKey = deploys.length
+    ? `<span class="log-hist-key log-deploy-key"><i></i>${plural(deploys.length, "deploy")}</span>`
+    : "";
+  const names = (view.deployTargets || []).map((target) => target.name).join(", ");
+  const deployLoading = view.deploysLoading
+    ? `<span class="log-hist-key log-deploy-key is-loading" role="status" data-hint="Looking for deploys" data-hint-sub="${escapeHtml(`Of ${names}, in the project's audit log`)}"><i></i>looking for deploys…</span>`
+    : "";
+  const deployProblem = view.deploysProblem
+    ? `<span class="log-deploy-problem" data-hint="Deploy markers unavailable" data-hint-sub="${escapeHtml(view.deploysProblem)}">deploys unavailable</span>`
+    : "";
+
   node.innerHTML = `
-    <div class="log-hist-bars${rise ? " is-rising" : ""}">${columns}</div>
+    <div class="log-hist-plot">
+      <div class="log-hist-bars${rise ? " is-rising" : ""}">${columns}</div>
+      <div class="log-deploys${view.deploysLoading ? " is-loading" : ""}">${marks}</div>
+    </div>
     <div class="log-hist-axis">${ticks}</div>
-    <div class="log-hist-legend">${legend}${clip}</div>`;
+    <div class="log-hist-legend">${legend}${deployKey}${deployLoading}${deployProblem}${clip}</div>`;
   node.hidden = false;
+  node.querySelectorAll("[data-deploy]").forEach((mark) => {
+    const deploy = view.deploys[Number(mark.dataset.deploy)];
+    tooltipContent.set(mark, () => deployTooltip(deploy));
+    mark.addEventListener("click", () => jumpToDeploy(Number(mark.dataset.deploy)));
+  });
 
   node.querySelectorAll("[data-hist]").forEach((column) => {
     const index = Number(column.dataset.hist);
@@ -1391,11 +1424,178 @@ function renderHistogram(entries, { rise = false } = {}) {
 }
 
 function jumpToEntry(index) {
-  const row = document.getElementById("entries").children[index];
+  const row = document.querySelectorAll("#entries > .entry")[index];
   if (!row) return;
   row.scrollIntoView({ block: "center", behavior: "smooth" });
   row.classList.remove("is-flash");
   void row.offsetWidth; // restart the animation when the same row is picked again
+  row.classList.add("is-flash");
+}
+
+// ----- deploy markers ----------------------------------------------------
+//
+// After a filter's entries arrive, the deploys of the services they came from
+// (result.deploy_targets: Cloud Run services and jobs, App Engine services)
+// over the histogram's span are read from the source's audit log and drawn as
+// marks on the histogram and as rows between the entries, so errors that start
+// right after a deploy stand out. Best effort: a failure only says so in the
+// legend. Not for traces, whose span is a few seconds.
+
+const PLATFORM_LABELS = {
+  cloud_run: "Cloud Run",
+  cloud_run_job: "Cloud Run job",
+  app_engine: "App Engine",
+};
+// the log field that tells a revision or version apart, per platform
+const REVISION_FIELDS = {
+  cloud_run: ["resource", "labels", "revision_name"],
+  app_engine: ["resource", "labels", "version_id"],
+};
+
+async function loadDeploys(current) {
+  const targets = view.deployTargets || [];
+  if (view.mode !== "filter" || !targets.length || !view.histRange) {
+    if (view.deploysLoading) {
+      view.deploysLoading = false;
+      renderHistogram(lastEntries);
+    }
+    return;
+  }
+  const { start, end } = view.histRange;
+  try {
+    const deploys = await api.deploys({
+      source_id: view.source.id,
+      targets,
+      start: new Date(start).toISOString(),
+      end: new Date(end + 1000).toISOString(),
+    });
+    if (view !== current) return;
+    view.deploys = deploys;
+  } catch (error) {
+    if (view !== current) return;
+    view.deploysProblem = error.message;
+  }
+  view.deploysLoading = false;
+  renderHistogram(lastEntries);
+  placeDeployRows();
+}
+
+function deploysInside(start, end) {
+  return (view.deploys || [])
+    .map((deploy, index) => ({ deploy, index }))
+    .filter(({ deploy }) => {
+      const at = Date.parse(deploy.at);
+      return at >= start && at <= end + 1000;
+    });
+}
+
+function deployClass(deploy) {
+  if (deploy.failed) return "is-failed";
+  if (deploy.kind === "traffic") return "is-traffic";
+  return deploy.live ? "is-live" : "is-dormant";
+}
+
+const shortImage = (image) => {
+  const last = image.split("/").pop() || "";
+  return last.replace(/@sha256:([0-9a-f]{12})[0-9a-f]+/, "@sha256:$1");
+};
+
+function shortActor(actor) {
+  if (!actor) return "";
+  const [name, domain = ""] = actor.split("@");
+  return domain.endsWith("gserviceaccount.com") ? name : actor;
+}
+
+function trafficText(traffic) {
+  return traffic.map((share) => `${share.target || "latest"} ${share.percent}%`).join(" · ");
+}
+
+// One line saying what happened, e.g. "api deployed", "default: traffic → v2 100%".
+function deployTitle(deploy) {
+  const name = deploy.target.name;
+  if (deploy.failed)
+    return `${name}: ${deploy.kind === "traffic" ? "traffic change" : "deploy"} failed`;
+  if (deploy.kind === "traffic") return `${name}: traffic → ${trafficText(deploy.traffic)}`;
+  if (!deploy.live) return `${name}: version ${deploy.revision} created, without traffic`;
+  return `${name} deployed`;
+}
+
+function deployDetails(deploy) {
+  return [
+    deploy.kind === "deploy" ? deploy.revision : "",
+    deploy.image ? shortImage(deploy.image) : "",
+    deploy.actor ? `by ${shortActor(deploy.actor)}` : "",
+  ].filter(Boolean);
+}
+
+function deployTooltip(deploy) {
+  const when = absoluteTime(deploy.at);
+  const sub = [
+    `${PLATFORM_LABELS[deploy.target.platform] || deploy.target.platform} · ${when}`,
+    ...deployDetails(deploy),
+    deploy.failed && deploy.message ? deploy.message : "",
+  ].filter(Boolean);
+  return (
+    `<div class="gh-tooltip-main">${escapeHtml(deployTitle(deploy))}</div>` +
+    sub.map((line) => `<div class="gh-tooltip-sub">${escapeHtml(line)}</div>`).join("") +
+    '<div class="gh-tooltip-sub">click to find it among the entries</div>'
+  );
+}
+
+function deployRow(deploy, index) {
+  const row = document.createElement("div");
+  row.className = `entry-deploy ${deployClass(deploy)}`;
+  row.dataset.deployRow = String(index);
+  const field = REVISION_FIELDS[deploy.target.platform];
+  const refine =
+    view.mode === "filter" && field && deploy.revision && deploy.kind === "deploy"
+      ? `<button type="button" class="field-chip deploy-only" data-hint="Only entries of ${escapeHtml(deploy.revision)}" data-hint-sub="shift+click excludes them">only this ${deploy.target.platform === "app_engine" ? "version" : "revision"}</button>`
+      : "";
+  const details = deployDetails(deploy)
+    .map((text) => `<span>${escapeHtml(text)}</span>`)
+    .join("");
+  const message =
+    deploy.failed && deploy.message
+      ? `<span class="deploy-message">${escapeHtml(deploy.message)}</span>`
+      : "";
+  row.innerHTML = `
+    <span class="entry-time">${escapeHtml(absoluteTime(deploy.at))}</span>
+    <span class="deploy-what">${escapeHtml(deployTitle(deploy))}</span>
+    <span class="deploy-details">${details}${message}</span>
+    ${refine}`;
+  row.querySelector(".deploy-only")?.addEventListener("click", (event) => {
+    addRefinement(field, deploy.revision, event.shiftKey);
+  });
+  return row;
+}
+
+// Deploy rows between the entries (newest first), each above the entries
+// written before it; rebuilt whenever the entries or the deploys change.
+function placeDeployRows() {
+  const container = document.getElementById("entries");
+  container.querySelectorAll(".entry-deploy").forEach((row) => {
+    row.remove();
+  });
+  if (view.mode !== "filter" || !view.histRange) return;
+  const rows = [...container.querySelectorAll(":scope > .entry")];
+  if (!rows.length) return;
+  const { start, end } = view.histRange;
+  const deploys = deploysInside(start, end).sort(
+    (a, b) => Date.parse(b.deploy.at) - Date.parse(a.deploy.at)
+  );
+  for (const { deploy, index } of deploys) {
+    const at = Date.parse(deploy.at);
+    const before = rows.find((row) => Number(row.dataset.time) < at);
+    container.insertBefore(deployRow(deploy, index), before || null);
+  }
+}
+
+function jumpToDeploy(index) {
+  const row = document.querySelector(`#entries > [data-deploy-row="${index}"]`);
+  if (!row) return;
+  row.scrollIntoView({ block: "center", behavior: "smooth" });
+  row.classList.remove("is-flash");
+  void row.offsetWidth;
   row.classList.add("is-flash");
 }
 
@@ -1462,6 +1662,7 @@ function renderEntries(entries, options = {}) {
     const isNew = Date.parse(entry.timestamp) > newAfter;
     node.className = `entry b-${entry.severity}${isOrigin ? " is-origin" : ""}${isNew ? " is-new" : ""}`;
     node.style.setProperty("--i", Math.min(index, 20));
+    node.dataset.time = String(Date.parse(entry.timestamp));
 
     const absolute = absoluteTime(entry.timestamp);
     const time = relative ? formatDelta(Date.parse(entry.timestamp) - baseline) : absolute;
@@ -1515,6 +1716,7 @@ function renderEntries(entries, options = {}) {
 
     container.appendChild(node);
   });
+  if (!relative) placeDeployRows();
 }
 
 function buildDetail(entry, refinable) {
@@ -1748,7 +1950,11 @@ async function persistFilterOrder(ids) {
 }
 
 export async function initLogs() {
-  setupTooltips(document.getElementById("log-hist"), document.getElementById("filter-list"));
+  setupTooltips(
+    document.getElementById("log-hist"),
+    document.getElementById("filter-list"),
+    document.getElementById("entries")
+  );
   makeSortable(document.getElementById("filter-list"), {
     itemSelector: ".filter-item",
     axis: "list",

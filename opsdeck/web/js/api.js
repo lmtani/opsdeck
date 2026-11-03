@@ -52,6 +52,7 @@ export const api = {
   runFilter: (id, refinements = [], range = {}) =>
     request(`/api/filters/${id}/query`, json("POST", { refinements, ...range })),
   queryLogs: (data) => request("/api/logs/query", json("POST", data)),
+  deploys: (data) => request("/api/deploys", json("POST", data)),
 
   listGithubFeeds: () => request("/api/github/feeds"),
   createGithubFeed: (data) => request("/api/github/feeds", json("POST", data)),

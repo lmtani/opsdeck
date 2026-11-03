@@ -26,6 +26,7 @@ from fastapi import FastAPI
 from platformdirs import user_data_path
 
 from opsdeck.application.backup import BackupService
+from opsdeck.application.deploys import DeployService
 from opsdeck.application.github import GithubActivityService, GithubFeedService
 from opsdeck.application.links import ImageService, LinkService
 from opsdeck.application.logs import LogFilterService, LogQueryService, LogSourceService, LogWatchService
@@ -33,6 +34,7 @@ from opsdeck.application.settings import SettingsService
 from opsdeck.application.sharing import SharingService
 from opsdeck.application.updates import UpdateService
 from opsdeck.config import Settings
+from opsdeck.domain.deploys import DeployFeed
 from opsdeck.domain.github import GithubFeedRepository
 from opsdeck.domain.links import LinkRepository
 from opsdeck.domain.logs import LogFilterRepository, LogProvider, LogSourceKind, LogSourceRepository
@@ -110,7 +112,8 @@ def _build_repositories(data_dir: Path, settings: Settings) -> _Repositories:
     )
 
 
-def _build_log_providers(settings: Settings) -> dict[LogSourceKind, LogProvider]:
+def _build_log_providers(settings: Settings) -> dict[LogSourceKind, CloudLoggingApiProvider]:
+    """One provider per kind; the GCP one is also the kind's DeployFeed."""
     return {LogSourceKind.GCP: CloudLoggingApiProvider(credentials_file=settings.gcp_credentials_file)}
 
 
@@ -130,12 +133,15 @@ def build_services(data_dir: Path, settings: Settings) -> Services:
     github_provider = GithubApiProvider(token_source=lambda: resolve_github_token(settings.github_token))
     images = ImageService(LocalImageStore(data_dir / "images"))
     log_providers = _build_log_providers(settings)
+    providers: dict[LogSourceKind, LogProvider] = dict(log_providers)
+    deploy_feeds: dict[LogSourceKind, DeployFeed] = dict(log_providers)
     return Services(
         links=LinkService(repositories.links),
         sources=LogSourceService(repositories.sources, repositories.filters),
         filters=LogFilterService(repositories.filters, repositories.sources),
-        logs=LogQueryService(log_providers, repositories.sources, repositories.filters),
-        watch=LogWatchService(log_providers, repositories.sources, repositories.filters),
+        logs=LogQueryService(providers, repositories.sources, repositories.filters, deploy_feeds),
+        watch=LogWatchService(providers, repositories.sources, repositories.filters),
+        deploys=DeployService(deploy_feeds, repositories.sources),
         settings=SettingsService(repositories.settings),
         images=images,
         github_feeds=GithubFeedService(repositories.feeds),

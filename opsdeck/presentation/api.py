@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from opsdeck.application.backup import BackupService
+from opsdeck.application.deploys import DeployService
 from opsdeck.application.github import GithubActivityService, GithubFeedService
 from opsdeck.application.links import ImageService, LinkService
 from opsdeck.application.logs import (
@@ -45,11 +46,13 @@ class Services:
         sharing: SharingService,
         backup: BackupService,
         updates: UpdateService,
+        deploys: DeployService,
     ):
         self.links = links
         self.sources = sources
         self.filters = filters
         self.logs = logs
+        self.deploys = deploys
         self.watch = watch
         self.settings = settings
         self.images = images
@@ -219,6 +222,7 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
             command=result.command,
             console_url=result.console_url,
             entries=[schemas.LogEntryOut.model_validate(entry) for entry in result.entries],
+            deploy_targets=[schemas.DeployTargetModel.model_validate(item) for item in result.deploy_targets],
         )
 
     @app.post("/api/filters/{filter_id}/query", response_model=schemas.LogQueryOut)
@@ -238,6 +242,12 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
             refinements=tuple(item.to_refinement() for item in body.refinements),
         )
         return _log_result(services.logs.run_query(body.source_id, query))
+
+    @app.post("/api/deploys", response_model=list[schemas.DeployOut])
+    def list_deploys(body: schemas.DeploysIn):
+        targets = [item.to_target() for item in body.targets]
+        deploys = services.deploys.deploys(body.source_id, targets, body.start, body.end)
+        return [schemas.DeployOut.model_validate(item) for item in deploys]
 
     # ----- GitHub feeds -------------------------------------------------
 

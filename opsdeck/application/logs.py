@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 
 from opsdeck.application.common import apply_order
 from opsdeck.domain.common import utc_now
+from opsdeck.domain.deploys import DeployFeed, DeployTarget
 from opsdeck.domain.errors import LogProviderError, NotFoundError, ValidationError
 from opsdeck.domain.logs import (
     LogCount,
@@ -128,6 +129,7 @@ class LogResult:
     command: str  # the equivalent CLI command, for copy/paste
     console_url: str  # the query in the backend's web console, or ""
     entries: list[LogEntry]
+    deploy_targets: list[DeployTarget] = field(default_factory=list)  # what the entries came from
 
 
 class LogQueryService:
@@ -136,10 +138,12 @@ class LogQueryService:
         providers: Mapping[LogSourceKind, LogProvider],
         sources: LogSourceRepository,
         filters: LogFilterRepository,
+        deploy_feeds: Mapping[LogSourceKind, DeployFeed] | None = None,
     ):
         self._providers = providers
         self._sources = sources
         self._filters = filters
+        self._deploy_feeds = deploy_feeds or {}
 
     def providers_available(self) -> bool | None:
         """Whether every kind of source in use can be queried; None without sources."""
@@ -169,12 +173,15 @@ class LogQueryService:
         if source is None:
             raise NotFoundError(f"Log source '{source_id}' not found")
         provider = self._provider(source.kind)
+        entries = provider.query(source, query)
+        feed = self._deploy_feeds.get(source.kind)
         return LogResult(
             source=source,
             expression=provider.expression(query),
             command=provider.describe(source, query),
             console_url=provider.console_url(source, query),
-            entries=provider.query(source, query),
+            entries=entries,
+            deploy_targets=feed.targets(entries) if feed else [],
         )
 
     def _provider(self, kind: LogSourceKind) -> LogProvider:
