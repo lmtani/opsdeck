@@ -14,27 +14,41 @@ DeployFeed of GCP sources: the Cloud Run and App Engine deploys of the
 project's audit log (deploys.py).
 """
 
+import re
 import shlex
 import threading
 from collections.abc import Callable, Sequence
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from itertools import islice
 from pathlib import Path
 
 from opsdeck.domain.deploys import Deploy, DeployFeed, DeployTarget, DeployWindow
 from opsdeck.domain.errors import LogProviderError
-from opsdeck.domain.logs import LogCount, LogEntry, LogProvider, LogQuery, LogSource, TimeRange
+from opsdeck.domain.logs import (
+    LogCount,
+    LogEntry,
+    LogProvider,
+    LogQuery,
+    LogSource,
+    SourceCheck,
+    TimeRange,
+)
 from opsdeck.infrastructure.logs.gcp.deploys import deploy_targets, deploys_filter, parse_deploys
 from opsdeck.infrastructure.logs.gcp.entries import parse_entry
 from opsdeck.infrastructure.logs.gcp.expression import (
     api_filter,
     gcloud_args,
     logs_explorer_url,
+    range_clause,
     refined_expression,
 )
 
 SCOPES = ("https://www.googleapis.com/auth/logging.read",)
+# a project ID (6 to 30 lowercase letters, digits and hyphens; older ones may carry
+# a "domain:" prefix or dots) or a project number
+PROJECT_REFERENCE = re.compile(r"^(?:[a-z][a-z0-9.:-]{4,61}[a-z0-9]|\d{6,20})$")
+CHECK_LOOKBACK = timedelta(days=30)
 MAX_AUDIT_ENTRIES = 300  # a week of busy deploys, each App Engine one counting twice
 LOGIN_HINT = (
     "Run `gcloud auth application-default login`; with Docker, copy the new"
@@ -89,6 +103,30 @@ class CloudLoggingApiProvider(LogProvider, DeployFeed):
                 return True
         except OSError:
             return False
+
+    def check(self, source: LogSource) -> SourceCheck:
+        """One read of one entry from the last 30 days: it fails the way a
+        query would (no permission, unknown project, API disabled, bad
+        credentials) and, when it finds nothing, the project may be the wrong one."""
+        project = source.config["project"]
+        if not PROJECT_REFERENCE.match(project):
+            return SourceCheck(
+                ok=False,
+                message=f"'{project}' is not a Google Cloud project ID. Use the ID (like my-project-123)"
+                " shown under the project's name in the console, not its display name.",
+            )
+        now = datetime.now(UTC)
+        try:
+            entries = self._read(source, range_clause(TimeRange(now - CHECK_LOOKBACK, now)), 1)
+        except LogProviderError as error:
+            return SourceCheck(ok=False, message=str(error))
+        if not entries:
+            return SourceCheck(
+                ok=True,
+                message=f"Project '{project}' can be read, but it has no log entries in the last 30 days."
+                " Check that it is the right one.",
+            )
+        return SourceCheck(ok=True)
 
     def expression(self, query: LogQuery) -> str:
         return refined_expression(query)

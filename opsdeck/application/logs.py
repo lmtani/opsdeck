@@ -23,6 +23,7 @@ from opsdeck.domain.logs import (
     LogSourceRepository,
     Refinement,
     SeverityBand,
+    SourceCheck,
     TimeRange,
 )
 from opsdeck.domain.ordering import next_position, ordered
@@ -43,9 +44,22 @@ class LogSourceService:
     """Sources are listed by name. Names are unique (case-insensitive), so a
     filter's source reads unambiguously in the sidebar and in imports."""
 
-    def __init__(self, sources: LogSourceRepository, filters: LogFilterRepository):
+    def __init__(
+        self,
+        sources: LogSourceRepository,
+        filters: LogFilterRepository,
+        providers: Mapping[LogSourceKind, LogProvider] | None = None,
+    ):
         self._sources = sources
         self._filters = filters
+        self._providers = providers or {}
+
+    def check_source(self, kind: LogSourceKind | str, config: Mapping[str, str]) -> SourceCheck:
+        """Whether a source with this configuration could be read, before it is
+        saved; a configuration missing a required field is a ValidationError."""
+        source = LogSource.new(name="check", kind=kind, config=config)
+        provider = self._providers.get(source.kind)
+        return provider.check(source) if provider else SourceCheck(ok=True)
 
     def list_sources(self) -> list[LogSource]:
         return _by_name(self._sources.list_all())

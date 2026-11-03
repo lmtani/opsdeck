@@ -137,7 +137,7 @@ def build_services(data_dir: Path, settings: Settings) -> Services:
     deploy_feeds: dict[LogSourceKind, DeployFeed] = dict(log_providers)
     return Services(
         links=LinkService(repositories.links),
-        sources=LogSourceService(repositories.sources, repositories.filters),
+        sources=LogSourceService(repositories.sources, repositories.filters, providers),
         filters=LogFilterService(repositories.filters, repositories.sources),
         logs=LogQueryService(providers, repositories.sources, repositories.filters, deploy_feeds),
         watch=LogWatchService(providers, repositories.sources, repositories.filters),

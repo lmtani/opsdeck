@@ -35,6 +35,7 @@ from opsdeck.domain.logs import (
     LogQuery,
     LogSource,
     LogSourceRepository,
+    SourceCheck,
 )
 from opsdeck.domain.settings import AppSettings, SettingsRepository
 from opsdeck.domain.updates import Release, ReleaseFeed
@@ -141,9 +142,15 @@ class FakeLogProvider(LogProvider):
         self.last_query: LogQuery | None = None
         self.last_source: LogSource | None = None
         self.count_calls: list[tuple] = []
+        self.check_result = SourceCheck(ok=True)
+        self.checked: list[LogSource] = []
 
     def is_available(self):
         return self.available
+
+    def check(self, source):
+        self.checked.append(source)
+        return self.check_result
 
     def expression(self, query):
         # the refinements spelled plainly, enough to see them ANDed on

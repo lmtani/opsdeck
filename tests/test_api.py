@@ -31,7 +31,7 @@ from opsdeck.domain.github import (
     SubjectType,
     ThreadComment,
 )
-from opsdeck.domain.logs import LogEntry, LogSourceKind, SeverityBand
+from opsdeck.domain.logs import LogEntry, LogSourceKind, SeverityBand, SourceCheck
 from opsdeck.domain.updates import Release
 from opsdeck.presentation.api import Services, create_app
 from tests.fakes import (
@@ -69,7 +69,7 @@ def world(tmp_path):
     )
     services = Services(
         links=LinkService(fakes.links),
-        sources=LogSourceService(fakes.sources, fakes.filters),
+        sources=LogSourceService(fakes.sources, fakes.filters, {LogSourceKind.GCP: fakes.logs}),
         filters=LogFilterService(fakes.filters, fakes.sources),
         logs=LogQueryService(
             {LogSourceKind.GCP: fakes.logs}, fakes.sources, fakes.filters, {LogSourceKind.GCP: fakes.deploys}
@@ -157,6 +157,21 @@ def test_links_have_no_command_route(world):
 
 
 # ----- logs ------------------------------------------------------------------
+
+
+def test_a_source_is_checked_before_it_is_saved(world):
+    client = world.client
+    ok = client.post("/api/log-sources/check", json={"kind": "gcp", "config": {"project": " p-prod "}})
+    assert ok.json() == {"ok": True, "message": ""}
+    assert world.logs.checked[-1].config == {"project": "p-prod"}
+    world.logs.check_result = SourceCheck(ok=False, message="Project 'p' was not found")
+    failed = client.post("/api/log-sources/check", json={"config": {"project": "p"}})
+    assert failed.status_code == 200 and failed.json() == {
+        "ok": False,
+        "message": "Project 'p' was not found",
+    }
+    assert client.post("/api/log-sources/check", json={"config": {}}).status_code == 422
+    assert client.get("/api/log-sources").json() == []  # checking saves nothing
 
 
 def test_log_sources_crud(world):
