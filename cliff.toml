@@ -10,8 +10,7 @@
 header = """
 # Changelog
 
-Every release of OpsDeck, from its Conventional Commits. Install with `uv tool install git+https://github.com/lmtani/opsdeck@stable` and update with `uv tool upgrade opsdeck`; images are at `ghcr.io/lmtani/opsdeck`.
-"""
+Every release of OpsDeck, from its Conventional Commits. Install with `uv tool install git+https://github.com/lmtani/opsdeck@stable` and update with `uv tool upgrade opsdeck`; images are at `ghcr.io/lmtani/opsdeck`."""
 body = """
 {%- macro commit_url(id) -%}https://github.com/lmtani/opsdeck/commit/{{ id }}{%- endmacro -%}
 {% if version %}
@@ -25,11 +24,14 @@ body = """
 {% for commit in commits %}
 - {% if commit.scope and commit.scope != "deps" %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }}{% if commit.breaking %} (**breaking**){% endif %} ([{{ commit.id | truncate(length=7, end="") }}]({{ self::commit_url(id=commit.id) }}))
 {%- endfor %}
-{%- endfor %}
-"""
+{%- endfor %}{% if previous and previous.version %}
+{% endif %}"""
 footer = ""
-trim = true
-# one blank line between blocks, whatever the template's whitespace
+# untrimmed: git-cliff joins the header and the releases with nothing between
+# releases, so each release starts on a new line and, when an older one
+# follows, ends with the newline that leaves a blank line before it; the
+# postprocessor keeps one blank line between blocks
+trim = false
 postprocessors = [{ pattern = "\n{3,}", replace = "\n\n" }]
 
 [git]

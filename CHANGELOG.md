@@ -2,6 +2,31 @@
 
 Every release of OpsDeck, from its Conventional Commits. Install with `uv tool install git+https://github.com/lmtani/opsdeck@stable` and update with `uv tool upgrade opsdeck`; images are at `ghcr.io/lmtani/opsdeck`.
 
+## 0.3.0 (2026-11-03)
+
+### Features
+
+- **cli:** Start OpsDeck at login with `opsdeck service install` ([dab7d35](https://github.com/lmtani/opsdeck/commit/dab7d35e8fe733ba3ab36d59a2c5c8c011c605c8))
+- **logs:** Desktop notifications for watched filters ([97129f9](https://github.com/lmtani/opsdeck/commit/97129f96a170ce0e04abd4e460b6d5c903c0324f))
+- **logs:** Watch and notify from one button ([c9c596d](https://github.com/lmtani/opsdeck/commit/c9c596d077227875d478e56933a4b1624e907d21))
+- **logs:** Mark Cloud Run and App Engine deploys over the results ([903b48e](https://github.com/lmtani/opsdeck/commit/903b48ec463489ffe01815ca8e982505ede9b976))
+- **logs:** Show that deploy markers are loading ([17d27ff](https://github.com/lmtani/opsdeck/commit/17d27ff8fc6eb9ea1c5f01053dc44a7c5ee4758e))
+- **logs:** Check that a log source can be read before saving it ([b4cd136](https://github.com/lmtani/opsdeck/commit/b4cd136cc7c37b5bd85fc4267f1112fa3c0dd3d6))
+
+### Bug fixes
+
+- **cli:** Show each launchd status field once ([18ee805](https://github.com/lmtani/opsdeck/commit/18ee8053b3adc514cb2a601c9ae7e282b8ee74c2))
+
+### Documentation
+
+- **readme:** Mark the service optional and split install into update and uninstall ([52c10d2](https://github.com/lmtani/opsdeck/commit/52c10d22f3c6638a627c4df750784b36b07869aa))
+- Note the deploy markers' loading state in the architecture notes ([580d670](https://github.com/lmtani/opsdeck/commit/580d6703247111ab371a518c62fc5afdb902ebc1))
+- Pin examples to 0.3.0 ([ad3b072](https://github.com/lmtani/opsdeck/commit/ad3b07297311e8f2f8207c5b1dc147496e31347b))
+
+### Dependencies
+
+- Bump the python group with 2 updates ([8b2a67f](https://github.com/lmtani/opsdeck/commit/8b2a67f176197cbeeb3aed46c45804d1d1df8bfe))
+
 ## 0.2.0 (2026-11-01)
 
 ### Features
