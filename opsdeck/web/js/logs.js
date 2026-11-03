@@ -1034,6 +1034,7 @@ async function loadFilter() {
     view.deployTargets = result.deploy_targets || [];
     view.deploys = [];
     view.deploysProblem = "";
+    view.deploysLoading = view.deployTargets.length > 0; // loadDeploys clears it
     paintEntries({ rise: true });
     renderFieldChips();
     markSeenIfShown(filter, refinements, news);
@@ -1389,6 +1390,10 @@ function renderHistogram(entries, { rise = false } = {}) {
   const deployKey = deploys.length
     ? `<span class="log-hist-key log-deploy-key"><i></i>${plural(deploys.length, "deploy")}</span>`
     : "";
+  const names = (view.deployTargets || []).map((target) => target.name).join(", ");
+  const deployLoading = view.deploysLoading
+    ? `<span class="log-hist-key log-deploy-key is-loading" role="status" data-hint="Looking for deploys" data-hint-sub="${escapeHtml(`Of ${names}, in the project's audit log`)}"><i></i>looking for deploys…</span>`
+    : "";
   const deployProblem = view.deploysProblem
     ? `<span class="log-deploy-problem" data-hint="Deploy markers unavailable" data-hint-sub="${escapeHtml(view.deploysProblem)}">deploys unavailable</span>`
     : "";
@@ -1396,10 +1401,10 @@ function renderHistogram(entries, { rise = false } = {}) {
   node.innerHTML = `
     <div class="log-hist-plot">
       <div class="log-hist-bars${rise ? " is-rising" : ""}">${columns}</div>
-      <div class="log-deploys">${marks}</div>
+      <div class="log-deploys${view.deploysLoading ? " is-loading" : ""}">${marks}</div>
     </div>
     <div class="log-hist-axis">${ticks}</div>
-    <div class="log-hist-legend">${legend}${deployKey}${deployProblem}${clip}</div>`;
+    <div class="log-hist-legend">${legend}${deployKey}${deployLoading}${deployProblem}${clip}</div>`;
   node.hidden = false;
   node.querySelectorAll("[data-deploy]").forEach((mark) => {
     const deploy = view.deploys[Number(mark.dataset.deploy)];
@@ -1449,7 +1454,13 @@ const REVISION_FIELDS = {
 
 async function loadDeploys(current) {
   const targets = view.deployTargets || [];
-  if (view.mode !== "filter" || !targets.length || !view.histRange) return;
+  if (view.mode !== "filter" || !targets.length || !view.histRange) {
+    if (view.deploysLoading) {
+      view.deploysLoading = false;
+      renderHistogram(lastEntries);
+    }
+    return;
+  }
   const { start, end } = view.histRange;
   try {
     const deploys = await api.deploys({
@@ -1464,6 +1475,7 @@ async function loadDeploys(current) {
     if (view !== current) return;
     view.deploysProblem = error.message;
   }
+  view.deploysLoading = false;
   renderHistogram(lastEntries);
   placeDeployRows();
 }

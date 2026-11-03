@@ -1138,6 +1138,14 @@ body {
 .log-deploy-mark:focus-visible { outline: none; }
 .log-deploy-key { --k: var(--accent); }
 .log-deploy-key i { transform: rotate(45deg) scale(0.8); }
+/* while the deploys load: the diamond pulses and a light sweeps the lane the marks land in */
+.log-deploy-key.is-loading i { animation: deploy-pulse 1.1s ease-in-out infinite; }
+@keyframes deploy-pulse { 50% { opacity: 0.25; transform: rotate(45deg) scale(0.55); } }
+.log-deploys.is-loading::before { content: ""; position: absolute; top: 2px; left: 0; width: 100%; height: 3px; border-radius: 2px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 55%, transparent), transparent) no-repeat; background-size: 30% 100%; animation: deploy-sweep 1.6s linear infinite; }
+@keyframes deploy-sweep { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .log-deploy-key.is-loading i, .log-deploys.is-loading::before { animation: none; }
+}
 .log-deploy-problem { color: var(--text-dim); text-decoration: underline dotted; cursor: help; }
 .entry-deploy {
   display: flex;
