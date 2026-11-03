@@ -111,6 +111,7 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
             newer=status.newer,
             url=status.latest.url if status.latest else None,
             published_at=status.latest.published_at if status.latest else None,
+            service=status.service,
         )
 
     # ----- Links -------------------------------------------------------

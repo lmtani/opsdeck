@@ -219,6 +219,7 @@ class VersionOut(BaseModel):
     newer: bool  # latest is newer than current
     url: str | None  # its release notes
     published_at: datetime | None
+    service: bool = False  # runs as a service: restart it after upgrading
 
 
 class GithubFeedIn(BaseModel):

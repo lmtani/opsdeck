@@ -608,6 +608,7 @@ def test_version_without_a_release(world):
         "newer": False,
         "url": None,
         "published_at": None,
+        "service": False,
     }
 
 

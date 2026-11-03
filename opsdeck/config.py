@@ -44,6 +44,8 @@ class Settings:
     port: int = 8765
     # look for a newer OpsDeck release on GitHub (a few anonymous requests a day)
     update_check: bool = True
+    # running as the service `opsdeck service install` set up (it sets OPSDECK_SERVICE=1)
+    service: bool = False
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -56,4 +58,5 @@ class Settings:
             host=env.get("DASHBOARD_HOST") or "127.0.0.1",
             port=int(env.get("DASHBOARD_PORT") or "8765"),
             update_check=env.get("OPSDECK_UPDATE_CHECK", "").lower() not in _OFF,
+            service=env.get("OPSDECK_SERVICE", "") == "1",
         )

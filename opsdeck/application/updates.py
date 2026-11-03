@@ -19,6 +19,7 @@ class UpdateStatus:
     current: str
     latest: Release | None  # None: not checked (turned off), unreadable or no release yet
     newer: bool  # latest is a newer release than current
+    service: bool = False  # this install runs as a service: an update needs `opsdeck service restart`
 
 
 class UpdateService:
@@ -28,11 +29,13 @@ class UpdateService:
         current: str,
         enabled: bool = True,
         clock: Callable[[], datetime] = utc_now,
+        service: bool = False,
     ):
         self._feed = feed
         self._current = current
         self._enabled = enabled
         self._clock = clock
+        self._service = service
         self._latest: Release | None = None
         self._next_check: datetime | None = None
 
@@ -52,4 +55,5 @@ class UpdateService:
             current=self._current,
             latest=latest,
             newer=latest is not None and latest.is_newer_than(self._current),
+            service=self._service,
         )

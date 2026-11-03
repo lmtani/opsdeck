@@ -55,3 +55,8 @@ def test_data_directory_and_address():
 def test_the_update_check_can_be_turned_off():
     assert Settings.from_env({}).update_check is True
     assert Settings.from_env({"OPSDECK_UPDATE_CHECK": "off"}).update_check is False
+
+
+def test_the_service_marker():
+    assert Settings.from_env({}).service is False
+    assert Settings.from_env({"OPSDECK_SERVICE": "1"}).service is True

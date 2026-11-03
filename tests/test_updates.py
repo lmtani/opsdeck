@@ -106,3 +106,9 @@ def test_github_feed_without_releases_or_with_odd_ones():
 def test_github_feed_failures_are_external_errors(status, body):
     with pytest.raises(ExternalServiceError):
         feed_answering(status, body).latest()
+
+
+def test_a_service_install_is_told_to_restart_the_service():
+    feed = FakeReleaseFeed(Release("0.3.0", "https://github.com/x/y/releases/tag/v0.3.0"))
+    assert UpdateService(feed, current="0.2.0", service=True).status().service is True
+    assert UpdateService(feed, current="0.2.0").status().service is False

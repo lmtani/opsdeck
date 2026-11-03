@@ -152,7 +152,10 @@ def build_services(data_dir: Path, settings: Settings) -> Services:
             images,
         ),
         updates=UpdateService(
-            GithubReleaseFeed(RELEASES_REPO), current=version("opsdeck"), enabled=settings.update_check
+            GithubReleaseFeed(RELEASES_REPO),
+            current=version("opsdeck"),
+            enabled=settings.update_check,
+            service=settings.service,
         ),
     )
 
