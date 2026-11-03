@@ -28,7 +28,7 @@ The Links tab works right away; the other two need [credentials](#credentials). 
 uv tool upgrade opsdeck
 ```
 
-`stable` is the latest [release](https://github.com/lmtani/opsdeck/releases), and OpsDeck shows a newer one in the top bar (`OPSDECK_UPDATE_CHECK=off` turns that off). The database migrates itself on the next start. To stay on one release, install its tag instead (`…/opsdeck@v0.2.0`); to follow every merged change, install without `@stable`.
+`stable` is the latest [release](https://github.com/lmtani/opsdeck/releases), and OpsDeck shows a newer one in the top bar (`OPSDECK_UPDATE_CHECK=off` turns that off). The database migrates itself on the next start. To stay on one release, install its tag instead (`…/opsdeck@v0.3.0`); to follow every merged change, install without `@stable`.
 
 ### Start at login (optional)
 
@@ -68,7 +68,7 @@ chmod 644 secrets/gcp-adc.json
 docker compose pull && docker compose up -d    # http://127.0.0.1:8765
 ```
 
-Run the same pull and up to update. `OPSDECK_VERSION=0.2.0` in `.env` pins a release, and `docker compose up -d --build` builds the image from the checkout instead.
+Run the same pull and up to update. `OPSDECK_VERSION=0.3.0` in `.env` pins a release, and `docker compose up -d --build` builds the image from the checkout instead.
 
 ## Configuration
 
