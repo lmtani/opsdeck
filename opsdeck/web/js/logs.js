@@ -5,7 +5,22 @@
 // and the backend spells them in the source's query language.
 
 import { api } from "./api.js";
+import { setBadgeCount } from "./badge.js";
 import { makeSortable } from "./dnd.js";
+import { bellIcon, eyeIcon } from "./icons.js";
+import { openChoiceMenu } from "./menu.js";
+import {
+  announceFilter,
+  anyFilterNotifying,
+  confirmFilterEnabled,
+  DEFAULT_LOG_LEVEL,
+  filterNotifyLevel,
+  forgetFilter,
+  LOG_LEVELS,
+  levelLabel,
+  notificationsBlocked,
+  setFilterNotifications,
+} from "./notifications.js";
 import { createPoller } from "./poller.js";
 import { registerShare } from "./share.js";
 import { hideTooltip, setupTooltips, tooltipContent } from "./tooltip.js";
@@ -35,10 +50,7 @@ let polling = true;
 let watchPoller = null; // schedules the rounds and draws their countdown line
 let watchEvery = 120; // seconds between rounds (settings.logs_every)
 let watchChoices = [watchEvery];
-const EYE_ICON =
-  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">' +
-  '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="2"/>' +
-  '<circle cx="12" cy="12" r="3" fill="currentColor"/></svg>';
+const EYE_ICON = eyeIcon();
 
 // What the results panel is showing. `mode` is "idle", "filter" (a saved
 // filter on its `source`, plus ad-hoc `refinements` stacked on top of it) or
@@ -164,18 +176,21 @@ function renderFilterList() {
     item.tabIndex = 0;
     const source = sourceById(filter.source_id);
     item.innerHTML = `
-      <span class="filter-name">${escapeHtml(filter.name)}${watchEye(filter)}</span>
+      <span class="filter-name">${escapeHtml(filter.name)}${watchEye(filter)}${notifyBell(filter)}</span>
       <span class="filter-meta">
-        <span title="${escapeHtml(source ? `${kindOf(source).label}: ${sourcePlace(source)}` : "")}">${escapeHtml(source?.name || "no source")}</span>
+        <span${source ? ` data-hint="${escapeHtml(`${kindOf(source).label}: ${sourcePlace(source)}`)}"` : ""}>${escapeHtml(source?.name || "no source")}</span>
         <span>· ${FRESHNESS_LABELS[filter.freshness] || filter.freshness}</span>
         <span>· ${filter.limit}</span>
         ${unseenChips(filter)}
       </span>
       <span class="filter-edit">
+        ${notifyButton(filter)}
         <button class="card-action${filter.watch ? " is-on" : ""}" data-watch
-          title="${filter.watch ? "Stop watching" : "Watch: count new entries in the background"}">${EYE_ICON}</button>
-        <button class="card-action" data-edit title="Edit">✎</button>
-        <button class="card-action danger" data-delete title="Remove">✕</button>
+          aria-label="${filter.watch ? "Stop watching" : "Watch"}"
+          data-hint="${filter.watch ? "Stop watching" : "Watch"}"
+          data-hint-sub="${filter.watch ? "New entries are no longer counted" : "Count new entries in the background"}">${EYE_ICON}</button>
+        <button class="card-action" data-edit aria-label="Edit" data-hint="Edit">✎</button>
+        <button class="card-action danger" data-delete aria-label="Remove" data-hint="Remove">✕</button>
       </span>`;
 
     const run = () => runFilter(filter);
@@ -194,6 +209,10 @@ function renderFilterList() {
       event.stopPropagation();
       toggleWatch(filter);
     });
+    item.querySelector("[data-notify]").addEventListener("click", (event) => {
+      event.stopPropagation();
+      openNotifyMenu(event.currentTarget, filter);
+    });
     item.querySelector("[data-edit]").addEventListener("click", (event) => {
       event.stopPropagation();
       openFilterModal(filter);
@@ -202,6 +221,7 @@ function renderFilterList() {
       event.stopPropagation();
       confirmDanger(`Remove the filter “${filter.name}”?`, async () => {
         await api.deleteFilter(filter.id);
+        forgetFilter(filter.id);
         if (activeFilterId === filter.id) {
           activeFilterId = null;
           view = { mode: "idle" };
@@ -237,8 +257,8 @@ const compactCount = (count) => (count >= 1000 ? `${Math.floor(count / 1000)}k` 
 function watchEye(filter) {
   if (!filter.watch) return "";
   return polling
-    ? `<span class="log-watching" title="Watching: new entries are counted every few minutes">${EYE_ICON}</span>`
-    : `<span class="log-watching is-paused" title="Watching, waiting for live updates to resume">${EYE_ICON}</span>`;
+    ? `<span class="log-watching" data-hint="Watching" data-hint-sub="New entries are counted every few minutes">${EYE_ICON}</span>`
+    : `<span class="log-watching is-paused" data-hint="Watching" data-hint-sub="Waiting for live updates to resume">${EYE_ICON}</span>`;
 }
 
 // One chip per severity band that caught something since the filter was last
@@ -252,11 +272,11 @@ function unseenChips(filter) {
   const chips = SEVERITY_BANDS.filter(({ band }) => status[band] > 0)
     .map(
       ({ band, label }) =>
-        `<span class="log-unseen lsev-${band}" data-band="${band}" title="${status[band]}${plus} new ${escapeHtml(label)} since ${since}\nClick to show them">${compactCount(status[band])}${plus}</span>`
+        `<span class="log-unseen lsev-${band}" data-band="${band}" data-hint="${status[band]}${plus} new ${escapeHtml(label)} since ${since}" data-hint-sub="Click to show them">${compactCount(status[band])}${plus}</span>`
     )
     .join("");
   const problem = status.problem
-    ? `<span class="log-unseen is-problem" title="${escapeHtml(`Count failed: ${status.problem}`)}">!</span>`
+    ? `<span class="log-unseen is-problem" data-hint="Count failed" data-hint-sub="${escapeHtml(status.problem)}">!</span>`
     : "";
   return chips || problem ? `<span class="filter-unseen">${chips}${problem}</span>` : "";
 }
@@ -276,6 +296,7 @@ function renderTabBadge() {
   badge.title = `${total}${plus} new log entries in watched filters`;
   badge.classList.toggle("is-warn", sum("error") === 0 && sum("warning") > 0);
   badge.classList.toggle("is-calm", sum("error") === 0 && sum("warning") === 0);
+  setBadgeCount("logs", total);
 }
 
 async function refreshUnseen() {
@@ -290,17 +311,21 @@ async function refreshUnseen() {
     unseen = Object.fromEntries(statuses.map((status) => [status.filter_id, status]));
     renderFilterList();
     renderUnseenBar();
+    notifyFilters();
   } catch {
     /* the counts are best effort: try again on the next round */
   }
 }
 
 // The rounds run every few minutes while some filter is watched, the page is
-// visible and the live switch is on.
+// visible (or some filter notifies) and the live switch is on.
+const notifyingAny = () =>
+  anyFilterNotifying(filters.filter((filter) => filter.watch).map((filter) => filter.id));
+
 function watchState() {
   if (!filters.some((filter) => filter.watch)) return null;
   if (!polling) return { paused: "Paused: live updates are off" };
-  if (document.hidden) return { paused: "Waiting for the page to be visible" };
+  if (document.hidden && !notifyingAny()) return { paused: "Waiting for the page to be visible" };
   return { every: watchEvery * 1000 };
 }
 
@@ -313,7 +338,10 @@ async function toggleWatch(filter) {
   try {
     const updated = await api.watchFilter(filter.id, !filter.watch);
     replaceFilter(updated);
-    if (!updated.watch) delete unseen[updated.id];
+    if (!updated.watch) {
+      delete unseen[updated.id];
+      forgetFilter(updated.id); // notifications need the count
+    }
     renderFilterList();
     const when = polling ? "every few minutes" : "once live updates resume";
     toast(
@@ -326,6 +354,115 @@ async function toggleWatch(filter) {
   } catch (error) {
     toast(error.message, "error");
   }
+}
+
+// ----- desktop notifications -------------------------------------------
+//
+// A watched filter can notify from a severity (errors by default). The count
+// rounds above announce what grew; notifications.js keeps the marks.
+
+// The bell next to the name of a notifying filter.
+function notifyBell(filter) {
+  const level = filter.watch && filterNotifyLevel(filter.id);
+  if (!level) return "";
+  return polling
+    ? `<span class="log-notifying" data-hint="Desktop notifications on" data-hint-sub="For ${escapeHtml(levelLabel(level))}">${bellIcon(11)}</span>`
+    : `<span class="log-notifying is-paused" data-hint="Desktop notifications on" data-hint-sub="Waiting for live updates to resume">${bellIcon(11)}</span>`;
+}
+
+function notifyButton(filter) {
+  const level = filter.watch && filterNotifyLevel(filter.id);
+  const hint = level ? `Notifying of ${levelLabel(level)}` : "Notify me";
+  const sub = level ? "Click to change or turn off" : "Desktop notifications of new errors";
+  return `<button class="card-action${level ? " is-on" : ""}" data-notify aria-haspopup="true"
+          aria-label="${escapeHtml(hint)}" data-hint="${escapeHtml(hint)}" data-hint-sub="${sub}">${bellIcon()}</button>`;
+}
+
+function openNotifyMenu(button, filter) {
+  const level = filter.watch && filterNotifyLevel(filter.id);
+  const choices = LOG_LEVELS.map(({ value, label }) => ({ value, label }));
+  if (level) choices.push({ value: "off", label: "off" });
+  openChoiceMenu(button, {
+    label: "Notify me of",
+    choices,
+    current: level || DEFAULT_LOG_LEVEL,
+    choose: (value) => setNotifications(filter, value),
+  });
+}
+
+async function setNotifications(filter, level) {
+  let current = filter;
+  if (level !== "off" && !current.watch) {
+    // notifications come from the background count: watch the filter first
+    try {
+      current = await api.watchFilter(filter.id, true);
+      replaceFilter(current);
+    } catch (error) {
+      toast(error.message, "error");
+      return;
+    }
+  }
+  const outcome = await setFilterNotifications(current.id, level, unseen[current.id]);
+  if (outcome === "on")
+    confirmFilterEnabled(current, level, { paused: !polling }, openFromNotification);
+  const testHint =
+    "No test notification on screen? Check the system's notification settings for this browser.";
+  const what = level === "any" ? "new entries" : `new ${levelLabel(level)}`;
+  const messages = {
+    on: polling
+      ? [`“${current.name}” notifies you of ${what}. ${testHint}`, "success"]
+      : [`“${current.name}” notifies you of ${what} once live updates resume. ${testHint}`, "info"],
+    off: [`Notifications for “${current.name}” are off.`, "info"],
+    unsupported: [
+      "This browser cannot show notifications here: they need HTTPS or localhost.",
+      "error",
+    ],
+    blocked: [
+      notificationsBlocked()
+        ? "Notifications are blocked for this site. Allow them in the browser's site settings, then try again."
+        : "Notifications were not allowed.",
+      "error",
+    ],
+  };
+  const [message, kind] = messages[outcome];
+  toast(message, kind, outcome === "on" ? 8000 : undefined);
+  renderFilterList();
+  if (current !== filter) refreshUnseen(); // just watched: start counting now
+}
+
+function lookingAt(filter) {
+  return (
+    !document.getElementById("view-logs").hidden &&
+    view.filter?.id === filter.id &&
+    !document.hidden &&
+    document.hasFocus()
+  );
+}
+
+function notifyFilters() {
+  if (!polling) return;
+  for (const filter of filters) {
+    if (!filter.watch) continue;
+    const status = unseen[filter.id];
+    announceFilter(
+      filter,
+      status,
+      {
+        source: sourceById(filter.source_id)?.name,
+        since: status ? shortStamp(status.since) : "",
+        looking: lookingAt(filter),
+      },
+      openFromNotification
+    );
+  }
+}
+
+function openFromNotification(filter, band) {
+  document.querySelector('.tab[data-view="logs"]')?.click();
+  const current = filters.find((item) => item.id === filter.id);
+  if (!current) return;
+  if (band && unseen[current.id]?.[band]) openUnseen(current, band);
+  else runFilter(current);
 }
 
 // Seeing what a watched filter caught, up to `seenAt` (default now): its
@@ -1606,7 +1743,7 @@ async function persistFilterOrder(ids) {
 }
 
 export async function initLogs() {
-  setupTooltips(document.getElementById("log-hist"));
+  setupTooltips(document.getElementById("log-hist"), document.getElementById("filter-list"));
   makeSortable(document.getElementById("filter-list"), {
     itemSelector: ".filter-item",
     axis: "list",

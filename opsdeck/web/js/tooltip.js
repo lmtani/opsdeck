@@ -1,12 +1,14 @@
 // One floating tooltip shared by every view: shown over [data-tip] elements
-// whose text is cut off by the ellipsis, and always over elements registered
-// in tooltipContent (histogram bins, people, grid cells, graph nodes).
+// whose text is cut off by the ellipsis, and always over [data-hint] elements
+// (the sidebar buttons, in place of the browser's own title tooltip) and the
+// elements registered in tooltipContent (histogram bins, people, grid cells,
+// graph nodes). A second line comes from data-tip-sub / data-hint-sub.
 
 import { escapeHtml } from "./ui.js";
 
 const TOOLTIP_DELAY_MS = 220;
 const TOOLTIP_TARGETS =
-  "[data-tip], [data-bin], [data-live], [data-person], [data-cell], [data-mix], [data-team], [data-tooltip]";
+  "[data-tip], [data-hint], [data-bin], [data-live], [data-person], [data-cell], [data-mix], [data-team], [data-tooltip]";
 
 let tooltip = null;
 let tooltipTarget = null;
@@ -45,8 +47,8 @@ function showTooltip(target) {
   if (build) {
     tooltip.innerHTML = build();
   } else {
-    const main = target.dataset.tip || "";
-    const sub = target.dataset.tipSub || "";
+    const main = target.dataset.hint || target.dataset.tip || "";
+    const sub = target.dataset.hintSub || target.dataset.tipSub || "";
     tooltip.innerHTML =
       `<div class="gh-tooltip-main">${escapeHtml(main)}</div>` +
       (sub ? `<div class="gh-tooltip-sub">${escapeHtml(sub)}</div>` : "");
@@ -61,7 +63,7 @@ function arm(target) {
   if (target === tooltipTarget) return;
   hideTooltip();
   if (!target) return;
-  if (!tooltipContent.has(target) && !isTruncated(target)) return;
+  if (!tooltipContent.has(target) && !target.dataset.hint && !isTruncated(target)) return;
   tooltipTarget = target;
   tooltipTimer = setTimeout(() => {
     if (tooltipTarget === target && target.isConnected) showTooltip(target);

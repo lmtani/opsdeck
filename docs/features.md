@@ -26,7 +26,7 @@ A slider hides a person's minor repositories (under 5 % of their work by default
 
 ### Notifications
 
-Hover a feed and click 🔔 to get desktop notifications of its new events. The browser asks for permission once and a test notification confirms they reach the desktop (if it does not show up, check the system's do-not-disturb settings for the browser). Notifications arrive while OpsDeck is open in some tab, even in the background, and clicking one opens the feed. Browsers only allow them on `localhost` or HTTPS.
+Hover a feed and click its bell to get desktop notifications of its new events. The browser asks for permission once and a test notification confirms they reach the desktop (if it does not show up, check the system's do-not-disturb settings for the browser). Notifications arrive while OpsDeck is open in some tab, even in the background, and clicking one opens the feed. Browsers only allow them on `localhost` or HTTPS.
 
 ## Logs
 
@@ -39,6 +39,10 @@ The eye button of a filter **watches** it: in the background the app counts the 
 - Clicking a chip shows exactly those entries, even when they are older than the filter's window.
 - Opening the filter marks the new entries with a dot. When some are older than its window, or more than its limit, a bar above the results says so and leads to them.
 - The count starts over once a view has shown every new entry, or when you click **✓ mark seen**.
+
+### Log notifications
+
+The bell button of a filter sends desktop notifications when its count grows: of new **errors** by default, or of warnings and errors, or of any new entry. Picking a level watches the filter if it was not watched yet, and stopping the watch turns its notifications off. Like a feed's, they need permission once, arrive while OpsDeck is open in some tab, even in the background, and clicking one shows the new entries. Nothing is sent for entries you have on screen, and the installed app's icon badge adds the new log entries to the GitHub events.
 
 Each round reads only the minutes since the previous one, one API call per watched filter (Cloud Logging does not bill reads; its quota is 60 per minute per project). A round that reaches 1000 entries shows the number as a lower bound, like `1000+`.
 
