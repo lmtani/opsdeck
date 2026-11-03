@@ -4,7 +4,7 @@
 #   docker compose pull && docker compose up -d   # the released image, http://127.0.0.1:8765
 #   docker compose up -d --build                  # or an image built from this checkout
 #
-# OPSDECK_VERSION in .env pins a release (e.g. 0.2.0); the default is latest.
+# OPSDECK_VERSION in .env pins a release (e.g. 0.3.0); the default is latest.
 
 services:
   db:
