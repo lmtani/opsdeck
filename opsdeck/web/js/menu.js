@@ -7,8 +7,10 @@ import { escapeHtml } from "./ui.js";
 
 let close = null;
 
-// choices: [{value, label}]; choose(value) runs after the menu closed.
-export function openChoiceMenu(anchor, { label, choices, current, choose }) {
+// choices: [{value, label, icon}] (icon: trusted markup before the label);
+// `suggested` is outlined and focused when nothing better is current;
+// choose(value) runs after the menu closed.
+export function openChoiceMenu(anchor, { label, choices, current, suggested = null, choose }) {
   const reopening = close?.anchor === anchor;
   close?.();
   if (reopening) return; // a second click on the same button just closes it
@@ -21,9 +23,10 @@ export function openChoiceMenu(anchor, { label, choices, current, choose }) {
     `<span class="choice-menu-label">${escapeHtml(label)}</span>` +
     choices
       .map(
-        ({ value, label: text }) =>
+        ({ value, label: text, icon = "" }) =>
           `<button type="button" role="menuitemradio" aria-checked="${value === current}" ` +
-          `class="${value === current ? "is-on" : ""}" data-value="${escapeHtml(value)}">${escapeHtml(text)}</button>`
+          `class="${value === current ? "is-on" : value === suggested ? "is-suggested" : ""}" ` +
+          `data-value="${escapeHtml(value)}">${icon}${escapeHtml(text)}</button>`
       )
       .join("");
 
@@ -57,7 +60,7 @@ export function openChoiceMenu(anchor, { label, choices, current, choose }) {
   popup.style.position = "fixed";
   popup.style.top = `${box.bottom + 4}px`;
   popup.style.left = `${Math.max(8, Math.min(box.right - width, window.innerWidth - width - 8))}px`;
-  popup.querySelector(".is-on, button")?.focus();
+  (popup.querySelector(".is-suggested") || popup.querySelector(".is-on, button"))?.focus();
   document.addEventListener("pointerdown", outside, true);
   document.addEventListener("keydown", onKey, true);
   window.addEventListener("scroll", close, true);

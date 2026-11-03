@@ -16,7 +16,6 @@ import {
   DEFAULT_LOG_LEVEL,
   filterNotifyLevel,
   forgetFilter,
-  LOG_LEVELS,
   levelLabel,
   notificationsBlocked,
   setFilterNotifications,
@@ -176,7 +175,7 @@ function renderFilterList() {
     item.tabIndex = 0;
     const source = sourceById(filter.source_id);
     item.innerHTML = `
-      <span class="filter-name">${escapeHtml(filter.name)}${watchEye(filter)}${notifyBell(filter)}</span>
+      <span class="filter-name">${escapeHtml(filter.name)}${watchIndicator(filter)}</span>
       <span class="filter-meta">
         <span${source ? ` data-hint="${escapeHtml(`${kindOf(source).label}: ${sourcePlace(source)}`)}"` : ""}>${escapeHtml(source?.name || "no source")}</span>
         <span>· ${FRESHNESS_LABELS[filter.freshness] || filter.freshness}</span>
@@ -184,11 +183,7 @@ function renderFilterList() {
         ${unseenChips(filter)}
       </span>
       <span class="filter-edit">
-        ${notifyButton(filter)}
-        <button class="card-action${filter.watch ? " is-on" : ""}" data-watch
-          aria-label="${filter.watch ? "Stop watching" : "Watch"}"
-          data-hint="${filter.watch ? "Stop watching" : "Watch"}"
-          data-hint-sub="${filter.watch ? "New entries are no longer counted" : "Count new entries in the background"}">${EYE_ICON}</button>
+        ${watchButton(filter)}
         <button class="card-action" data-edit aria-label="Edit" data-hint="Edit">✎</button>
         <button class="card-action danger" data-delete aria-label="Remove" data-hint="Remove">✕</button>
       </span>`;
@@ -207,11 +202,7 @@ function renderFilterList() {
     });
     item.querySelector("[data-watch]").addEventListener("click", (event) => {
       event.stopPropagation();
-      toggleWatch(filter);
-    });
-    item.querySelector("[data-notify]").addEventListener("click", (event) => {
-      event.stopPropagation();
-      openNotifyMenu(event.currentTarget, filter);
+      openWatchMenu(event.currentTarget, filter);
     });
     item.querySelector("[data-edit]").addEventListener("click", (event) => {
       event.stopPropagation();
@@ -252,14 +243,6 @@ const shortStamp = (iso) =>
   });
 
 const compactCount = (count) => (count >= 1000 ? `${Math.floor(count / 1000)}k` : String(count));
-
-// The eye next to a watched filter's name.
-function watchEye(filter) {
-  if (!filter.watch) return "";
-  return polling
-    ? `<span class="log-watching" data-hint="Watching" data-hint-sub="New entries are counted every few minutes">${EYE_ICON}</span>`
-    : `<span class="log-watching is-paused" data-hint="Watching" data-hint-sub="Waiting for live updates to resume">${EYE_ICON}</span>`;
-}
 
 // One chip per severity band that caught something since the filter was last
 // opened ("+" when a read hit its cap); clicking one shows those entries. They
@@ -334,100 +317,122 @@ function replaceFilter(updated) {
   if (view.filter?.id === updated.id) view.filter = updated;
 }
 
-async function toggleWatch(filter) {
-  try {
-    const updated = await api.watchFilter(filter.id, !filter.watch);
-    replaceFilter(updated);
-    if (!updated.watch) {
-      delete unseen[updated.id];
-      forgetFilter(updated.id); // notifications need the count
-    }
-    renderFilterList();
-    const when = polling ? "every few minutes" : "once live updates resume";
-    toast(
-      updated.watch
-        ? `Watching “${updated.name}”: new entries are counted ${when}.`
-        : `Stopped watching “${updated.name}”.`,
-      updated.watch ? "success" : "info"
-    );
-    if (updated.watch) refreshUnseen();
-  } catch (error) {
-    toast(error.message, "error");
-  }
-}
-
-// ----- desktop notifications -------------------------------------------
+// ----- watching and notifying ------------------------------------------
 //
-// A watched filter can notify from a severity (errors by default). The count
-// rounds above announce what grew; notifications.js keeps the marks.
+// One setting per filter, from one button: off, "count" (the background count
+// of new entries, the chips and the tab badge) or a notification level, which
+// also counts: desktop notifications from errors (the default), warnings and
+// errors, or any new entry. The level is browser state (notifications.js); the
+// watch is saved in the backend. The count rounds above announce what grew.
 
-// The bell next to the name of a notifying filter.
-function notifyBell(filter) {
-  const level = filter.watch && filterNotifyLevel(filter.id);
-  if (!level) return "";
-  return polling
-    ? `<span class="log-notifying" data-hint="Desktop notifications on" data-hint-sub="For ${escapeHtml(levelLabel(level))}">${bellIcon(11)}</span>`
-    : `<span class="log-notifying is-paused" data-hint="Desktop notifications on" data-hint-sub="Waiting for live updates to resume">${bellIcon(11)}</span>`;
+const WATCH_CHOICES = [
+  { value: "off", label: "off" },
+  { value: "count", label: "count only" },
+  { value: "error", label: "errors", icon: bellIcon(11) },
+  { value: "warning", label: "warnings+", icon: bellIcon(11) },
+  { value: "any", label: "everything", icon: bellIcon(11) },
+];
+
+function watchLevel(filter) {
+  if (!filter.watch) return "off";
+  return filterNotifyLevel(filter.id) || "count";
 }
 
-function notifyButton(filter) {
-  const level = filter.watch && filterNotifyLevel(filter.id);
-  const hint = level ? `Notifying of ${levelLabel(level)}` : "Notify me";
-  const sub = level ? "Click to change or turn off" : "Desktop notifications of new errors";
-  return `<button class="card-action${level ? " is-on" : ""}" data-notify aria-haspopup="true"
-          aria-label="${escapeHtml(hint)}" data-hint="${escapeHtml(hint)}" data-hint-sub="${sub}">${bellIcon()}</button>`;
+// After the name: the bell of a notifying filter, else the eye of a watched one.
+function watchIndicator(filter) {
+  const level = watchLevel(filter);
+  if (level === "off") return "";
+  const notifying = level !== "count";
+  const hint = notifying ? `Notifying of ${levelLabel(level)}` : "Watching";
+  const sub = !polling
+    ? "Waiting for live updates to resume"
+    : notifying
+      ? "Desktop notifications, from the count of new entries"
+      : "New entries are counted every few minutes";
+  const icon = notifying ? bellIcon(11) : EYE_ICON;
+  return `<span class="log-watching${polling ? "" : " is-paused"}" data-hint="${escapeHtml(hint)}" data-hint-sub="${sub}">${icon}</span>`;
 }
 
-function openNotifyMenu(button, filter) {
-  const level = filter.watch && filterNotifyLevel(filter.id);
-  const choices = LOG_LEVELS.map(({ value, label }) => ({ value, label }));
-  if (level) choices.push({ value: "off", label: "off" });
+function watchButton(filter) {
+  const level = watchLevel(filter);
+  const [hint, sub] =
+    level === "off"
+      ? ["Watch", "Count new entries, or notify you of them"]
+      : level === "count"
+        ? ["Watching", "Counting new entries · click to notify or stop"]
+        : [`Notifying of ${levelLabel(level)}`, "Click to change or stop"];
+  return `<button class="card-action${level === "off" ? "" : " is-on"}" data-watch aria-haspopup="true"
+          aria-label="${escapeHtml(hint)}" data-hint="${escapeHtml(hint)}" data-hint-sub="${sub}">${
+            level === "off" || level === "count" ? EYE_ICON : bellIcon()
+          }</button>`;
+}
+
+function openWatchMenu(button, filter) {
+  const level = watchLevel(filter);
   openChoiceMenu(button, {
-    label: "Notify me of",
-    choices,
-    current: level || DEFAULT_LOG_LEVEL,
-    choose: (value) => setNotifications(filter, value),
+    label: "Watch",
+    choices: WATCH_CHOICES,
+    current: level,
+    // an unwatched filter suggests the default: notify of errors
+    suggested: level === "off" ? DEFAULT_LOG_LEVEL : null,
+    choose: (value) => setWatchLevel(filter, value),
   });
 }
 
-async function setNotifications(filter, level) {
+const NOTIFY_PROBLEMS = {
+  unsupported: "This browser cannot show notifications here: they need HTTPS or localhost.",
+  blocked: () =>
+    notificationsBlocked()
+      ? "Notifications are blocked for this site. Allow them in the browser's site settings, then try again."
+      : "Notifications were not allowed.",
+};
+
+async function setWatchLevel(filter, level) {
+  if (level === watchLevel(filter)) return;
   let current = filter;
-  if (level !== "off" && !current.watch) {
-    // notifications come from the background count: watch the filter first
+  const watch = level !== "off";
+  if (watch !== filter.watch) {
     try {
-      current = await api.watchFilter(filter.id, true);
+      current = await api.watchFilter(filter.id, watch);
       replaceFilter(current);
     } catch (error) {
       toast(error.message, "error");
       return;
     }
   }
-  const outcome = await setFilterNotifications(current.id, level, unseen[current.id]);
-  if (outcome === "on")
-    confirmFilterEnabled(current, level, { paused: !polling }, openFromNotification);
-  const testHint =
-    "No test notification on screen? Check the system's notification settings for this browser.";
-  const what = level === "any" ? "new entries" : `new ${levelLabel(level)}`;
-  const messages = {
-    on: polling
-      ? [`“${current.name}” notifies you of ${what}. ${testHint}`, "success"]
-      : [`“${current.name}” notifies you of ${what} once live updates resume. ${testHint}`, "info"],
-    off: [`Notifications for “${current.name}” are off.`, "info"],
-    unsupported: [
-      "This browser cannot show notifications here: they need HTTPS or localhost.",
-      "error",
-    ],
-    blocked: [
-      notificationsBlocked()
-        ? "Notifications are blocked for this site. Allow them in the browser's site settings, then try again."
-        : "Notifications were not allowed.",
-      "error",
-    ],
-  };
-  const [message, kind] = messages[outcome];
-  toast(message, kind, outcome === "on" ? 8000 : undefined);
-  renderFilterList();
-  if (current !== filter) refreshUnseen(); // just watched: start counting now
+  if (!watch || level === "count") {
+    forgetFilter(current.id);
+    if (!watch) delete unseen[current.id];
+    renderFilterList();
+    const when = polling ? "every few minutes" : "once live updates resume";
+    toast(
+      watch
+        ? `Watching “${current.name}”: new entries are counted ${when}.`
+        : `Stopped watching “${current.name}”.`,
+      watch ? "success" : "info"
+    );
+  } else {
+    const outcome = await setFilterNotifications(current.id, level, unseen[current.id]);
+    renderFilterList();
+    if (outcome === "on") {
+      confirmFilterEnabled(current, level, { paused: !polling }, openFromNotification);
+      const what = level === "any" ? "new entries" : `new ${levelLabel(level)}`;
+      const when = polling ? "" : " once live updates resume";
+      toast(
+        `“${current.name}” notifies you of ${what}${when}. No test notification on screen? Check the system's notification settings for this browser.`,
+        polling ? "success" : "info",
+        8000
+      );
+    } else {
+      // the filter stays watched: its count still shows on the card
+      const problem = NOTIFY_PROBLEMS[outcome];
+      toast(
+        `${typeof problem === "function" ? problem() : problem} New entries are still counted.`,
+        "error"
+      );
+    }
+  }
+  if (watch && !filter.watch) refreshUnseen(); // just watched: start counting now
 }
 
 function lookingAt(filter) {

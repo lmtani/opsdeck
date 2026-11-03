@@ -34,7 +34,7 @@ Logs are read from **sources**, listed under the saved filters: a source is a Go
 
 ### Watched filters
 
-The eye button of a filter **watches** it: in the background the app counts the entries that arrived since you last opened the filter and shows them on its card, one chip per severity, with the total on the Logs tab.
+The eye button of a filter **watches** it: in the background the app counts the entries that arrived since you last opened the filter and shows them on its card, one chip per severity, with the total on the Logs tab. Its menu offers *count only* or, marked with a bell, desktop notifications too (see below); *off* stops watching.
 
 - Clicking a chip shows exactly those entries, even when they are older than the filter's window.
 - Opening the filter marks the new entries with a dot. When some are older than its window, or more than its limit, a bar above the results says so and leads to them.
@@ -42,7 +42,7 @@ The eye button of a filter **watches** it: in the background the app counts the 
 
 ### Log notifications
 
-The bell button of a filter sends desktop notifications when its count grows: of new **errors** by default, or of warnings and errors, or of any new entry. Picking a level watches the filter if it was not watched yet, and stopping the watch turns its notifications off. Like a feed's, they need permission once, arrive while OpsDeck is open in some tab, even in the background, and clicking one shows the new entries. Nothing is sent for entries you have on screen, and the installed app's icon badge adds the new log entries to the GitHub events.
+A watched filter can also send desktop notifications when its count grows: pick *errors* (the one suggested), *warnings+* or *everything* in the eye button's menu. The button and the mark after the filter's name then show a bell instead of the eye, and *count only* or *off* stops the notifications. Like a feed's, they need permission once, arrive while OpsDeck is open in some tab, even in the background, and clicking one shows the new entries. Nothing is sent for entries you have on screen, and the installed app's icon badge adds the new log entries to the GitHub events.
 
 Each round reads only the minutes since the previous one, one API call per watched filter (Cloud Logging does not bill reads; its quota is 60 per minute per project). A round that reaches 1000 entries shows the number as a lower bound, like `1000+`.
 
