@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from opsdeck.application.backup import BackupService
+from opsdeck.application.deploys import DeployService
 from opsdeck.application.github import GithubActivityService, GithubFeedService
 from opsdeck.application.links import ImageService, LinkService
 from opsdeck.application.logs import LogFilterService, LogQueryService, LogSourceService, LogWatchService
@@ -15,6 +16,7 @@ from opsdeck.application.settings import SettingsService
 from opsdeck.application.sharing import SharingService
 from opsdeck.application.updates import UpdateService
 from opsdeck.domain.common import utc_now
+from opsdeck.domain.deploys import Deploy, DeployKind, DeployPlatform, DeployTarget
 from opsdeck.domain.errors import GithubError, LogProviderError
 from opsdeck.domain.github import (
     Contribution,
@@ -33,6 +35,7 @@ from opsdeck.domain.logs import LogEntry, LogSourceKind, SeverityBand
 from opsdeck.domain.updates import Release
 from opsdeck.presentation.api import Services, create_app
 from tests.fakes import (
+    FakeDeployFeed,
     FakeGithubProvider,
     FakeImageStore,
     FakeLogProvider,
@@ -45,6 +48,7 @@ from tests.fakes import (
     make_code_comment,
     make_event,
     make_push,
+    ts,
 )
 
 
@@ -57,6 +61,7 @@ def world(tmp_path):
         feeds=InMemoryFeedRepository(),
         settings=InMemorySettingsRepository(),
         logs=FakeLogProvider(),
+        deploys=FakeDeployFeed(),
         github=FakeGithubProvider(),
         images=FakeImageStore(),
         releases=FakeReleaseFeed(),
@@ -66,7 +71,9 @@ def world(tmp_path):
         links=LinkService(fakes.links),
         sources=LogSourceService(fakes.sources, fakes.filters),
         filters=LogFilterService(fakes.filters, fakes.sources),
-        logs=LogQueryService({LogSourceKind.GCP: fakes.logs}, fakes.sources, fakes.filters),
+        logs=LogQueryService(
+            {LogSourceKind.GCP: fakes.logs}, fakes.sources, fakes.filters, {LogSourceKind.GCP: fakes.deploys}
+        ),
         watch=LogWatchService(
             {LogSourceKind.GCP: fakes.logs}, fakes.sources, fakes.filters, clock=lambda: fakes.now
         ),
@@ -81,6 +88,7 @@ def world(tmp_path):
             fakes.links, fakes.sources, fakes.filters, fakes.feeds, fakes.settings, ImageService(fakes.images)
         ),
         updates=UpdateService(fakes.releases, current="0.2.0"),
+        deploys=DeployService({LogSourceKind.GCP: fakes.deploys}, fakes.sources),
     )
     web = tmp_path / "web"
     web.mkdir()
@@ -277,6 +285,39 @@ def test_log_query_saved_refined_ad_hoc_and_failures(world):
     world.logs.error = LogProviderError("gcloud fora")
     failed = client.post("/api/logs/query", json={"source_id": source, "expression": ""})
     assert failed.status_code == 502 and failed.json()["detail"] == "gcloud fora"
+
+
+def test_a_query_names_its_deploy_targets_and_deploys_are_read_for_them(world):
+    client = world.client
+    source = add_source(world)["id"]
+    world.logs.entries = [
+        LogEntry("2026-10-30T12:00:00Z", "ERROR", "boom", "svc", {"name": "api"}),
+        LogEntry("2026-10-30T12:01:00Z", "INFO", "ok", "other", {}),
+    ]
+    result = client.post("/api/logs/query", json={"source_id": source, "expression": "x"}).json()
+    assert result["deploy_targets"] == [{"platform": "cloud_run", "name": "api"}]
+
+    api = DeployTarget(DeployPlatform.CLOUD_RUN, "api")
+    world.deploys.items = [
+        Deploy(api, ts("2026-10-30T11:58:00Z"), DeployKind.DEPLOY, revision="api-00042", actor="ci@x")
+    ]
+    body = {
+        "source_id": source,
+        "targets": result["deploy_targets"],
+        "start": "2026-10-30T00:00:00Z",
+        "end": "2026-10-31T00:00:00Z",
+    }
+    [deploy] = client.post("/api/deploys", json=body).json()
+    assert deploy["target"] == {"platform": "cloud_run", "name": "api"}
+    assert (deploy["revision"], deploy["kind"], deploy["live"]) == ("api-00042", "deploy", True)
+
+    assert client.post("/api/deploys", json={**body, "source_id": "ghost"}).status_code == 404
+    backwards = {**body, "start": body["end"], "end": body["start"]}
+    assert client.post("/api/deploys", json=backwards).status_code == 422
+    unknown = {**body, "targets": [{"platform": "lambda", "name": "x"}]}
+    assert client.post("/api/deploys", json=unknown).status_code == 422
+    world.deploys.error = LogProviderError("no audit log")
+    assert client.post("/api/deploys", json=body).status_code == 502
 
 
 # ----- github ----------------------------------------------------------------

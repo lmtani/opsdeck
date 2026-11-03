@@ -1122,6 +1122,45 @@ body {
 .log-hist-key { display: inline-flex; align-items: center; gap: 6px; }
 .log-hist-clip { margin-left: auto; color: var(--warn); }
 .log-hist-key i { width: 9px; height: 9px; border-radius: 2px; background: var(--k); }
+/* deploy markers (logs.js): a mark over the histogram and a row between the entries */
+.log-hist-plot { position: relative; padding-top: 8px; }
+.log-deploys { position: absolute; inset: 0; pointer-events: none; }
+:is(.log-deploy-mark, .entry-deploy):is(.is-live, .is-traffic) { --dk: var(--accent); }
+:is(.log-deploy-mark, .entry-deploy).is-dormant { --dk: var(--text-dim); }
+:is(.log-deploy-mark, .entry-deploy).is-failed { --dk: var(--danger); }
+.log-deploy-mark { position: absolute; top: 0; bottom: 0; width: 11px; margin-left: -5.5px; padding: 0; border: 0; background: none; cursor: pointer; pointer-events: auto; }
+.log-deploy-mark::before { content: ""; position: absolute; left: 5px; top: 7px; bottom: 0; width: 1px; background: var(--dk); }
+.log-deploy-mark.is-traffic::before { background: repeating-linear-gradient(to bottom, var(--dk) 0 3px, transparent 3px 6px); }
+.log-deploy-mark.is-dormant::before { opacity: 0.6; }
+.log-deploy-mark::after { content: ""; position: absolute; left: 2px; top: 1px; width: 7px; height: 7px; transform: rotate(45deg); background: var(--dk); box-shadow: 0 0 0 2px var(--bg); }
+.log-deploy-mark.is-dormant::after { background: var(--bg); border: 1px solid var(--dk); width: 5px; height: 5px; }
+.log-deploy-mark:hover::before, .log-deploy-mark:focus-visible::before { width: 2px; left: 4.5px; }
+.log-deploy-mark:focus-visible { outline: none; }
+.log-deploy-key { --k: var(--accent); }
+.log-deploy-key i { transform: rotate(45deg) scale(0.8); }
+.log-deploy-problem { color: var(--text-dim); text-decoration: underline dotted; cursor: help; }
+.entry-deploy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-left: -20px;
+  padding: 7px 0 7px 17px;
+  border-left: 3px solid var(--dk);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--dk) 7%, transparent);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  animation: entry-in 300ms ease both;
+}
+.entry-deploy.is-dormant { background: none; border-left-style: dashed; }
+.entry-deploy.is-flash { animation: entry-flash 1.4s var(--ease); }
+.entry-deploy .deploy-what { color: var(--dk); font-weight: 500; }
+.entry-deploy.is-dormant .deploy-what { color: var(--text); }
+.deploy-details { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; color: var(--text-dim); min-width: 0; }
+.deploy-details span { overflow-wrap: anywhere; }
+.deploy-message { color: var(--danger); }
+.entry-deploy .deploy-only { margin-left: auto; margin-right: 8px; }
 /* while a query runs (logs.js showHistogramSkeleton) */
 .log-hist-skel { display: grid; grid-template-columns: repeat(60, 1fr); gap: 2px; align-items: end; height: 52px; }
 .log-hist-skel i { height: var(--h); border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--bg-elev) 70%, var(--border-strong)); animation: skel-breathe 1.6s ease-in-out infinite; animation-delay: calc(var(--i) * 25ms); }

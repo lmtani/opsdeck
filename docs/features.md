@@ -46,6 +46,15 @@ A watched filter can also send desktop notifications when its count grows: pick 
 
 Each round reads only the minutes since the previous one, one API call per watched filter (Cloud Logging does not bill reads; its quota is 60 per minute per project). A round that reaches 1000 entries shows the number as a lower bound, like `1000+`.
 
+### Deploy markers
+
+When a filter's entries come from Cloud Run services or jobs or App Engine services, their deploys over the histogram's span are drawn on it, a diamond at each one, and listed as rows between the entries, so errors that start right after a deploy stand out. Hover a mark for the revision or version, the image and who deployed (a person or the CI's service account); click it to find its row, whose **only this revision** (or version) keeps just the entries the new code wrote, and shift+click hides them.
+
+- An App Engine version created and promoted reads as one deploy; one created without traffic (a preview) is drawn hollow, and moving traffic later gets its own dashed mark.
+- A failed deploy is red, with Google's message.
+
+The deploys come from the project's Admin Activity audit log, which is always on and readable with the same `roles/logging.viewer`: no other permission or setup. They are one more read per query, made after the entries show; if it fails, the legend says so and the logs stay as they are.
+
 ## Background updates
 
 Feed badges, notifications, the auto refresh of the open feed (**◷ auto**) and the count of watched filters run in the background. A thin line under the feed list, the filter list and the open feed fills up until the next update; hover it to see when that is, and click it to choose how often (every 1 to 15 min; the open feed every 30 s to 5 min).

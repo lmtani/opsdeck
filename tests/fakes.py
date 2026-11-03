@@ -5,6 +5,7 @@ HTTP. Each fake records what it was asked, so tests can assert on it.
 """
 
 from opsdeck.domain.common import parse_timestamp
+from opsdeck.domain.deploys import Deploy, DeployFeed, DeployTarget
 from opsdeck.domain.errors import ExternalServiceError, GithubNotFoundError
 from opsdeck.domain.github import (
     ActivitySnapshot,
@@ -103,6 +104,27 @@ def gcp_source(project: str = "proj-x", name: str | None = None, id_: str | None
     if id_:
         source.id = id_
     return source
+
+
+class FakeDeployFeed(DeployFeed):
+    """Targets: one per entry whose resource is 'svc', named by its 'name'
+    label. Deploys: the stored ones of the window's targets inside it."""
+
+    def __init__(self, deploys: list[Deploy] | None = None, error: Exception | None = None):
+        self.items = deploys or []
+        self.error = error
+        self.windows: list = []
+
+    def targets(self, entries):
+        names = dict.fromkeys(e.resource_labels.get("name") for e in entries if e.resource_type == "svc")
+        return [DeployTarget("cloud_run", name) for name in names if name]
+
+    def deploys(self, source, window):
+        self.windows.append(window)
+        if self.error:
+            raise self.error
+        inside = [d for d in self.items if d.target in window.targets and window.start <= d.at < window.end]
+        return sorted(inside, key=lambda d: d.at, reverse=True)
 
 
 class FakeLogProvider(LogProvider):
