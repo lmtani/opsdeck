@@ -20,13 +20,19 @@ opsdeck             # http://127.0.0.1:8765
 
 If the shell does not find `opsdeck`, run `uv tool update-shell` once and open a new terminal.
 
-`stable` is the latest [release](https://github.com/lmtani/opsdeck/releases), so `uv tool upgrade opsdeck` updates to the next one; the database migrates itself on the next start. When a new release is out, OpsDeck shows it in the top bar with the notes and that command (`OPSDECK_UPDATE_CHECK=off` turns that off). To stay on one release, install its tag instead (`…/opsdeck@v0.2.0`); to follow every merged change, install without `@stable`. `opsdeck info` shows the version and where the data is: a SQLite file in the user's data directory (`~/.local/share/opsdeck` on Linux, `~/Library/Application Support/opsdeck` on macOS), created on the first run. The box button in the top bar downloads a backup of everything and restores one, here or on another machine.
+The Links tab works right away; the other two need [credentials](#credentials). Your data is a SQLite file in the user's data directory (`~/.local/share/opsdeck` on Linux, `~/Library/Application Support/opsdeck` on macOS); `opsdeck info` shows where. The box button in the top bar downloads a backup of everything and restores one, here or on another machine. OpsDeck can also be installed as an app from Chrome or Edge (the install icon in the address bar).
 
-The Links tab works right away; the other two need credentials. OpsDeck can also be installed as an app from Chrome or Edge (the install icon in the address bar).
+### Update
 
-## Start at login
+```bash
+uv tool upgrade opsdeck
+```
 
-To keep OpsDeck running in the background, started whenever you log in and restarted if it stops unexpectedly:
+`stable` is the latest [release](https://github.com/lmtani/opsdeck/releases), and OpsDeck shows a newer one in the top bar (`OPSDECK_UPDATE_CHECK=off` turns that off). The database migrates itself on the next start. To stay on one release, install its tag instead (`…/opsdeck@v0.2.0`); to follow every merged change, install without `@stable`.
+
+### Start at login (optional)
+
+`opsdeck` runs in the terminal until you stop it. To keep it running in the background instead, started at login and restarted if it crashes:
 
 ```bash
 opsdeck service install      # a systemd user service on Linux, a launchd agent on macOS; no sudo
@@ -35,9 +41,11 @@ opsdeck service restart      # after `uv tool upgrade opsdeck`
 opsdeck service uninstall    # stop it and remove it; your data stays
 ```
 
-`install` takes `--host` and `--port`, and keeps the OpsDeck variables set in your shell (`GITHUB_TOKEN`, `DASHBOARD_DB_URL`, `OPSDECK_DATA_DIR`…) and its `PATH` in the service definition, readable only by you; run it again after changing them. On Linux it starts when you log in; `loginctl enable-linger` makes it start at boot instead.
+`install` takes `--host` and `--port` and keeps the OpsDeck variables set in your shell (`GITHUB_TOKEN`, `DASHBOARD_DB_URL`…) for the service, so run it again after changing them.
 
-To remove OpsDeck completely: `opsdeck service uninstall`, then `uv tool uninstall opsdeck`, then delete the data directory that `opsdeck info` shows.
+### Uninstall
+
+`opsdeck service uninstall` (if you installed the service), then `uv tool uninstall opsdeck`, then delete the data directory that `opsdeck info` shows.
 
 ## Credentials
 
