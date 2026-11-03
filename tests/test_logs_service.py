@@ -14,6 +14,7 @@ from opsdeck.domain.logs import (
     LogSourceKind,
     Refinement,
     SeverityBand,
+    SourceCheck,
     TimeRange,
 )
 from tests.fakes import FakeLogProvider, InMemoryFilterRepository, InMemorySourceRepository, gcp_source, ts
@@ -126,6 +127,21 @@ def test_create_source_validates(name, kind, config, message):
     service = LogSourceService(InMemorySourceRepository(), InMemoryFilterRepository())
     with pytest.raises(ValidationError, match=message):
         service.create_source(name, kind, config)
+
+
+def test_check_source_asks_the_provider_of_the_kind_without_saving():
+    sources = InMemorySourceRepository()
+    provider = FakeLogProvider()
+    provider.check_result = SourceCheck(ok=False, message="no permission")
+    service = LogSourceService(sources, InMemoryFilterRepository(), {LogSourceKind.GCP: provider})
+    assert service.check_source("gcp", {"project": " proj "}) == SourceCheck(
+        ok=False, message="no permission"
+    )
+    assert provider.checked[0].config == {"project": "proj"} and sources.list_all() == []
+    with pytest.raises(ValidationError):
+        service.check_source("gcp", {"project": ""})
+    # a kind without a provider has nothing to check
+    assert LogSourceService(sources, InMemoryFilterRepository()).check_source("gcp", {"project": "p"}).ok
 
 
 def test_source_names_are_unique_ignoring_case():

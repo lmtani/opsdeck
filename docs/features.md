@@ -30,7 +30,7 @@ Hover a feed and click its bell to get desktop notifications of its new events. 
 
 ## Logs
 
-Logs are read from **sources**, listed under the saved filters: a source is a Google Cloud project for now, and each filter runs on one. Clicking a severity, a resource or a field of an entry refines the results, **Save as new filter** keeps the refined query, and clicking an entry's trace shows every entry of the same request, optionally across the other sources.
+Logs are read from **sources**, listed under the saved filters: a source is a Google Cloud project for now, and each filter runs on one. Saving a source first reads from it, so a mistyped project, a display name instead of the ID, a missing permission or expired credentials show up in the form, with what to do; **Save anyway** keeps it regardless (when offline, for example). A project with no entries in the last 30 days is saved with a note to check it is the right one. Clicking a severity, a resource or a field of an entry refines the results, **Save as new filter** keeps the refined query, and clicking an entry's trace shows every entry of the same request, optionally across the other sources.
 
 ### Watched filters
 

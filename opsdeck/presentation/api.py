@@ -147,6 +147,10 @@ def create_app(services: Services, web_dir: Path, images_dir: Path) -> FastAPI:
     def list_sources():
         return [schemas.LogSourceOut.model_validate(item) for item in services.sources.list_sources()]
 
+    @app.post("/api/log-sources/check", response_model=schemas.SourceCheckOut)
+    def check_source(body: schemas.SourceCheckIn):
+        return schemas.SourceCheckOut.model_validate(services.sources.check_source(body.kind, body.config))
+
     @app.post("/api/log-sources", response_model=schemas.LogSourceOut, status_code=201)
     def create_source(body: schemas.LogSourceIn):
         created = services.sources.create_source(body.name, body.kind, body.config)

@@ -12,7 +12,7 @@ from google.api_core import exceptions as api_exceptions
 from google.auth import exceptions as auth_exceptions
 
 from opsdeck.domain.errors import LogProviderError
-from opsdeck.domain.logs import LogQuery, Refinement, SeverityBand, TimeRange
+from opsdeck.domain.logs import LogQuery, Refinement, SeverityBand, SourceCheck, TimeRange
 from opsdeck.infrastructure.logs.gcp.provider import CloudLoggingApiProvider
 from tests.fakes import gcp_source
 
@@ -243,3 +243,37 @@ def test_a_time_range_replaces_the_freshness_and_bands_narrow_the_severity():
     info = provider.expression(LogQuery(bands=(SeverityBand.INFO,)))
     other = provider.expression(LogQuery(bands=(SeverityBand.OTHER,)))
     assert (info, other) == ("(severity=INFO OR severity=NOTICE)", "severity<=DEBUG")
+
+
+def test_check_reads_one_recent_entry_of_the_project():
+    client = FakeClient([_Entry("a")])
+    provider, _ = _provider(client)
+    assert provider.check(SOURCE) == SourceCheck(ok=True)
+    call = client.calls[0]
+    assert call["resource_names"] == ["projects/proj-x"] and call["filter_"].startswith('timestamp>="')
+    assert call["page_size"] == 1
+
+
+def test_check_flags_an_empty_project_without_failing():
+    check = _provider(FakeClient([]))[0].check(SOURCE)
+    assert check.ok and "no log entries in the last 30 days" in check.message
+
+
+def test_check_reports_why_a_project_cannot_be_read():
+    denied = FakeClient(error=api_exceptions.NotFound("projects/proj-x"))
+    check = _provider(denied)[0].check(SOURCE)
+    assert not check.ok and "was not found, or the credentials cannot see it" in check.message
+    no_credentials = _provider(credentials_error=auth_exceptions.DefaultCredentialsError("was not found"))
+    assert "No Google Cloud credentials found" in no_credentials[0].check(SOURCE).message
+
+
+@pytest.mark.parametrize("project", ["My Project", "proj_x", "Proj-X", "abc"])
+def test_check_refuses_what_is_not_a_project_id_before_asking(project):
+    client = FakeClient()
+    check = _provider(client)[0].check(gcp_source(project))
+    assert not check.ok and "not a Google Cloud project ID" in check.message and client.calls == []
+
+
+@pytest.mark.parametrize("project", ["my-project-123", "1071645522816", "google.com:legacy-proj"])
+def test_check_accepts_ids_numbers_and_legacy_domain_ids(project):
+    assert _provider(FakeClient([_Entry("a")]))[0].check(gcp_source(project)).ok

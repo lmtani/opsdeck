@@ -367,6 +367,15 @@ class LogEntry:
     fields: dict = field(default_factory=dict)  # full raw provider record, for line formatting
 
 
+@dataclass(frozen=True)
+class SourceCheck:
+    """Whether a source can be read. `message` says why not, or, when it can,
+    what looks off (e.g. no entries lately: maybe the wrong project)."""
+
+    ok: bool
+    message: str = ""
+
+
 class LogFilterRepository(Repository[LogFilter]):
     """Saved filters, by id."""
 
@@ -381,6 +390,10 @@ class LogProvider(ABC):
     def is_available(self) -> bool:
         """Whether the backend is ready to serve queries (health check)."""
         return True
+
+    def check(self, source: LogSource) -> SourceCheck:
+        """Whether this source can be read, by actually reading from it."""
+        return SourceCheck(ok=True)
 
     @abstractmethod
     def expression(self, query: LogQuery) -> str:

@@ -60,6 +60,18 @@ class LogSourceIn(LogSourceUpdate):
     kind: LogSourceKind = LogSourceKind.GCP
 
 
+class SourceCheckIn(BaseModel):
+    kind: LogSourceKind = LogSourceKind.GCP
+    config: dict[str, str] = Field(default_factory=dict)
+
+
+class SourceCheckOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    ok: bool
+    message: str = ""  # why not, or what looks off when it can be read
+
+
 class LogSourceOut(LogSourceIn):
     model_config = ConfigDict(from_attributes=True)
 

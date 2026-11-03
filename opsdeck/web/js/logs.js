@@ -1896,7 +1896,60 @@ function openSourceModal(source = null) {
   form.name.value = source?.name || "";
   form.name.dataset.touched = source ? "1" : "";
   renderSourceFields(form.kind.value, source?.config);
+  resetSourceCheck();
   openModal("source-modal");
+}
+
+// ----- checking a source before it is saved ------------------------------
+//
+// Saving a new source, or a changed configuration, first reads from it
+// (POST /api/log-sources/check). A failure stays in the modal with the reason
+// and turns Save into "Save anyway" (the check may fail for a reason that will
+// pass, e.g. offline); editing the configuration checks again.
+
+function showSourceCheck(state, message) {
+  const box = document.getElementById("source-check");
+  box.className = `source-check is-${state}`;
+  box.innerHTML =
+    state === "checking"
+      ? `<span class="btn-spin" aria-hidden="true">↻</span> ${escapeHtml(message)}`
+      : escapeHtml(message);
+  box.hidden = false;
+}
+
+function resetSourceCheck() {
+  const form = document.getElementById("source-form");
+  delete form.dataset.force;
+  document.getElementById("source-check").hidden = true;
+  document.getElementById("source-save-btn").textContent = "Save";
+}
+
+const sameConfig = (a = {}, b = {}) =>
+  Object.keys({ ...a, ...b }).every((key) => (a[key] || "") === (b[key] || ""));
+
+// Whether the source can be read: true, false (shown in the modal) or a
+// warning to pass on once saved.
+async function checkBeforeSaving(kind, config) {
+  const button = document.getElementById("source-save-btn");
+  const place = Object.values(config).filter(Boolean).join(" · ");
+  showSourceCheck("checking", `Checking that ${place} can be read…`);
+  button.textContent = "Checking…";
+  let check;
+  try {
+    check = await api.checkSource({ kind, config });
+  } catch (error) {
+    check = { ok: false, message: error.message };
+  }
+  if (check.ok) {
+    const box = document.getElementById("source-check");
+    box.hidden = true;
+    box.className = "source-check";
+    return { ok: true, warning: check.message };
+  }
+  showSourceCheck("error", check.message);
+  document.getElementById("source-form").dataset.force = "1";
+  button.textContent = "Save anyway";
+  return { ok: false };
 }
 
 async function submitSource(event) {
@@ -1910,15 +1963,25 @@ async function submitSource(event) {
   );
   const name = form.name.value.trim();
   const button = document.getElementById("source-save-btn");
+  const existing = editingSourceId ? sourceById(editingSourceId) : null;
+  const kind = existing?.kind || form.kind.value;
   button.disabled = true;
   try {
+    let warning = "";
+    if (!form.dataset.force && !(existing && sameConfig(existing.config, config))) {
+      const check = await checkBeforeSaving(kind, config);
+      if (!check.ok) return;
+      warning = check.warning;
+      button.textContent = "Saving…";
+    }
     if (editingSourceId) {
       await api.updateSource(editingSourceId, { name, config });
-      toast("Source updated", "success");
     } else {
-      await api.createSource({ name, kind: form.kind.value, config });
-      toast("Source added", "success");
+      await api.createSource({ name, kind, config });
     }
+    const done = editingSourceId ? "Source updated" : "Source added";
+    if (warning) toast(`${done}. ${warning}`, "info", 9000);
+    else toast(done, "success");
     closeModal("source-modal");
     await loadSources();
   } catch (error) {
@@ -1988,6 +2051,7 @@ export async function initLogs() {
     sourceForm.name.dataset.touched = "1";
   });
   document.getElementById("source-config").addEventListener("input", (event) => {
+    if (event.target.matches("[data-config]") && sourceForm.dataset.force) resetSourceCheck();
     if (sourceForm.name.dataset.touched || !event.target.matches("[data-config]")) return;
     sourceForm.name.value = event.target.value.trim();
   });

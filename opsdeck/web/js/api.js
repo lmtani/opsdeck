@@ -45,6 +45,7 @@ export const api = {
 
   listSources: () => request("/api/log-sources"),
   createSource: (data) => request("/api/log-sources", json("POST", data)),
+  checkSource: (data) => request("/api/log-sources/check", json("POST", data)),
   updateSource: (id, data) => request(`/api/log-sources/${id}`, json("PUT", data)),
   deleteSource: (id) => request(`/api/log-sources/${id}`, { method: "DELETE" }),
 
