@@ -1,13 +1,13 @@
-// Desktop notifications for GitHub feeds (Web Notifications API).
+// Desktop notifications (Web Notifications API) for GitHub feeds and watched
+// log filters.
 //
-// Per browser, like the permission itself: which feeds notify, and for each
-// one the newest event already announced, so nothing is announced twice and
-// turning a feed on does not replay its backlog. The GitHub view decides when
-// to check; this module asks permission, keeps that state and builds the
-// message.
+// Per browser, like the permission itself: which items notify (and, for a log
+// filter, from which severity), and for each one a mark of what was already
+// announced, so nothing is announced twice and turning an item on does not
+// replay its backlog. The views decide when to check; this module asks
+// permission, keeps that state and shows the message. createNotifier holds the
+// state of one kind of item; the feed functions below are built on one.
 
-const ENABLED_KEY = "opsdeck.github.notify";
-const MARK_PREFIX = "opsdeck.github.notified.";
 const MAX_LINES = 3;
 const MAX_LINE = 90;
 
@@ -36,52 +36,87 @@ export function notificationsBlocked() {
   return notificationsSupported() && Notification.permission === "denied";
 }
 
-export function isNotifying(feedId) {
-  return (
-    read(ENABLED_KEY, []).includes(feedId) &&
-    notificationsSupported() &&
-    Notification.permission === "granted"
-  );
+const granted = () => notificationsSupported() && Notification.permission === "granted";
+
+// `enabledKey` holds {id: setting} (a list of ids in older versions: each one
+// reads as `true`), `markPrefix + id` the mark of what was announced, `tag`
+// names an item's notification, so a newer one replaces it.
+export function createNotifier({ enabledKey, markPrefix, tag }) {
+  const settings = () => {
+    const stored = read(enabledKey, {});
+    return Array.isArray(stored) ? Object.fromEntries(stored.map((id) => [id, true])) : stored;
+  };
+  const forgetMark = (id) => {
+    try {
+      localStorage.removeItem(markPrefix + id);
+    } catch {
+      /* nothing to forget */
+    }
+  };
+  const notifier = {
+    // the item's setting while notifications can be shown, else null
+    setting: (id) => (granted() ? (settings()[id] ?? null) : null),
+    stored: (id) => settings()[id] ?? null,
+    any: (ids) => ids.some((id) => notifier.setting(id) !== null),
+    // Turn an item on (or change its setting). Asks for permission, so it must
+    // run from a click. Returns "on", "unsupported" or "blocked".
+    async enable(id, value, mark) {
+      if (!notificationsSupported()) return "unsupported";
+      const permission =
+        Notification.permission === "default"
+          ? await Notification.requestPermission()
+          : Notification.permission;
+      if (permission !== "granted") return "blocked";
+      write(enabledKey, { ...settings(), [id]: value });
+      write(markPrefix + id, mark);
+      return "on";
+    },
+    disable(id) {
+      const { [id]: _, ...rest } = settings();
+      write(enabledKey, rest);
+      forgetMark(id);
+    },
+    mark: (id) => read(markPrefix + id, null),
+    setMark: (id, value) => write(markPrefix + id, value),
+    show(id, { title, body, icon }, onClick) {
+      const notification = new Notification(title, {
+        body,
+        icon,
+        tag: `${tag}${id}`,
+        renotify: true,
+      });
+      notification.onclick = () => {
+        window.focus();
+        onClick();
+        notification.close();
+      };
+    },
+  };
+  return notifier;
 }
 
-export function anyNotifying(feedIds) {
-  return feedIds.some(isNotifying);
-}
+// ----- GitHub feeds ----------------------------------------------------
 
-// Turn a feed's notifications on or off. Turning on asks for permission (it
-// must run from a click) and starts counting from now. Returns the outcome so
-// the caller can explain it: "on", "off", "unsupported", "blocked".
+const feeds = createNotifier({
+  enabledKey: "opsdeck.github.notify",
+  markPrefix: "opsdeck.github.notified.",
+  tag: "opsdeck-feed-",
+});
+
+export const isNotifying = (feedId) => feeds.setting(feedId) !== null;
+export const anyNotifying = (feedIds) => feeds.any(feedIds);
+
+// Turn a feed's notifications on or off; on starts counting from now. Returns
+// the outcome so the caller can explain it: "on", "off", "unsupported", "blocked".
 export async function toggleNotifications(feedId) {
-  const enabled = read(ENABLED_KEY, []);
-  if (enabled.includes(feedId) && Notification.permission === "granted") {
-    write(
-      ENABLED_KEY,
-      enabled.filter((id) => id !== feedId)
-    );
+  if (isNotifying(feedId)) {
+    feeds.disable(feedId);
     return "off";
   }
-  if (!notificationsSupported()) return "unsupported";
-  const permission =
-    Notification.permission === "default"
-      ? await Notification.requestPermission()
-      : Notification.permission;
-  if (permission !== "granted") return "blocked";
-  write(ENABLED_KEY, [...new Set([...enabled, feedId])]);
-  write(MARK_PREFIX + feedId, new Date().toISOString());
-  return "on";
+  return feeds.enable(feedId, true, new Date().toISOString());
 }
 
-export function forgetFeed(feedId) {
-  write(
-    ENABLED_KEY,
-    read(ENABLED_KEY, []).filter((id) => id !== feedId)
-  );
-  try {
-    localStorage.removeItem(MARK_PREFIX + feedId);
-  } catch {
-    /* nothing to forget */
-  }
-}
+export const forgetFeed = (feedId) => feeds.disable(feedId);
 
 const time = (value) => Date.parse(value || "") || 0;
 
@@ -125,33 +160,18 @@ export function composeNotification(feedName, events) {
   };
 }
 
-// One notification per feed: a newer one replaces the previous through its tag.
-function show(feed, { title, body, icon }, onOpen) {
-  const notification = new Notification(title, {
-    body,
-    icon,
-    tag: `opsdeck-feed-${feed.id}`,
-    renotify: true,
-  });
-  notification.onclick = () => {
-    window.focus();
-    onOpen(feed);
-    notification.close();
-  };
-}
-
 // Sent right after a feed's notifications are turned on, so the user sees
 // that they reach the desktop (or learns they don't, e.g. do-not-disturb).
 export function confirmEnabled(feed, { paused }, onOpen) {
-  show(
-    feed,
+  feeds.show(
+    feed.id,
     {
       title: `${feed.name} · notifications on`,
       body: paused
         ? "Live updates are paused in OpsDeck. New events will show up here once you resume them."
         : "New events in this feed will show up here while OpsDeck is open in a tab.",
     },
-    onOpen
+    () => onOpen(feed)
   );
 }
 
@@ -159,14 +179,121 @@ export function confirmEnabled(feed, { paused }, onOpen) {
 // announcement for this feed. Returns how many were announced.
 export function announce(feed, activity, onOpen) {
   if (!isNotifying(feed.id)) return 0;
-  const mark = time(read(MARK_PREFIX + feed.id, null));
+  const mark = time(feeds.mark(feed.id));
   const fresh = activity.events.filter((event) => event.is_new && time(event.created_at) > mark);
   if (!fresh.length) return 0;
-  show(feed, composeNotification(feed.name, fresh), onOpen);
+  feeds.show(feed.id, composeNotification(feed.name, fresh), () => onOpen(feed));
   const newest = fresh.reduce(
     (max, event) => (time(event.created_at) > time(max) ? event.created_at : max),
     ""
   );
-  write(MARK_PREFIX + feed.id, newest);
+  feeds.setMark(feed.id, newest);
   return fresh.length;
+}
+
+// ----- watched log filters ---------------------------------------------
+//
+// A filter notifies from a severity: its setting is the level, its mark
+// {since, count} what was announced of the count that started at `since` (the
+// filter's last_seen_at, so "mark seen" starts a new count), or {pending:
+// true} until the first count after turning it on, which is only noted.
+
+const filters = createNotifier({
+  enabledKey: "opsdeck.logs.notify",
+  markPrefix: "opsdeck.logs.notified.",
+  tag: "opsdeck-filter-",
+});
+
+export const LOG_LEVELS = [
+  { value: "error", label: "errors", bands: ["error"] },
+  { value: "warning", label: "warnings and errors", bands: ["error", "warning"] },
+  { value: "any", label: "any new entry", bands: ["error", "warning", "info", "other"] },
+];
+export const DEFAULT_LOG_LEVEL = "error";
+const BAND_NOUNS = {
+  error: ["error", "errors"],
+  warning: ["warning", "warnings"],
+  info: ["info entry", "info entries"],
+  other: ["debug entry", "debug entries"],
+};
+
+const levelOf = (value) => LOG_LEVELS.find((level) => level.value === value) || LOG_LEVELS[0];
+const caught = (status, level) =>
+  levelOf(level).bands.reduce((sum, band) => sum + (status?.[band] || 0), 0);
+const noun = (band, count, extra = "") =>
+  `${count}${extra} ${BAND_NOUNS[band][count === 1 ? 0 : 1]}`;
+
+// The level a filter notifies from, or null.
+export function filterNotifyLevel(filterId) {
+  const value = filters.setting(filterId);
+  return value === null ? null : levelOf(value).value;
+}
+
+export const levelLabel = (value) => levelOf(value).label;
+export const anyFilterNotifying = (filterIds) => filters.any(filterIds);
+export const forgetFilter = (filterId) => filters.disable(filterId);
+
+// Turn a filter's notifications on from `level` ("off" turns them off), noting
+// what its current count already holds. Returns "on", "off", "unsupported" or "blocked".
+export async function setFilterNotifications(filterId, level, status) {
+  if (level === "off") {
+    filters.disable(filterId);
+    return "off";
+  }
+  const mark = status ? { since: status.since, count: caught(status, level) } : { pending: true };
+  return filters.enable(filterId, level, mark);
+}
+
+// Notification text for what a filter caught in the bands of its level:
+//   "API errors · 3 new errors"            body: "since 11/03 14:02 · prod-logs"
+//   "API errors · 5 new entries"           body: "2 errors · 3 warnings", then the line above
+export function composeLogNotification(filter, status, level, { source, since }) {
+  const plus = status.capped ? "+" : "";
+  const bands = levelOf(level).bands.filter((band) => status[band] > 0);
+  const where = [`since ${since}`, source].filter(Boolean).join(" · ");
+  if (bands.length === 1) {
+    return {
+      title: shorten(`${filter.name} · ${noun(bands[0], status[bands[0]], `${plus} new`)}`, 120),
+      body: where,
+    };
+  }
+  const total = caught(status, level);
+  return {
+    title: shorten(`${filter.name} · ${total}${plus} new entries`, 120),
+    body: `${bands.map((band) => noun(band, status[band])).join(" · ")}\n${where}`,
+  };
+}
+
+// Announce a filter's count when the bands of its level grew since the last
+// announcement. `looking` (the user has these entries on screen) only moves
+// the mark. onOpen gets the most severe band with news. Returns how many new
+// entries there were.
+export function announceFilter(filter, status, details, onOpen) {
+  const level = filterNotifyLevel(filter.id);
+  if (!level || !status || status.problem) return 0;
+  const count = caught(status, level);
+  const mark = filters.mark(filter.id) || { pending: true };
+  const fresh = mark.pending ? 0 : mark.since === status.since ? count - mark.count : count;
+  filters.setMark(filter.id, { since: status.since, count });
+  if (fresh <= 0 || details.looking) return 0;
+  const band = levelOf(level).bands.find((name) => status[name] > 0);
+  filters.show(filter.id, composeLogNotification(filter, status, level, details), () =>
+    onOpen(filter, band)
+  );
+  return fresh;
+}
+
+// Sent right after a filter's notifications are turned on, like a feed's.
+export function confirmFilterEnabled(filter, level, { paused }, onOpen) {
+  const what = level === "any" ? "New entries" : `New ${levelLabel(level)}`;
+  filters.show(
+    filter.id,
+    {
+      title: `${filter.name} · notifications on`,
+      body: paused
+        ? `Live updates are paused in OpsDeck. ${what} will show up here once you resume them.`
+        : `${what} in this filter will show up here while OpsDeck is open in a tab.`,
+    },
+    () => onOpen(filter, null)
+  );
 }

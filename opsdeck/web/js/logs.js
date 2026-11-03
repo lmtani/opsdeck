@@ -5,7 +5,21 @@
 // and the backend spells them in the source's query language.
 
 import { api } from "./api.js";
+import { setBadgeCount } from "./badge.js";
 import { makeSortable } from "./dnd.js";
+import { bellIcon, eyeIcon } from "./icons.js";
+import { openChoiceMenu } from "./menu.js";
+import {
+  announceFilter,
+  anyFilterNotifying,
+  confirmFilterEnabled,
+  DEFAULT_LOG_LEVEL,
+  filterNotifyLevel,
+  forgetFilter,
+  levelLabel,
+  notificationsBlocked,
+  setFilterNotifications,
+} from "./notifications.js";
 import { createPoller } from "./poller.js";
 import { registerShare } from "./share.js";
 import { hideTooltip, setupTooltips, tooltipContent } from "./tooltip.js";
@@ -35,10 +49,7 @@ let polling = true;
 let watchPoller = null; // schedules the rounds and draws their countdown line
 let watchEvery = 120; // seconds between rounds (settings.logs_every)
 let watchChoices = [watchEvery];
-const EYE_ICON =
-  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">' +
-  '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="2"/>' +
-  '<circle cx="12" cy="12" r="3" fill="currentColor"/></svg>';
+const EYE_ICON = eyeIcon();
 
 // What the results panel is showing. `mode` is "idle", "filter" (a saved
 // filter on its `source`, plus ad-hoc `refinements` stacked on top of it) or
@@ -164,18 +175,17 @@ function renderFilterList() {
     item.tabIndex = 0;
     const source = sourceById(filter.source_id);
     item.innerHTML = `
-      <span class="filter-name">${escapeHtml(filter.name)}${watchEye(filter)}</span>
+      <span class="filter-name">${escapeHtml(filter.name)}${watchIndicator(filter)}</span>
       <span class="filter-meta">
-        <span title="${escapeHtml(source ? `${kindOf(source).label}: ${sourcePlace(source)}` : "")}">${escapeHtml(source?.name || "no source")}</span>
+        <span${source ? ` data-hint="${escapeHtml(`${kindOf(source).label}: ${sourcePlace(source)}`)}"` : ""}>${escapeHtml(source?.name || "no source")}</span>
         <span>· ${FRESHNESS_LABELS[filter.freshness] || filter.freshness}</span>
         <span>· ${filter.limit}</span>
         ${unseenChips(filter)}
       </span>
       <span class="filter-edit">
-        <button class="card-action${filter.watch ? " is-on" : ""}" data-watch
-          title="${filter.watch ? "Stop watching" : "Watch: count new entries in the background"}">${EYE_ICON}</button>
-        <button class="card-action" data-edit title="Edit">✎</button>
-        <button class="card-action danger" data-delete title="Remove">✕</button>
+        ${watchButton(filter)}
+        <button class="card-action" data-edit aria-label="Edit" data-hint="Edit">✎</button>
+        <button class="card-action danger" data-delete aria-label="Remove" data-hint="Remove">✕</button>
       </span>`;
 
     const run = () => runFilter(filter);
@@ -192,7 +202,7 @@ function renderFilterList() {
     });
     item.querySelector("[data-watch]").addEventListener("click", (event) => {
       event.stopPropagation();
-      toggleWatch(filter);
+      openWatchMenu(event.currentTarget, filter);
     });
     item.querySelector("[data-edit]").addEventListener("click", (event) => {
       event.stopPropagation();
@@ -202,6 +212,7 @@ function renderFilterList() {
       event.stopPropagation();
       confirmDanger(`Remove the filter “${filter.name}”?`, async () => {
         await api.deleteFilter(filter.id);
+        forgetFilter(filter.id);
         if (activeFilterId === filter.id) {
           activeFilterId = null;
           view = { mode: "idle" };
@@ -233,14 +244,6 @@ const shortStamp = (iso) =>
 
 const compactCount = (count) => (count >= 1000 ? `${Math.floor(count / 1000)}k` : String(count));
 
-// The eye next to a watched filter's name.
-function watchEye(filter) {
-  if (!filter.watch) return "";
-  return polling
-    ? `<span class="log-watching" title="Watching: new entries are counted every few minutes">${EYE_ICON}</span>`
-    : `<span class="log-watching is-paused" title="Watching, waiting for live updates to resume">${EYE_ICON}</span>`;
-}
-
 // One chip per severity band that caught something since the filter was last
 // opened ("+" when a read hit its cap); clicking one shows those entries. They
 // sit at the end of the meta line, clear of the hover buttons over the name.
@@ -252,11 +255,11 @@ function unseenChips(filter) {
   const chips = SEVERITY_BANDS.filter(({ band }) => status[band] > 0)
     .map(
       ({ band, label }) =>
-        `<span class="log-unseen lsev-${band}" data-band="${band}" title="${status[band]}${plus} new ${escapeHtml(label)} since ${since}\nClick to show them">${compactCount(status[band])}${plus}</span>`
+        `<span class="log-unseen lsev-${band}" data-band="${band}" data-hint="${status[band]}${plus} new ${escapeHtml(label)} since ${since}" data-hint-sub="Click to show them">${compactCount(status[band])}${plus}</span>`
     )
     .join("");
   const problem = status.problem
-    ? `<span class="log-unseen is-problem" title="${escapeHtml(`Count failed: ${status.problem}`)}">!</span>`
+    ? `<span class="log-unseen is-problem" data-hint="Count failed" data-hint-sub="${escapeHtml(status.problem)}">!</span>`
     : "";
   return chips || problem ? `<span class="filter-unseen">${chips}${problem}</span>` : "";
 }
@@ -276,6 +279,7 @@ function renderTabBadge() {
   badge.title = `${total}${plus} new log entries in watched filters`;
   badge.classList.toggle("is-warn", sum("error") === 0 && sum("warning") > 0);
   badge.classList.toggle("is-calm", sum("error") === 0 && sum("warning") === 0);
+  setBadgeCount("logs", total);
 }
 
 async function refreshUnseen() {
@@ -290,17 +294,21 @@ async function refreshUnseen() {
     unseen = Object.fromEntries(statuses.map((status) => [status.filter_id, status]));
     renderFilterList();
     renderUnseenBar();
+    notifyFilters();
   } catch {
     /* the counts are best effort: try again on the next round */
   }
 }
 
 // The rounds run every few minutes while some filter is watched, the page is
-// visible and the live switch is on.
+// visible (or some filter notifies) and the live switch is on.
+const notifyingAny = () =>
+  anyFilterNotifying(filters.filter((filter) => filter.watch).map((filter) => filter.id));
+
 function watchState() {
   if (!filters.some((filter) => filter.watch)) return null;
   if (!polling) return { paused: "Paused: live updates are off" };
-  if (document.hidden) return { paused: "Waiting for the page to be visible" };
+  if (document.hidden && !notifyingAny()) return { paused: "Waiting for the page to be visible" };
   return { every: watchEvery * 1000 };
 }
 
@@ -309,23 +317,157 @@ function replaceFilter(updated) {
   if (view.filter?.id === updated.id) view.filter = updated;
 }
 
-async function toggleWatch(filter) {
-  try {
-    const updated = await api.watchFilter(filter.id, !filter.watch);
-    replaceFilter(updated);
-    if (!updated.watch) delete unseen[updated.id];
+// ----- watching and notifying ------------------------------------------
+//
+// One setting per filter, from one button: off, "count" (the background count
+// of new entries, the chips and the tab badge) or a notification level, which
+// also counts: desktop notifications from errors (the default), warnings and
+// errors, or any new entry. The level is browser state (notifications.js); the
+// watch is saved in the backend. The count rounds above announce what grew.
+
+const WATCH_CHOICES = [
+  { value: "off", label: "off" },
+  { value: "count", label: "count only" },
+  { value: "error", label: "errors", icon: bellIcon(11) },
+  { value: "warning", label: "warnings+", icon: bellIcon(11) },
+  { value: "any", label: "everything", icon: bellIcon(11) },
+];
+
+function watchLevel(filter) {
+  if (!filter.watch) return "off";
+  return filterNotifyLevel(filter.id) || "count";
+}
+
+// After the name: the bell of a notifying filter, else the eye of a watched one.
+function watchIndicator(filter) {
+  const level = watchLevel(filter);
+  if (level === "off") return "";
+  const notifying = level !== "count";
+  const hint = notifying ? `Notifying of ${levelLabel(level)}` : "Watching";
+  const sub = !polling
+    ? "Waiting for live updates to resume"
+    : notifying
+      ? "Desktop notifications, from the count of new entries"
+      : "New entries are counted every few minutes";
+  const icon = notifying ? bellIcon(11) : EYE_ICON;
+  return `<span class="log-watching${polling ? "" : " is-paused"}" data-hint="${escapeHtml(hint)}" data-hint-sub="${sub}">${icon}</span>`;
+}
+
+function watchButton(filter) {
+  const level = watchLevel(filter);
+  const [hint, sub] =
+    level === "off"
+      ? ["Watch", "Count new entries, or notify you of them"]
+      : level === "count"
+        ? ["Watching", "Counting new entries · click to notify or stop"]
+        : [`Notifying of ${levelLabel(level)}`, "Click to change or stop"];
+  return `<button class="card-action${level === "off" ? "" : " is-on"}" data-watch aria-haspopup="true"
+          aria-label="${escapeHtml(hint)}" data-hint="${escapeHtml(hint)}" data-hint-sub="${sub}">${
+            level === "off" || level === "count" ? EYE_ICON : bellIcon()
+          }</button>`;
+}
+
+function openWatchMenu(button, filter) {
+  const level = watchLevel(filter);
+  openChoiceMenu(button, {
+    label: "Watch",
+    choices: WATCH_CHOICES,
+    current: level,
+    // an unwatched filter suggests the default: notify of errors
+    suggested: level === "off" ? DEFAULT_LOG_LEVEL : null,
+    choose: (value) => setWatchLevel(filter, value),
+  });
+}
+
+const NOTIFY_PROBLEMS = {
+  unsupported: "This browser cannot show notifications here: they need HTTPS or localhost.",
+  blocked: () =>
+    notificationsBlocked()
+      ? "Notifications are blocked for this site. Allow them in the browser's site settings, then try again."
+      : "Notifications were not allowed.",
+};
+
+async function setWatchLevel(filter, level) {
+  if (level === watchLevel(filter)) return;
+  let current = filter;
+  const watch = level !== "off";
+  if (watch !== filter.watch) {
+    try {
+      current = await api.watchFilter(filter.id, watch);
+      replaceFilter(current);
+    } catch (error) {
+      toast(error.message, "error");
+      return;
+    }
+  }
+  if (!watch || level === "count") {
+    forgetFilter(current.id);
+    if (!watch) delete unseen[current.id];
     renderFilterList();
     const when = polling ? "every few minutes" : "once live updates resume";
     toast(
-      updated.watch
-        ? `Watching “${updated.name}”: new entries are counted ${when}.`
-        : `Stopped watching “${updated.name}”.`,
-      updated.watch ? "success" : "info"
+      watch
+        ? `Watching “${current.name}”: new entries are counted ${when}.`
+        : `Stopped watching “${current.name}”.`,
+      watch ? "success" : "info"
     );
-    if (updated.watch) refreshUnseen();
-  } catch (error) {
-    toast(error.message, "error");
+  } else {
+    const outcome = await setFilterNotifications(current.id, level, unseen[current.id]);
+    renderFilterList();
+    if (outcome === "on") {
+      confirmFilterEnabled(current, level, { paused: !polling }, openFromNotification);
+      const what = level === "any" ? "new entries" : `new ${levelLabel(level)}`;
+      const when = polling ? "" : " once live updates resume";
+      toast(
+        `“${current.name}” notifies you of ${what}${when}. No test notification on screen? Check the system's notification settings for this browser.`,
+        polling ? "success" : "info",
+        8000
+      );
+    } else {
+      // the filter stays watched: its count still shows on the card
+      const problem = NOTIFY_PROBLEMS[outcome];
+      toast(
+        `${typeof problem === "function" ? problem() : problem} New entries are still counted.`,
+        "error"
+      );
+    }
   }
+  if (watch && !filter.watch) refreshUnseen(); // just watched: start counting now
+}
+
+function lookingAt(filter) {
+  return (
+    !document.getElementById("view-logs").hidden &&
+    view.filter?.id === filter.id &&
+    !document.hidden &&
+    document.hasFocus()
+  );
+}
+
+function notifyFilters() {
+  if (!polling) return;
+  for (const filter of filters) {
+    if (!filter.watch) continue;
+    const status = unseen[filter.id];
+    announceFilter(
+      filter,
+      status,
+      {
+        source: sourceById(filter.source_id)?.name,
+        since: status ? shortStamp(status.since) : "",
+        looking: lookingAt(filter),
+      },
+      openFromNotification
+    );
+  }
+}
+
+function openFromNotification(filter, band) {
+  document.querySelector('.tab[data-view="logs"]')?.click();
+  const current = filters.find((item) => item.id === filter.id);
+  if (!current) return;
+  if (band && unseen[current.id]?.[band]) openUnseen(current, band);
+  else runFilter(current);
 }
 
 // Seeing what a watched filter caught, up to `seenAt` (default now): its
@@ -1606,7 +1748,7 @@ async function persistFilterOrder(ids) {
 }
 
 export async function initLogs() {
-  setupTooltips(document.getElementById("log-hist"));
+  setupTooltips(document.getElementById("log-hist"), document.getElementById("filter-list"));
   makeSortable(document.getElementById("filter-list"), {
     itemSelector: ".filter-item",
     axis: "list",

@@ -9,10 +9,12 @@
 // "✓ seen" moves the mark to the newest event shown.
 
 import { api } from "./api.js";
+import { setBadgeCount } from "./badge.js";
 import { makeSortable } from "./dnd.js";
 import { createContextDrawer, hasContext } from "./github-context.js";
 import { createContributorsView, dayKey } from "./github-contributors.js";
 import { createNetworkView } from "./github-network.js";
+import { bellIcon } from "./icons.js";
 import {
   announce,
   anyNotifying,
@@ -159,12 +161,7 @@ function updateTabBadge() {
   badge.textContent = total > 99 ? "99+" : String(total);
   badge.title = plural(total, "new event", "new events");
   // the installed app also shows the count on its icon in the dock/taskbar
-  if ("setAppBadge" in navigator) {
-    const update = total ? navigator.setAppBadge(total) : navigator.clearAppBadge();
-    update.catch(() => {
-      /* not installed or not supported */
-    });
-  }
+  setBadgeCount("github", total);
 }
 
 function renderFeedList() {
@@ -190,15 +187,15 @@ function renderFeedList() {
     item.innerHTML = `
       <span class="filter-name">${escapeHtml(feed.name)}${
         count
-          ? ` <span class="gh-unseen" title="${plural(count, "new event", "new events")}">${
+          ? ` <span class="gh-unseen" data-hint="${plural(count, "new event", "new events")}">${
               count > 99 ? "99+" : count
             }</span>`
           : ""
       }${
         notifying
           ? polling
-            ? ' <span class="gh-bell-on" title="Desktop notifications on">🔔</span>'
-            : ' <span class="gh-bell-on is-paused" title="Desktop notifications on, waiting for live updates to resume">🔔</span>'
+            ? ` <span class="gh-bell-on" data-hint="Desktop notifications on">${bellIcon(11)}</span>`
+            : ` <span class="gh-bell-on is-paused" data-hint="Desktop notifications on" data-hint-sub="Waiting for live updates to resume">${bellIcon(11)}</span>`
           : ""
       }</span>
       <span class="filter-meta">
@@ -208,9 +205,11 @@ function renderFeedList() {
       <span class="filter-meta gh-feed-kinds">${escapeHtml(kinds)}</span>
       <span class="filter-edit">
         <button class="card-action${notifying ? " is-on" : ""}" data-notify
-          title="${notifying ? "Stop desktop notifications" : "Notify me of new events"}">${notifying ? "🔕" : "🔔"}</button>
-        <button class="card-action" data-edit title="Edit">✎</button>
-        <button class="card-action danger" data-delete title="Remove">✕</button>
+          aria-label="${notifying ? "Stop desktop notifications" : "Notify me of new events"}"
+          data-hint="${notifying ? "Stop desktop notifications" : "Notify me"}"
+          data-hint-sub="${notifying ? "Click to turn them off" : "Desktop notifications of new events"}">${bellIcon()}</button>
+        <button class="card-action" data-edit aria-label="Edit" data-hint="Edit">✎</button>
+        <button class="card-action danger" data-delete aria-label="Remove" data-hint="Remove">✕</button>
       </span>`;
 
     const open = () => openFeed(feed);
@@ -1567,7 +1566,12 @@ async function checkToken() {
 export async function initGithub() {
   const contributorsBox = document.getElementById("gh-contributors");
   const networkBox = document.getElementById("gh-network");
-  setupTooltips(document.getElementById("gh-timeline"), contributorsBox, networkBox);
+  setupTooltips(
+    document.getElementById("gh-timeline"),
+    contributorsBox,
+    networkBox,
+    document.getElementById("gh-feed-list")
+  );
   contributors = createContributorsView({
     container: contributorsBox,
     tooltips: tooltipContent,
