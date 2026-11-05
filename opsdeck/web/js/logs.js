@@ -506,7 +506,7 @@ function openUnseen(filter, band) {
     title: `${filter.name} · new`,
     newSince: null,
     unseen: { status, bands: [band], seen: false },
-    parent: fromWindow ? { view, entries: lastEntries } : null,
+    parent: fromWindow ? { view, entries: lastEntries, scrollTop: entriesScrollTop() } : null,
   };
   loadFilter();
 }
@@ -1094,7 +1094,7 @@ async function openTrace(entry) {
     key,
     origin: entry,
     window,
-    parent: { view, entries: lastEntries },
+    parent: { view, entries: lastEntries, scrollTop: entriesScrollTop() },
     title: key.kind === "trace" ? `Trace ${shortId(key.id)}` : `Operation ${key.id}`,
   };
   await loadTrace();
@@ -1178,12 +1178,18 @@ async function expandTraceSources() {
 
 function goBack() {
   if (!view.parent) return;
-  const { view: previous, entries } = view.parent;
+  const { view: previous, entries, scrollTop } = view.parent;
   view = previous;
   lastEntries = entries;
   setHeader(view.title, view.meta);
   paintEntries();
   renderFieldChips();
+  document.getElementById("entries").scrollTop = scrollTop;
+}
+
+// The list scrolls on its own on wide screens (the page does on narrow ones).
+function entriesScrollTop() {
+  return document.getElementById("entries").scrollTop;
 }
 
 function rerun() {
@@ -1603,6 +1609,7 @@ function jumpToDeploy(index) {
 
 function paintEntries({ rise = false } = {}) {
   renderHistogram(lastEntries, { rise });
+  if (rise) document.getElementById("entries").scrollTop = 0; // a fresh result starts at the top
   if (view.mode === "trace") {
     renderEntries(lastEntries, {
       relative: true,
