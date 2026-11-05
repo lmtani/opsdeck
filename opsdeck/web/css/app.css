@@ -676,6 +676,24 @@ body {
 /* stacked layout: a sticky sidebar would float over the results */
 @media (max-width: 900px) { .filters-panel { position: static; min-height: 0; } }
 
+/* On a wide screen the logs view is a console that fills the viewport: the sidebar and the entries scroll on their own, so a long filter list never pushes the sources out of reach, and the title, the actions and the histogram stay put while the entries scroll. The page itself only scrolls when the window is shorter than the panels' minimum, or stacked (above). */
+@media (min-width: 901px) {
+  body:has(#view-logs:not([hidden])) { display: flex; flex-direction: column; }
+  /* an auto-margin flex item would shrink to its content: fill the row explicitly */
+  body:has(#view-logs:not([hidden])) .content { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding-bottom: 28px; }
+  #view-logs { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  #view-logs .logs-layout { flex: 1; min-height: 320px; align-items: stretch; }
+  #view-logs .filters-panel { position: static; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  #view-logs .results-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  #view-logs .results-idle { flex: 1; min-height: 0; }
+  /* the head keeps its size and the list takes the rest; should the bars above the list ever outgrow the panel, the whole results area scrolls instead */
+  #view-logs .results { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; }
+  /* the list reaches the panel's edges, so its scrollbar runs along the border */
+  #view-logs .entries { flex: 1; min-height: 200px; margin: 0 -20px -18px; padding: 0 20px 18px; overflow-y: auto; overscroll-behavior: contain; }
+  #view-logs .log-hist:not([hidden]) + .entries { border-top: 1px solid var(--border); }
+  #view-logs :is(.filters-panel, .entries) { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text-dim) 38%, transparent) transparent; }
+}
+
 .panel-head {
   display: flex;
   align-items: center;
