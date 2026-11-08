@@ -11,10 +11,10 @@ dependencies = [
     "google-cloud-logging>=3.17.0",
     "httpx>=0.28.1",
     "nh3>=0.3.7",
-    "platformdirs>=4.14.0",
+    "platformdirs>=4.14.5",
     "pymysql>=1.2.3",
-    "python-multipart>=0.0.32",
-    "sqlalchemy>=2.0",
+    "python-multipart>=0.0.33",
+    "sqlalchemy>=2.1.8",
     "tzdata>=2026.6",
     "uvicorn[standard]>=0.54.0",
 ]
@@ -40,7 +40,7 @@ dev = [
     "pre-commit>=4.7.0",
     "pytest>=9.2.0",
     "ruff>=0.17.3",
-    "zizmor>=1.31.1",
+    "zizmor>=1.32.0",
 ]
 
 [tool.ruff]
