@@ -7,14 +7,14 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.14",
     "cryptography>=50.0.2",
-    "fastapi>=0.162.5",
+    "fastapi>=0.165.0",
     "google-cloud-logging>=3.17.0",
     "httpx>=0.28.1",
-    "nh3>=0.3.7",
-    "platformdirs>=4.14.5",
+    "nh3>=0.3.8",
+    "platformdirs>=4.14.7",
     "pymysql>=1.2.4",
-    "python-multipart>=0.0.33",
-    "sqlalchemy>=2.1.8",
+    "python-multipart>=0.0.34",
+    "sqlalchemy>=2.1.9",
     "tzdata>=2026.6",
     "uvicorn[standard]>=0.54.0",
 ]
@@ -39,7 +39,7 @@ dev = [
     "pip-audit>=2.10.1",
     "pre-commit>=4.7.0",
     "pytest>=9.2.0",
-    "ruff>=0.17.4",
+    "ruff>=0.17.5",
     "zizmor>=1.32.0",
 ]
 
